@@ -51,3 +51,57 @@ def test_chat_sends_bearer_header_when_key_present(monkeypatch):
         [{"role": "user", "content": "x"}]
     )
     assert captured["auth"] == "Bearer abc"
+
+
+def test_chat_parses_tool_call_and_passes_tools_through():
+    captured = {}
+
+    def handler(request):
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call_1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "run_command",
+                                        "arguments": '{"cmd":"ls /tmp"}',
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "run_command",
+                "description": "Run a shell command",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"cmd": {"type": "string"}},
+                    "required": ["cmd"],
+                },
+            },
+        }
+    ]
+    result = _client(handler).chat([{"role": "user", "content": "list /tmp"}], tools=tools)
+
+    assert captured["body"]["tools"] == tools
+    assert result.wants_tool is True
+    assert len(result.tool_calls) == 1
+    call = result.tool_calls[0]
+    assert call.id == "call_1"
+    assert call.name == "run_command"
+    assert json.loads(call.arguments) == {"cmd": "ls /tmp"}
