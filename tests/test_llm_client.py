@@ -1,8 +1,9 @@
 import json
 
 import httpx
+import pytest
 
-from heya.config import Profile
+from heya.config import Profile, load_profiles, resolve_profile
 from heya.llm_client import LLMClient
 
 
@@ -105,3 +106,34 @@ def test_chat_parses_tool_call_and_passes_tools_through():
     assert call.id == "call_1"
     assert call.name == "run_command"
     assert json.loads(call.arguments) == {"cmd": "ls /tmp"}
+
+
+@pytest.mark.integration
+def test_local_model_round_trips_a_tool_call():
+    """Proof: the user-selected model returns a native tool call.
+
+    Requires the 'local' profile's endpoint to be running with a tool-capable
+    model. Run explicitly: .venv/bin/pytest -m integration
+    """
+    profile = resolve_profile("local", profiles=load_profiles())
+    client = LLMClient(profile)
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "run_command",
+                "description": "Run a shell command",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"cmd": {"type": "string"}},
+                    "required": ["cmd"],
+                },
+            },
+        }
+    ]
+    result = client.chat(
+        [{"role": "user", "content": "What files are in /tmp? Use the tool."}],
+        tools=tools,
+    )
+    assert result.wants_tool, f"expected a tool call, got content: {result.content!r}"
+    assert result.tool_calls[0].name == "run_command"
