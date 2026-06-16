@@ -1,6 +1,9 @@
+from pathlib import Path
+
 import pytest
 
 from heya.config import Profile, resolve_profile, ConfigError
+from heya.config import BUILTIN_PROFILES, load_profiles
 
 
 def test_profile_api_key_reads_named_env_var(monkeypatch):
@@ -32,3 +35,29 @@ def test_resolve_unknown_profile_raises():
         resolve_profile("nope", profiles=profiles)
     assert "nope" in str(exc.value)
     assert "a" in str(exc.value)
+
+
+def test_builtin_profiles_include_local_default():
+    assert "local" in BUILTIN_PROFILES
+    local = BUILTIN_PROFILES["local"]
+    assert local.base_url == "http://localhost:11434/v1"
+    assert local.provider_type == "local"
+
+
+def test_load_profiles_returns_builtins_when_no_file(tmp_path):
+    profiles = load_profiles(config_path=tmp_path / "missing.toml")
+    assert "local" in profiles
+
+
+def test_load_profiles_merges_user_file(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[profiles.mybox]\n'
+        'base_url = "http://192.168.1.9:11434/v1"\n'
+        'model = "my-model"\n'
+        'provider_type = "local"\n'
+    )
+    profiles = load_profiles(config_path=cfg)
+    assert "local" in profiles  # builtins still present
+    assert profiles["mybox"].model == "my-model"
+    assert profiles["mybox"].base_url == "http://192.168.1.9:11434/v1"

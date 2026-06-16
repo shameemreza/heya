@@ -7,7 +7,9 @@ in the agent assumes a specific model or runner.
 from __future__ import annotations
 
 import os
+import tomllib
 from dataclasses import dataclass
+from pathlib import Path
 
 DEFAULT_TIMEOUT = 120.0
 DEFAULT_PROFILE = "local"
@@ -47,3 +49,46 @@ def resolve_profile(
         available = ", ".join(sorted(profiles))
         raise ConfigError(f"Unknown profile {chosen!r}. Available: {available}")
     return profiles[chosen]
+
+
+# Built-in presets. `local` is the reference default; users add or override
+# their own in ~/.config/heya/config.toml. The cloud example shows that
+# switching providers is config, not code.
+BUILTIN_PROFILES: dict[str, Profile] = {
+    "local": Profile(
+        name="local",
+        base_url="http://localhost:11434/v1",
+        model="gemma4:12b",
+        provider_type="local",
+    ),
+    "cloud-openrouter": Profile(
+        name="cloud-openrouter",
+        base_url="https://openrouter.ai/api/v1",
+        model="openrouter/auto",  # user picks any model id OpenRouter exposes
+        provider_type="api_key",
+        api_key_env="OPENROUTER_API_KEY",
+    ),
+}
+
+
+def default_config_path() -> Path:
+    return Path.home() / ".config" / "heya" / "config.toml"
+
+
+def load_profiles(config_path: Path | None = None) -> dict[str, Profile]:
+    """Built-in profiles merged with any user-defined ones from a TOML file.
+
+    User file shape:
+        [profiles.<name>]
+        base_url = "..."
+        model = "..."
+        provider_type = "local" | "api_key" | "oauth"
+        api_key_env = "SOME_ENV_VAR"   # optional
+    """
+    profiles = dict(BUILTIN_PROFILES)
+    path = config_path or default_config_path()
+    if path.exists():
+        data = tomllib.loads(path.read_text())
+        for name, raw in data.get("profiles", {}).items():
+            profiles[name] = Profile(name=name, **raw)
+    return profiles
