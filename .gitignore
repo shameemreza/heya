@@ -1,0 +1,10 @@
+# Planning / design docs — kept on disk, intentionally not versioned
+/local-personal-agent-brief.md
+/docs/superpowers/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
