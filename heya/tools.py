@@ -129,6 +129,13 @@ TOOL_SCHEMAS: list[dict] = [
         },
     },
     {"type": "function", "function": {
+        "name": "wp_playground",
+        "description": "Boot a disposable clean WordPress (WASM) to reproduce on, or stop it. action='start' returns a local URL you can drive with the browser tools; action='stop' tears it down. Optional `blueprint` (path or JSON) sets the WP version and plugins.",
+        "parameters": {"type": "object", "properties": {
+            "action": {"type": "string", "description": "'start' (default) or 'stop'."},
+            "blueprint": {"type": "string", "description": "Optional Playground blueprint path or JSON."},
+        }, "required": []}}},
+    {"type": "function", "function": {
         "name": "browser_navigate",
         "description": "Open a URL in the browser and return the page's readable text. Starts the browser if needed.",
         "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}}},
@@ -167,6 +174,7 @@ def dispatch_tool(
     browser_session=None,
     process_registry=None,
     wp_default_root=None,
+    playground_session=None,
 ) -> str:
     """Run one model tool-call. Returns a string result (errors included)."""
     try:
@@ -233,6 +241,12 @@ def dispatch_tool(
                 raw = args.get("path") or str(Path(cwd) / "heya-screenshot.png")
                 safe = resolve_in_allowlist(raw, allowed_roots)
                 return browser_session.screenshot(safe)
+        if name == "wp_playground":
+            if playground_session is None:
+                raise ToolError("the WordPress Playground is not available in this context")
+            if args.get("action") == "stop":
+                return playground_session.stop()
+            return playground_session.start(args.get("blueprint"))
         if name == "read_log":
             return read_log(
                 args.get("path"), allowed_roots=allowed_roots, cwd=cwd,
@@ -281,6 +295,8 @@ def describe_call(name: str, arguments: str) -> str:
         return f"browser_type → {args.get('target', '?')}"
     if name in ("browser_snapshot", "browser_screenshot", "browser_evidence"):
         return name
+    if name == "wp_playground":
+        return f"wp_playground → {args.get('action') or 'start'}"
     if name == "read_log":
         return f"read_log → {args.get('path') or '(default site)'}"
     if name == "run_wp_cli":

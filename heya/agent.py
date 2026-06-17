@@ -53,6 +53,7 @@ class Agent:
         browser_session=None,
         process_registry=None,
         wp_default_root=None,
+        playground_session=None,
     ) -> None:
         self.client = client
         self.allowed_roots = list(allowed_roots)
@@ -67,6 +68,7 @@ class Agent:
         self.browser_session = browser_session
         self.process_registry = process_registry
         self.wp_default_root = wp_default_root
+        self.playground_session = playground_session
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
         self._mutated = False
 
@@ -87,6 +89,8 @@ class Agent:
             self.browser_session.close()
         if self.process_registry is not None:
             self.process_registry.close()
+        if self.playground_session is not None:
+            self.playground_session.close()
 
     def _loop(self) -> str:
         for _ in range(self.max_iters):
@@ -129,6 +133,7 @@ class Agent:
             browser_session=self.browser_session,
             process_registry=self.process_registry,
             wp_default_root=self.wp_default_root,
+            playground_session=self.playground_session,
         )
         mutating = call.name in ("write_file", "run_command", "run_wp_cli")
         if mutating and not output.startswith(("Error", "Started background process", "Declined")):

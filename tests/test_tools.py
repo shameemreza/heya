@@ -332,3 +332,30 @@ def test_dispatch_run_wp_cli_routes(tmp_path, monkeypatch):
 
 def test_describe_run_wp_cli_shows_command():
     assert "wp plugin list" in describe_call("run_wp_cli", json.dumps({"args": "plugin list"}))
+
+
+class _FakePlayground:
+    def __init__(self):
+        self.calls = []
+
+    def start(self, blueprint=None):
+        self.calls.append(("start", blueprint)); return "URL http://127.0.0.1:9400"
+
+    def stop(self):
+        self.calls.append(("stop",)); return "stopped"
+
+
+def test_dispatch_wp_playground_start_and_stop(tmp_path):
+    pg = _FakePlayground()
+    out = dispatch_tool("wp_playground", json.dumps({"action": "start"}),
+                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, playground_session=pg)
+    assert "9400" in out
+    out2 = dispatch_tool("wp_playground", json.dumps({"action": "stop"}),
+                         allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, playground_session=pg)
+    assert "stopped" in out2
+
+
+def test_dispatch_wp_playground_without_session_errors(tmp_path):
+    out = dispatch_tool("wp_playground", json.dumps({"action": "start"}),
+                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10)
+    assert "Error" in out

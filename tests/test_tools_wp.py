@@ -74,3 +74,48 @@ def test_run_wp_cli_missing_binary_hint(tmp_path, monkeypatch):
     monkeypatch.setattr(wp_mod.shutil, "which", lambda _: None)
     out = wp_mod.run_wp_cli("plugin list", str(tmp_path), allowed_roots=[tmp_path], cwd=tmp_path, timeout=10)
     assert "WP-CLI is not available" in out
+
+
+from heya.tools_wp import PlaygroundSession
+
+
+class _FakeReg:
+    def __init__(self, output=""):
+        self._output = output
+        self.killed = []
+
+    def start(self, cmd, *, cwd):
+        from heya.process import ManagedProcess
+        self.cmd = cmd
+        return ManagedProcess(id="p1", pid=99)
+
+    def peek(self, id):
+        return self._output
+
+    def kill(self, id):
+        self.killed.append(id)
+        return f"Killed background process {id}."
+
+
+def test_playground_start_returns_url(tmp_path, monkeypatch):
+    monkeypatch.setattr(wp_mod.shutil, "which", lambda _: "/usr/bin/npx")
+    reg = _FakeReg(output="Server running at http://127.0.0.1:9400")
+    sess = PlaygroundSession(reg, cwd=tmp_path)
+    out = sess.start()
+    assert "http://127.0.0.1:9400" in out and "@wp-playground/cli" in reg.cmd
+
+
+def test_playground_missing_npx_hint(tmp_path, monkeypatch):
+    monkeypatch.setattr(wp_mod.shutil, "which", lambda _: None)
+    sess = PlaygroundSession(_FakeReg(), cwd=tmp_path)
+    out = sess.start()
+    assert "Playground is not available" in out
+
+
+def test_playground_stop_kills(tmp_path, monkeypatch):
+    monkeypatch.setattr(wp_mod.shutil, "which", lambda _: "/usr/bin/npx")
+    reg = _FakeReg(output="http://127.0.0.1:9400")
+    sess = PlaygroundSession(reg, cwd=tmp_path)
+    sess.start()
+    sess.stop()
+    assert reg.killed == ["p1"]

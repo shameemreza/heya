@@ -8,8 +8,10 @@ present; absent, the tools return install hints and never raise.
 """
 from __future__ import annotations
 
+import re
 import shlex
 import shutil
+import time
 from pathlib import Path
 
 from .text import truncate_output
@@ -22,6 +24,46 @@ _PLAYGROUND_HINT = (
     "WordPress Playground is not available. Install Node, then it runs via "
     "`npx @wp-playground/cli`. See https://wordpress.github.io/wordpress-playground/"
 )
+
+
+_PLAYGROUND_URL = re.compile(r"https?://(?:localhost|127\.0\.0\.1):\d+")
+
+
+class PlaygroundSession:
+    """A single disposable WordPress Playground server, managed via the registry."""
+
+    def __init__(self, registry, *, cwd: Path) -> None:
+        self._registry = registry
+        self._cwd = Path(cwd)
+        self._id: str | None = None
+
+    def start(self, blueprint=None) -> str:
+        if shutil.which("npx") is None:
+            return _PLAYGROUND_HINT
+        cmd = "npx @wp-playground/cli server"
+        if blueprint:
+            cmd += f" --blueprint={shlex.quote(str(blueprint))}"
+        mp = self._registry.start(cmd, cwd=self._cwd)
+        self._id = mp.id
+        for _ in range(40):  # ~10s: wait for the server to print its URL
+            match = _PLAYGROUND_URL.search(self._registry.peek(mp.id))
+            if match:
+                return f"Playground running at {match.group(0)} (process {mp.id}). Hand the URL to browser_navigate, or check_command {mp.id} for logs."
+            time.sleep(0.25)
+        return f"Playground starting (process {mp.id}); use check_command {mp.id} for the URL."
+
+    def stop(self) -> str:
+        if self._id is None:
+            return "No playground is running."
+        msg = self._registry.kill(self._id)
+        self._id = None
+        return msg
+
+    def close(self) -> None:
+        try:
+            self.stop()
+        except Exception:
+            pass
 
 
 def resolve_wp_root(path, *, allowed_roots, cwd, default_root=None) -> Path:
