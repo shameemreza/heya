@@ -134,3 +134,20 @@ def test_web_search_empty_results_message():
     client = _client(lambda req: httpx.Response(200, text="<html><body>nothing</body></html>"))
     out = web_search("q", provider=DuckDuckGoSearch(client=client))
     assert "No results" in out
+
+
+@pytest.mark.integration
+def test_web_fetch_reads_a_real_page():
+    """Canary: web_fetch reads a live page. Run: .venv/bin/python -m pytest -m integration"""
+    out = web_fetch("https://example.com", timeout=20)
+    assert "Example Domain" in out
+
+
+@pytest.mark.integration
+def test_duckduckgo_search_returns_live_results():
+    """Canary: the DDG HTML-scrape contract still parses. DDG markup can drift;
+    this catches it. Best-effort — DDG may rate-limit. Run with -m integration."""
+    results = DuckDuckGoSearch().search("python programming language", max_results=3)
+    assert results, "expected at least one DuckDuckGo result"
+    assert results[0].url.startswith("http")
+    assert results[0].title

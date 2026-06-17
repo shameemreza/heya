@@ -139,6 +139,23 @@ def test_dispatch_web_search_without_provider_errors(tmp_path):
     assert "Error" in out
 
 
+def test_dispatch_web_search_clamps_max_results_to_at_least_one(tmp_path):
+    class _Recorder:
+        seen = None
+
+        def search(self, query, max_results=5):
+            _Recorder.seen = max_results
+            from heya.tools_web import SearchResult
+            return [SearchResult(title="t", url="https://u", snippet="s")]
+
+    rec = _Recorder()
+    dispatch_tool(
+        "web_search", json.dumps({"query": "x", "max_results": 0}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, search_provider=rec,
+    )
+    assert _Recorder.seen == 1  # 0 clamped up to 1
+
+
 def test_dispatch_web_fetch_routes(tmp_path, monkeypatch):
     monkeypatch.setattr("heya.tools.web_fetch", lambda url, *, timeout: f"FETCHED {url}")
     out = dispatch_tool(

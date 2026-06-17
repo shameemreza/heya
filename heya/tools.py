@@ -140,6 +140,7 @@ def dispatch_tool(
                 max_results = int(args.get("max_results", 5))
             except (TypeError, ValueError):
                 max_results = 5  # keep dispatch_tool's never-raise contract on bad input
+            max_results = max(1, max_results)  # uniform across providers; never zero/negative
             return web_search(args["query"], provider=search_provider, max_results=max_results)
         if name == "web_fetch":
             return web_fetch(args["url"], timeout=timeout)
