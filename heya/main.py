@@ -54,9 +54,11 @@ def run_cli(
     stdin: TextIO | None = None,
 ) -> int:
     agent = make_agent(args)
+    # The agent streams its reply live via on_text; run_cli only ends each
+    # turn's line, so the answer is printed once (not streamed and re-printed).
     if args.task:
-        answer = agent.run(" ".join(args.task))
-        print(answer)
+        agent.run(" ".join(args.task))
+        sys.stdout.write("\n")
         return 0
     stream = stdin if stdin is not None else sys.stdin
     while True:
@@ -71,8 +73,8 @@ def run_cli(
             continue
         if text.lower() in EXIT_WORDS:
             break
-        answer = agent.run(text)
-        print(answer)
+        agent.run(text)
+        sys.stdout.write("\n")
     return 0
 
 

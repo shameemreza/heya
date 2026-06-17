@@ -1,4 +1,5 @@
 import io
+import sys
 
 from heya.main import build_parser, run_cli
 
@@ -10,7 +11,9 @@ class FakeAgent:
 
     def run(self, text):
         self.prompts.append(text)
-        return f"answer to: {text}"
+        answer = f"answer to: {text}"
+        sys.stdout.write(answer)  # simulate the agent streaming its reply live
+        return answer
 
 
 def test_parser_reads_task_and_flags():
