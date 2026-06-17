@@ -51,6 +51,7 @@ class Agent:
         guidance_sources: Sequence[Path] = (),
         search_provider=None,
         browser_session=None,
+        process_registry=None,
     ) -> None:
         self.client = client
         self.allowed_roots = list(allowed_roots)
@@ -63,6 +64,7 @@ class Agent:
         self.guidance_sources = list(guidance_sources)
         self.search_provider = search_provider
         self.browser_session = browser_session
+        self.process_registry = process_registry
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
         self._mutated = False
 
@@ -78,9 +80,11 @@ class Agent:
         return answer
 
     def close(self) -> None:
-        """Release external resources (the browser session, if any)."""
+        """Release external resources (browser session and background processes)."""
         if self.browser_session is not None:
             self.browser_session.close()
+        if self.process_registry is not None:
+            self.process_registry.close()
 
     def _loop(self) -> str:
         for _ in range(self.max_iters):
@@ -121,7 +125,9 @@ class Agent:
             guidance_sources=self.guidance_sources,
             search_provider=self.search_provider,
             browser_session=self.browser_session,
+            process_registry=self.process_registry,
         )
-        if call.name in ("write_file", "run_command") and not output.startswith("Error"):
+        mutating = call.name in ("write_file", "run_command", "run_wp_cli")
+        if mutating and not output.startswith(("Error", "Started background process", "Declined")):
             self._mutated = True
         return output

@@ -48,14 +48,25 @@ TOOL_SCHEMAS: list[dict] = [
         "type": "function",
         "function": {
             "name": "run_command",
-            "description": "Run a shell command in the working directory (inside the allowed folders). Returns stdout, stderr, and exit code.",
+            "description": "Run a shell command in the working directory (inside the allowed folders). Returns stdout, stderr, and exit code. Set background=true for a long-lived process (dev server, watcher) — it returns a process id immediately; read it later with check_command and stop it with kill_command.",
             "parameters": {
                 "type": "object",
-                "properties": {"cmd": {"type": "string", "description": "The shell command to run."}},
+                "properties": {
+                    "cmd": {"type": "string", "description": "The shell command to run."},
+                    "background": {"type": "boolean", "description": "Run without waiting; returns a process id. Default false."},
+                },
                 "required": ["cmd"],
             },
         },
     },
+    {"type": "function", "function": {
+        "name": "check_command",
+        "description": "Read new output from a background process started with run_command(background=true), by its id.",
+        "parameters": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}}},
+    {"type": "function", "function": {
+        "name": "kill_command",
+        "description": "Stop a background process by its id.",
+        "parameters": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}}},
     {
         "type": "function",
         "function": {
@@ -138,6 +149,7 @@ def dispatch_tool(
     guidance_sources: Sequence[Path] = (),
     search_provider=None,
     browser_session=None,
+    process_registry=None,
 ) -> str:
     """Run one model tool-call. Returns a string result (errors included)."""
     try:
@@ -153,12 +165,26 @@ def dispatch_tool(
             n = write_file(args["path"], args["content"], allowed_roots=allowed_roots)
             return f"Wrote {n} bytes to {args['path']}."
         if name == "run_command":
+            if args.get("background"):
+                if process_registry is None:
+                    raise ToolError("background processes are not available in this context")
+                safe_cwd = resolve_in_allowlist(cwd, allowed_roots)
+                mp = process_registry.start(args["cmd"], cwd=safe_cwd)
+                return f"Started background process {mp.id} (pid {mp.pid}). Use check_command {mp.id!r} to read output, kill_command to stop it."
             result = run_command(args["cmd"], cwd=cwd, allowed_roots=allowed_roots, timeout=timeout)
             return truncate_output(
                 f"exit_code: {result.exit_code}\n"
                 f"stdout:\n{result.stdout}\n"
                 f"stderr:\n{result.stderr}"
             )
+        if name == "check_command":
+            if process_registry is None:
+                raise ToolError("background processes are not available in this context")
+            return truncate_output(process_registry.poll(args["id"]))
+        if name == "kill_command":
+            if process_registry is None:
+                raise ToolError("background processes are not available in this context")
+            return process_registry.kill(args["id"])
         if name == "read_guidance":
             return _read_guidance(args.get("name") or None, sources=guidance_sources)
         if name == "web_search":
@@ -206,7 +232,12 @@ def describe_call(name: str, arguments: str) -> str:
     if name == "write_file":
         return f"write_file → {args.get('path', '?')}"
     if name == "run_command":
-        return f"run_command → {args.get('cmd', '?')}"
+        bg = " (background)" if args.get("background") else ""
+        return f"run_command{bg} → {args.get('cmd', '?')}"
+    if name == "check_command":
+        return f"check_command → {args.get('id', '?')}"
+    if name == "kill_command":
+        return f"kill_command → {args.get('id', '?')}"
     if name == "read_file":
         return f"read_file → {args.get('path', '?')}"
     if name == "read_guidance":

@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-GATED_TOOLS = frozenset({"write_file", "run_command", "browser_click", "browser_type"})
+GATED_TOOLS = frozenset({
+    "write_file", "run_command", "browser_click", "browser_type",
+    "run_wp_cli", "wp_playground", "kill_command",
+})
 
 Approver = Callable[[str, str], str]
 

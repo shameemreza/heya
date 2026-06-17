@@ -248,3 +248,57 @@ def test_dispatch_browser_without_session_errors(tmp_path):
 def test_describe_call_browser_tools():
     assert "browser_navigate" in describe_call("browser_navigate", json.dumps({"url": "https://x"}))
     assert "browser_click" in describe_call("browser_click", json.dumps({"target": "Go"}))
+
+
+class _FakeRegistry:
+    def __init__(self):
+        self.started = []
+        self.killed = []
+
+    def start(self, cmd, *, cwd):
+        self.started.append((cmd, cwd))
+        from heya.process import ManagedProcess
+        return ManagedProcess(id="p1", pid=4242)
+
+    def poll(self, id):
+        return f"[{id} running]\nsome output"
+
+    def kill(self, id):
+        self.killed.append(id)
+        return f"Killed background process {id}."
+
+
+def test_run_command_background_starts_and_returns_handle(tmp_path):
+    reg = _FakeRegistry()
+    out = dispatch_tool(
+        "run_command", json.dumps({"cmd": "npm run dev", "background": True}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, process_registry=reg,
+    )
+    assert "p1" in out and "4242" in out
+    assert reg.started and reg.started[0][0] == "npm run dev"
+
+
+def test_check_command_polls_registry(tmp_path):
+    reg = _FakeRegistry()
+    out = dispatch_tool(
+        "check_command", json.dumps({"id": "p1"}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, process_registry=reg,
+    )
+    assert "some output" in out
+
+
+def test_kill_command_kills_registry(tmp_path):
+    reg = _FakeRegistry()
+    out = dispatch_tool(
+        "kill_command", json.dumps({"id": "p1"}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, process_registry=reg,
+    )
+    assert "Killed" in out and reg.killed == ["p1"]
+
+
+def test_background_tools_without_registry_error(tmp_path):
+    out = dispatch_tool(
+        "check_command", json.dumps({"id": "p1"}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10,
+    )
+    assert "Error" in out
