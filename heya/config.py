@@ -108,6 +108,34 @@ def load_allowed_roots(config_path: Path | None = None) -> tuple[Path, ...]:
     return tuple(Path(p).expanduser().resolve() for p in raw)
 
 
+def load_guidance_paths(config_path: Path | None = None) -> tuple[Path, ...]:
+    """User guidance folders the read_guidance tool searches, on top of the
+    bundled baseline.
+
+    User file shape:
+        [guidance]
+        paths = ["~/dotbrain/shared/skills", "/abs/team/guidance"]
+
+    Defaults to no user folders (empty) when unset; the bundled baseline is
+    added by the CLI, not here.
+    """
+    path = config_path or default_config_path()
+    if not path.exists():
+        return ()
+    data = tomllib.loads(path.read_text())
+    raw = data.get("guidance", {}).get("paths")
+    if not raw:
+        return ()
+    if not isinstance(raw, list):
+        raise ConfigError(
+            f"guidance.paths must be a list of paths, got {type(raw).__name__}"
+        )
+    for entry in raw:
+        if not isinstance(entry, str):
+            raise ConfigError(f"guidance.paths entries must be strings, got {entry!r}")
+    return tuple(Path(p).expanduser().resolve() for p in raw)
+
+
 def load_profiles(config_path: Path | None = None) -> dict[str, Profile]:
     """Built-in profiles merged with any user-defined ones from a TOML file.
 

@@ -118,3 +118,38 @@ def test_load_allowed_roots_rejects_non_string_entry(tmp_path):
     )
     with pytest.raises(ConfigError):
         load_allowed_roots(config_path=cfg)
+
+
+from heya.config import load_guidance_paths
+
+
+def test_load_guidance_paths_empty_when_no_file(tmp_path):
+    assert load_guidance_paths(config_path=tmp_path / "missing.toml") == ()
+
+
+def test_load_guidance_paths_reads_guidance_section(tmp_path):
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[guidance]\n" f'paths = ["{skills}"]\n')
+    assert load_guidance_paths(config_path=cfg) == (skills.resolve(),)
+
+
+def test_load_guidance_paths_expands_user(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[guidance]\n" 'paths = ["~"]\n')
+    assert load_guidance_paths(config_path=cfg) == (Path.home().resolve(),)
+
+
+def test_load_guidance_paths_rejects_non_list(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[guidance]\n" 'paths = "/just/a/string"\n')
+    with pytest.raises(ConfigError):
+        load_guidance_paths(config_path=cfg)
+
+
+def test_load_guidance_paths_rejects_non_string_entry(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[guidance]\n" "paths = [123]\n")
+    with pytest.raises(ConfigError):
+        load_guidance_paths(config_path=cfg)
