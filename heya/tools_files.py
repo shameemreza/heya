@@ -38,3 +38,12 @@ def read_file(path: Path | str, *, allowed_roots: Sequence[Path]) -> str:
         raise ToolError(f"No such file: {resolved}") from exc
     except IsADirectoryError as exc:
         raise ToolError(f"Is a directory, not a file: {resolved}") from exc
+
+
+def write_file(path: Path | str, content: str, *, allowed_roots: Sequence[Path]) -> int:
+    """Write UTF-8 content inside the allow-list, creating parents. Returns bytes written."""
+    resolved = resolve_in_allowlist(path, allowed_roots)
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    data = content.encode("utf-8")
+    resolved.write_bytes(data)
+    return len(data)

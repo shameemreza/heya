@@ -81,3 +81,32 @@ def test_read_file_denies_outside_root(tmp_path):
 def test_read_file_missing_raises_tool_error(tmp_path):
     with pytest.raises(ToolError):
         read_file(tmp_path / "ghost.txt", allowed_roots=[tmp_path])
+
+
+from heya.tools_files import write_file
+
+
+def test_write_file_creates_and_returns_byte_count(tmp_path):
+    target = tmp_path / "out.txt"
+    n = write_file(target, "data", allowed_roots=[tmp_path])
+    assert target.read_text() == "data"
+    assert n == 4
+
+
+def test_write_file_creates_missing_parent_dirs(tmp_path):
+    target = tmp_path / "deep" / "nested" / "out.txt"
+    write_file(target, "ok", allowed_roots=[tmp_path])
+    assert target.read_text() == "ok"
+
+
+def test_write_file_overwrites_existing(tmp_path):
+    target = tmp_path / "out.txt"
+    target.write_text("old")
+    write_file(target, "new", allowed_roots=[tmp_path])
+    assert target.read_text() == "new"
+
+
+def test_write_file_denies_outside_root(tmp_path):
+    outside = tmp_path.parent / "escape.txt"
+    with pytest.raises(ToolError):
+        write_file(outside, "data", allowed_roots=[tmp_path])
