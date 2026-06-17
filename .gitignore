@@ -1,6 +1,9 @@
-# Planning / design docs — kept on disk, intentionally not versioned
+# Planning / design docs, kept on disk, intentionally not versioned
 /local-personal-agent-brief.md
 /docs/superpowers/
+
+# Local agent/editor config
+.claude/
 
 # Python
 .venv/
