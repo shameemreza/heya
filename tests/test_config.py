@@ -61,3 +61,40 @@ def test_load_profiles_merges_user_file(tmp_path):
     assert "local" in profiles  # builtins still present
     assert profiles["mybox"].model == "my-model"
     assert profiles["mybox"].base_url == "http://192.168.1.9:11434/v1"
+
+
+from heya.config import default_allowed_roots, load_allowed_roots
+
+
+def test_default_allowed_roots_is_cwd(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    roots = default_allowed_roots()
+    assert roots == (tmp_path.resolve(),)
+
+
+def test_load_allowed_roots_defaults_to_cwd_when_no_file(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    roots = load_allowed_roots(config_path=tmp_path / "missing.toml")
+    assert roots == (tmp_path.resolve(),)
+
+
+def test_load_allowed_roots_reads_workspace_section(tmp_path):
+    work = tmp_path / "projects"
+    work.mkdir()
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        "[workspace]\n"
+        f'allowed_roots = ["{work}"]\n'
+    )
+    roots = load_allowed_roots(config_path=cfg)
+    assert roots == (work.resolve(),)
+
+
+def test_load_allowed_roots_expands_user(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        "[workspace]\n"
+        'allowed_roots = ["~"]\n'
+    )
+    roots = load_allowed_roots(config_path=cfg)
+    assert roots == (Path.home().resolve(),)

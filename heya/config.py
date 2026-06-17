@@ -75,6 +75,30 @@ def default_config_path() -> Path:
     return Path.home() / ".config" / "heya" / "config.toml"
 
 
+def default_allowed_roots() -> tuple[Path, ...]:
+    """The working directory is the sole allowed root unless config widens it."""
+    return (Path.cwd().resolve(),)
+
+
+def load_allowed_roots(config_path: Path | None = None) -> tuple[Path, ...]:
+    """Folders the file/command tools may operate within.
+
+    User file shape:
+        [workspace]
+        allowed_roots = ["~/projects/foo", "/abs/path/bar"]
+
+    Defaults to the current working directory when no config is present.
+    """
+    path = config_path or default_config_path()
+    if not path.exists():
+        return default_allowed_roots()
+    data = tomllib.loads(path.read_text())
+    raw = data.get("workspace", {}).get("allowed_roots")
+    if not raw:
+        return default_allowed_roots()
+    return tuple(Path(p).expanduser().resolve() for p in raw)
+
+
 def load_profiles(config_path: Path | None = None) -> dict[str, Profile]:
     """Built-in profiles merged with any user-defined ones from a TOML file.
 
