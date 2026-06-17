@@ -41,3 +41,22 @@ def test_rejects_symlink_escape(tmp_path):
 def test_rejects_when_no_roots(tmp_path):
     with pytest.raises(ToolError):
         resolve_in_allowlist(tmp_path / "a.txt", [])
+
+
+def test_rejects_sibling_prefix_root(tmp_path):
+    # /foo must not accept /foobar — guards against string-prefix matching.
+    root = tmp_path / "foo"
+    root.mkdir()
+    sibling = tmp_path / "foobar"
+    sibling.mkdir()
+    with pytest.raises(ToolError):
+        resolve_in_allowlist(sibling / "x.txt", [root])
+
+
+def test_accepts_under_any_of_multiple_roots(tmp_path):
+    root_a = tmp_path / "a"
+    root_b = tmp_path / "b"
+    root_a.mkdir()
+    root_b.mkdir()
+    target = root_b / "file.txt"
+    assert resolve_in_allowlist(target, [root_a, root_b]) == target.resolve()
