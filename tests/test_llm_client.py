@@ -189,3 +189,38 @@ def test_chat_stream_reassembles_split_tool_call():
     assert call.id == "call_1"
     assert call.name == "read_file"
     assert call.arguments == '{"path":"a.txt"}'
+
+
+@pytest.mark.integration
+def test_local_model_streams_a_tool_call():
+    """Proof: streaming + native tool-calls round-trip through the live model.
+
+    Streaming reassembly is the highest-risk piece of the agent loop. Run
+    explicitly: .venv/bin/python -m pytest -m integration
+    """
+    profile = resolve_profile("local", profiles=load_profiles())
+    client = LLMClient(profile)
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "run_command",
+                "description": "Run a shell command",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"cmd": {"type": "string"}},
+                    "required": ["cmd"],
+                },
+            },
+        }
+    ]
+    streamed = []
+    result = client.chat_stream(
+        [{"role": "user", "content": "What files are in /tmp? Use the tool."}],
+        tools=tools,
+        on_text=streamed.append,
+    )
+    assert result.wants_tool, f"expected a tool call, got content: {result.content!r}"
+    assert result.tool_calls[0].name == "run_command"
+    # Arguments reassembled into valid JSON across deltas.
+    json.loads(result.tool_calls[0].arguments)
