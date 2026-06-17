@@ -7,8 +7,10 @@ signature.
 """
 from __future__ import annotations
 
+import json
+
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -64,6 +66,52 @@ class LLMClient:
         message = resp.json()["choices"][0]["message"]
         return _parse_message(message)
 
+    def chat_stream(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        on_text: Callable[[str], None] | None = None,
+    ) -> ChatResult:
+        payload: dict[str, Any] = {
+            "model": self.profile.model,
+            "messages": messages,
+            "stream": True,
+        }
+        if tools:
+            payload["tools"] = tools
+        content_parts: list[str] = []
+        acc: dict[int, dict[str, str]] = {}
+        with self._client.stream(
+            "POST",
+            f"{self.profile.base_url}/chat/completions",
+            json=payload,
+            headers=self._headers(),
+        ) as resp:
+            resp.raise_for_status()
+            for line in resp.iter_lines():
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[len("data:") :].strip()
+                if data == "[DONE]":
+                    break
+                chunk = json.loads(data)
+                choices = chunk.get("choices") or []
+                if not choices:
+                    continue
+                delta = choices[0].get("delta") or {}
+                text = delta.get("content")
+                if text:
+                    content_parts.append(text)
+                    if on_text:
+                        on_text(text)
+                _accumulate_tool_calls(acc, delta.get("tool_calls") or [])
+        content = "".join(content_parts) or None
+        tool_calls = [
+            ToolCall(id=slot["id"], name=slot["name"], arguments=slot["arguments"])
+            for _, slot in sorted(acc.items())
+        ]
+        return ChatResult(content=content, tool_calls=tool_calls)
+
 
 def _parse_message(message: dict[str, Any]) -> ChatResult:
     raw_calls = message.get("tool_calls") or []
@@ -76,3 +124,17 @@ def _parse_message(message: dict[str, Any]) -> ChatResult:
         for c in raw_calls
     ]
     return ChatResult(content=message.get("content"), tool_calls=tool_calls)
+
+
+def _accumulate_tool_calls(acc: dict[int, dict[str, str]], deltas: list[dict[str, Any]]) -> None:
+    """Merge streamed tool-call fragments into acc, keyed by index."""
+    for tc in deltas:
+        idx = tc.get("index", 0)
+        slot = acc.setdefault(idx, {"id": "", "name": "", "arguments": ""})
+        if tc.get("id"):
+            slot["id"] = tc["id"]
+        fn = tc.get("function") or {}
+        if fn.get("name"):
+            slot["name"] = fn["name"]
+        if fn.get("arguments"):
+            slot["arguments"] += fn["arguments"]

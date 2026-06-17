@@ -137,3 +137,55 @@ def test_local_model_round_trips_a_tool_call():
     )
     assert result.wants_tool, f"expected a tool call, got content: {result.content!r}"
     assert result.tool_calls[0].name == "run_command"
+
+
+def _sse(*chunks: dict) -> bytes:
+    import json as _json
+    body = "".join(f"data: {_json.dumps(c)}\n\n" for c in chunks)
+    body += "data: [DONE]\n\n"
+    return body.encode()
+
+
+def test_chat_stream_collects_text_and_calls_on_text():
+    chunks = [
+        {"choices": [{"delta": {"content": "Hel"}}]},
+        {"choices": [{"delta": {"content": "lo"}}]},
+        {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+    ]
+    transport = httpx.MockTransport(lambda req: httpx.Response(200, content=_sse(*chunks)))
+    profile = Profile(name="t", base_url="http://test/v1", model="m")
+    client = LLMClient(profile, client=httpx.Client(transport=transport))
+
+    seen = []
+    result = client.chat_stream([{"role": "user", "content": "hi"}], on_text=seen.append)
+
+    assert result.content == "Hello"
+    assert "".join(seen) == "Hello"
+    assert result.wants_tool is False
+
+
+def test_chat_stream_reassembles_split_tool_call():
+    chunks = [
+        {"choices": [{"delta": {"tool_calls": [
+            {"index": 0, "id": "call_1", "function": {"name": "read_file", "arguments": ""}}
+        ]}}]},
+        {"choices": [{"delta": {"tool_calls": [
+            {"index": 0, "function": {"arguments": '{"path":'}}
+        ]}}]},
+        {"choices": [{"delta": {"tool_calls": [
+            {"index": 0, "function": {"arguments": '"a.txt"}'}}
+        ]}}]},
+        {"choices": [{"delta": {}, "finish_reason": "tool_calls"}]},
+    ]
+    transport = httpx.MockTransport(lambda req: httpx.Response(200, content=_sse(*chunks)))
+    profile = Profile(name="t", base_url="http://test/v1", model="m")
+    client = LLMClient(profile, client=httpx.Client(transport=transport))
+
+    result = client.chat_stream([{"role": "user", "content": "hi"}], tools=[{"x": 1}])
+
+    assert result.wants_tool is True
+    assert len(result.tool_calls) == 1
+    call = result.tool_calls[0]
+    assert call.id == "call_1"
+    assert call.name == "read_file"
+    assert call.arguments == '{"path":"a.txt"}'
