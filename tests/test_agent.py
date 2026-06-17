@@ -179,3 +179,23 @@ def test_agent_threads_guidance_sources(tmp_path):
     assert any(
         m["role"] == "tool" and "GROUNDING TEXT" in m["content"] for m in client.calls[1]
     )
+
+
+def test_agent_threads_search_provider(tmp_path):
+    from heya.tools_web import SearchResult
+
+    class Provider:
+        def search(self, query, max_results=5):
+            return [SearchResult(title="R", url="https://r", snippet="snip")]
+
+    scripted = [
+        ChatResult(content=None, tool_calls=[ToolCall(id="1", name="web_search",
+            arguments='{"query": "heya"}')]),
+        ChatResult(content="searched"),
+    ]
+    client = FakeClient(scripted)
+    agent = Agent(client, allowed_roots=[tmp_path], cwd=tmp_path, approval=_AllowAll(),
+                  self_review=False, search_provider=Provider())
+    answer = agent.run("search for heya")
+    assert answer == "searched"
+    assert any(m["role"] == "tool" and "https://r" in m["content"] for m in client.calls[1])

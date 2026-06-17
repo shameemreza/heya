@@ -22,6 +22,7 @@ SYSTEM_PROMPT = (
     "guessing. Keep replies clear and direct, in natural human prose. When a task is "
     "done, give a short, plain final answer."
     " When a task involves writing, code review, debugging, or following standards, call read_guidance first to consult relevant internal guidance and follow it — it is the source of truth for standards and voice."
+    " You can search the web (web_search) and read pages (web_fetch) when a task needs current or external information; note that these send the query or URL to a third party."
 )
 
 SELF_REVIEW_NUDGE = (
@@ -47,6 +48,7 @@ class Agent:
         max_iters: int = DEFAULT_MAX_ITERS,
         command_timeout: float = DEFAULT_COMMAND_TIMEOUT,
         guidance_sources: Sequence[Path] = (),
+        search_provider=None,
     ) -> None:
         self.client = client
         self.allowed_roots = list(allowed_roots)
@@ -57,6 +59,7 @@ class Agent:
         self.max_iters = max_iters
         self.command_timeout = command_timeout
         self.guidance_sources = list(guidance_sources)
+        self.search_provider = search_provider
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
         self._mutated = False
 
@@ -108,6 +111,7 @@ class Agent:
             cwd=self.cwd,
             timeout=self.command_timeout,
             guidance_sources=self.guidance_sources,
+            search_provider=self.search_provider,
         )
         if call.name in ("write_file", "run_command") and not output.startswith("Error"):
             self._mutated = True
