@@ -32,18 +32,22 @@ _PLAYGROUND_URL = re.compile(r"https?://(?:localhost|127\.0\.0\.1):\d+")
 class PlaygroundSession:
     """A single disposable WordPress Playground server, managed via the registry."""
 
-    def __init__(self, registry, *, cwd: Path) -> None:
+    def __init__(self, registry, *, cwd: Path, allowed_roots) -> None:
         self._registry = registry
         self._cwd = Path(cwd)
+        self._allowed_roots = list(allowed_roots)
         self._id: str | None = None
 
     def start(self, blueprint=None) -> str:
         if shutil.which("npx") is None:
             return _PLAYGROUND_HINT
+        if self._id is not None:  # stop a prior server before starting a new one
+            self.stop()
+        safe_cwd = resolve_in_allowlist(self._cwd, self._allowed_roots)
         cmd = "npx @wp-playground/cli server"
         if blueprint:
             cmd += f" --blueprint={shlex.quote(str(blueprint))}"
-        mp = self._registry.start(cmd, cwd=self._cwd)
+        mp = self._registry.start(cmd, cwd=safe_cwd)
         self._id = mp.id
         for _ in range(40):  # ~10s: wait for the server to print its URL
             match = _PLAYGROUND_URL.search(self._registry.peek(mp.id))

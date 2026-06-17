@@ -41,7 +41,7 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
     search_provider = build_search_provider(load_search_config())
     browser_session = BrowserSession(headless=load_browser_headless())
     process_registry = ProcessRegistry()
-    playground_session = PlaygroundSession(process_registry, cwd=Path.cwd())
+    playground_session = PlaygroundSession(process_registry, cwd=Path.cwd(), allowed_roots=roots)
     wp_default_root = load_wp_path()
     client = LLMClient(profile)
     approval = ApprovalPolicy(

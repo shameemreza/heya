@@ -103,14 +103,14 @@ class _FakeReg:
 def test_playground_start_returns_url(tmp_path, monkeypatch):
     monkeypatch.setattr(wp_mod.shutil, "which", lambda _: "/usr/bin/npx")
     reg = _FakeReg(output="Server running at http://127.0.0.1:9400")
-    sess = PlaygroundSession(reg, cwd=tmp_path)
+    sess = PlaygroundSession(reg, cwd=tmp_path, allowed_roots=[tmp_path])
     out = sess.start()
     assert "http://127.0.0.1:9400" in out and "@wp-playground/cli" in reg.cmd
 
 
 def test_playground_missing_npx_hint(tmp_path, monkeypatch):
     monkeypatch.setattr(wp_mod.shutil, "which", lambda _: None)
-    sess = PlaygroundSession(_FakeReg(), cwd=tmp_path)
+    sess = PlaygroundSession(_FakeReg(), cwd=tmp_path, allowed_roots=[tmp_path])
     out = sess.start()
     assert "Playground is not available" in out
 
@@ -118,10 +118,58 @@ def test_playground_missing_npx_hint(tmp_path, monkeypatch):
 def test_playground_stop_kills(tmp_path, monkeypatch):
     monkeypatch.setattr(wp_mod.shutil, "which", lambda _: "/usr/bin/npx")
     reg = _FakeReg(output="http://127.0.0.1:9400")
-    sess = PlaygroundSession(reg, cwd=tmp_path)
+    sess = PlaygroundSession(reg, cwd=tmp_path, allowed_roots=[tmp_path])
     sess.start()
     sess.stop()
     assert reg.killed == ["p1"]
+
+
+def test_playground_cwd_outside_allowlist_errors(tmp_path, monkeypatch):
+    """start() raises ToolError when cwd is outside allowed_roots."""
+    other = tmp_path / "other"
+    other.mkdir()
+    monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/npx")
+    reg = _FakeReg()
+    session = PlaygroundSession(reg, cwd=tmp_path, allowed_roots=[other])
+    with pytest.raises(ToolError):
+        session.start()
+
+
+def test_playground_double_start_stops_prior(tmp_path, monkeypatch):
+    """Calling start() a second time kills the prior process before starting a new one."""
+    monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/npx")
+    monkeypatch.setattr("time.sleep", lambda _: None)
+
+    class _IncrReg:
+        def __init__(self):
+            self._n = 0
+            self.killed = []
+            self.started = []
+
+        def start(self, cmd, *, cwd):
+            self._n += 1
+            id_ = f"p{self._n}"
+            self.started.append(id_)
+            import types
+            mp = types.SimpleNamespace(id=id_)
+            return mp
+
+        def kill(self, id_):
+            self.killed.append(id_)
+            return f"Killed background process {id_}."
+
+        def peek(self, id_):
+            return "http://localhost:9400"
+
+    reg = _IncrReg()
+    session = PlaygroundSession(reg, cwd=tmp_path, allowed_roots=[tmp_path])
+
+    session.start()
+    first_id = session._id  # should be "p1"
+
+    session.start()
+
+    assert first_id in reg.killed, f"Expected {first_id!r} to be killed, got killed={reg.killed}"
 
 
 @pytest.mark.integration
