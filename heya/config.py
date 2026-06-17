@@ -208,6 +208,28 @@ def load_wp_path(config_path: Path | None = None) -> Path | None:
     return Path(raw).expanduser().resolve()
 
 
+def load_approval_allow(config_path: Path | None = None) -> tuple[str, ...]:
+    """Command prefixes that auto-approve, skipping the gate (fail-closed).
+
+    User file shape:
+        [approval]
+        allow = ["wp plugin list", "wp option get", "git status"]
+
+    A gated command auto-approves only when it starts with one of these. No
+    denylist — anything not listed still prompts. Defaults to none.
+    """
+    path = config_path or default_config_path()
+    if not path.exists():
+        return ()
+    data = tomllib.loads(path.read_text())
+    raw = data.get("approval", {}).get("allow")
+    if not raw:
+        return ()
+    if not isinstance(raw, list) or not all(isinstance(e, str) for e in raw):
+        raise ConfigError("approval.allow must be a list of strings.")
+    return tuple(raw)
+
+
 def load_profiles(config_path: Path | None = None) -> dict[str, Profile]:
     """Built-in profiles merged with any user-defined ones from a TOML file.
 

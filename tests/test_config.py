@@ -212,3 +212,15 @@ def test_load_wp_path_reads_wordpress_section(tmp_path):
 def test_load_wp_path_absent_is_none(tmp_path):
     from heya.config import load_wp_path
     assert load_wp_path(tmp_path / "missing.toml") is None
+
+
+def test_load_approval_allow_reads_list(tmp_path):
+    from heya.config import load_approval_allow
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('[approval]\nallow = ["wp plugin list", "wp option get"]\n')
+    assert load_approval_allow(cfg) == ("wp plugin list", "wp option get")
+
+
+def test_load_approval_allow_absent_is_empty(tmp_path):
+    from heya.config import load_approval_allow
+    assert load_approval_allow(tmp_path / "missing.toml") == ()

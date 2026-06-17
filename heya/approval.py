@@ -27,16 +27,31 @@ def prompt_stdin(name: str, detail: str) -> str:
 
 
 class ApprovalPolicy:
-    def __init__(self, *, auto_approve: bool = False, approver: Approver = prompt_stdin) -> None:
+    def __init__(
+        self,
+        *,
+        auto_approve: bool = False,
+        approver: Approver = prompt_stdin,
+        allow: tuple[str, ...] = (),
+    ) -> None:
         self.auto_approve = auto_approve
         self._approver = approver
+        self._allow = tuple(allow)
         self._always: set[str] = set()
+
+    @staticmethod
+    def _command_of(detail: str) -> str:
+        """The command portion of a describe_call string ('name → cmd' → 'cmd')."""
+        return detail.split("→", 1)[1].strip() if "→" in detail else detail.strip()
 
     def check(self, name: str, detail: str) -> bool:
         """Return True if the tool may run."""
         if name not in GATED_TOOLS:
             return True
         if self.auto_approve or name in self._always:
+            return True
+        command = self._command_of(detail)
+        if any(command.startswith(prefix) for prefix in self._allow):
             return True
         decision = self._approver(name, detail)
         if decision == "always":
