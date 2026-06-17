@@ -7,7 +7,7 @@ changed something, one scoped self-review pass runs.
 """
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -46,7 +46,7 @@ class Agent:
         self_review: bool = True,
         max_iters: int = DEFAULT_MAX_ITERS,
         command_timeout: float = DEFAULT_COMMAND_TIMEOUT,
-        guidance_sources=(),
+        guidance_sources: Sequence[Path] = (),
     ) -> None:
         self.client = client
         self.allowed_roots = list(allowed_roots)
