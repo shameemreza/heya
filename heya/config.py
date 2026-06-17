@@ -173,6 +173,20 @@ def load_search_config(config_path: Path | None = None) -> SearchConfig:
     return SearchConfig(provider=provider, api_key_env=raw.get("api_key_env"))
 
 
+def load_browser_headless(config_path: Path | None = None) -> bool:
+    """Whether the browser runs headless (default) or visibly.
+
+    User file shape:
+        [browser]
+        headless = false   # watch the browser work; default true
+    """
+    path = config_path or default_config_path()
+    if not path.exists():
+        return True
+    data = tomllib.loads(path.read_text())
+    return bool(data.get("browser", {}).get("headless", True))
+
+
 def load_profiles(config_path: Path | None = None) -> dict[str, Profile]:
     """Built-in profiles merged with any user-defined ones from a TOML file.
 

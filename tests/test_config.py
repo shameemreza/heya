@@ -187,3 +187,16 @@ def test_search_config_rejects_unknown_provider(tmp_path):
     cfg_file.write_text('[search]\nprovider = "googol"\n')
     with pytest.raises(ConfigError):
         load_search_config(config_path=cfg_file)
+
+
+from heya.config import load_browser_headless
+
+
+def test_browser_headless_defaults_true(tmp_path):
+    assert load_browser_headless(config_path=tmp_path / "missing.toml") is True
+
+
+def test_browser_headless_can_be_disabled(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[browser]\nheadless = false\n")
+    assert load_browser_headless(config_path=cfg) is False

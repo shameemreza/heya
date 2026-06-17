@@ -29,3 +29,14 @@ def test_always_allows_for_rest_of_session():
     assert policy.check("run_command", "run_command → ls") is True
     assert policy.check("run_command", "run_command → pwd") is True
     assert calls == ["run_command"]  # only prompted once
+
+
+def test_browser_click_and_type_are_gated():
+    denied = ApprovalPolicy(approver=lambda name, detail: "no")
+    assert denied.check("browser_click", "browser_click → Go") is False
+    assert denied.check("browser_type", "browser_type → Email") is False
+
+
+def test_browser_navigate_is_not_gated():
+    denied = ApprovalPolicy(approver=lambda name, detail: "no")
+    assert denied.check("browser_navigate", "browser_navigate → https://x") is True
