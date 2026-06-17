@@ -11,7 +11,7 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
-from .tools_files import ToolError, read_file, run_command, write_file
+from .tools_files import ToolError, read_file, resolve_in_allowlist, run_command, write_file
 from .tools_guidance import read_guidance as _read_guidance
 from .tools_web import web_fetch, web_search
 
@@ -100,6 +100,30 @@ TOOL_SCHEMAS: list[dict] = [
             },
         },
     },
+    {"type": "function", "function": {
+        "name": "browser_navigate",
+        "description": "Open a URL in the browser and return the page's readable text. Starts the browser if needed.",
+        "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}}},
+    {"type": "function", "function": {
+        "name": "browser_snapshot",
+        "description": "Return the current browser page's readable text (re-read after an action).",
+        "parameters": {"type": "object", "properties": {}, "required": []}}},
+    {"type": "function", "function": {
+        "name": "browser_click",
+        "description": "Click an element on the current page by its visible text, role name, or a CSS selector.",
+        "parameters": {"type": "object", "properties": {"target": {"type": "string"}}, "required": ["target"]}}},
+    {"type": "function", "function": {
+        "name": "browser_type",
+        "description": "Type text into a form field identified by its label, placeholder, or a CSS selector.",
+        "parameters": {"type": "object", "properties": {"target": {"type": "string"}, "text": {"type": "string"}}, "required": ["target", "text"]}}},
+    {"type": "function", "function": {
+        "name": "browser_screenshot",
+        "description": "Save a full-page PNG screenshot of the current page. Path must be inside an allowed folder.",
+        "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "Where to save (optional; defaults to the working directory)."}}, "required": []}}},
+    {"type": "function", "function": {
+        "name": "browser_evidence",
+        "description": "Return console messages and network errors captured during this browser session.",
+        "parameters": {"type": "object", "properties": {}, "required": []}}},
 ]
 
 
@@ -112,6 +136,7 @@ def dispatch_tool(
     timeout: float,
     guidance_sources: Sequence[Path] = (),
     search_provider=None,
+    browser_session=None,
 ) -> str:
     """Run one model tool-call. Returns a string result (errors included)."""
     try:
@@ -144,6 +169,26 @@ def dispatch_tool(
             return web_search(args["query"], provider=search_provider, max_results=max_results)
         if name == "web_fetch":
             return web_fetch(args["url"], timeout=timeout)
+        if name in (
+            "browser_navigate", "browser_snapshot", "browser_click",
+            "browser_type", "browser_screenshot", "browser_evidence",
+        ):
+            if browser_session is None:
+                raise ToolError("the browser is not available in this context")
+            if name == "browser_navigate":
+                return browser_session.navigate(args["url"])
+            if name == "browser_snapshot":
+                return browser_session.snapshot()
+            if name == "browser_click":
+                return browser_session.click(args["target"])
+            if name == "browser_type":
+                return browser_session.type_text(args["target"], args["text"])
+            if name == "browser_evidence":
+                return browser_session.evidence()
+            if name == "browser_screenshot":
+                raw = args.get("path") or str(Path(cwd) / "heya-screenshot.png")
+                safe = resolve_in_allowlist(raw, allowed_roots)
+                return browser_session.screenshot(safe)
         return f"Error: unknown tool {name!r}."
     except ToolError as exc:
         return f"Error: {exc}"
@@ -169,4 +214,12 @@ def describe_call(name: str, arguments: str) -> str:
         return f"web_search → {args.get('query', '?')}"
     if name == "web_fetch":
         return f"web_fetch → {args.get('url', '?')}"
+    if name == "browser_navigate":
+        return f"browser_navigate → {args.get('url', '?')}"
+    if name == "browser_click":
+        return f"browser_click → {args.get('target', '?')}"
+    if name == "browser_type":
+        return f"browser_type → {args.get('target', '?')}"
+    if name in ("browser_snapshot", "browser_screenshot", "browser_evidence"):
+        return name
     return f"{name} {args}"

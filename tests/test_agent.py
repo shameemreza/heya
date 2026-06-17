@@ -199,3 +199,37 @@ def test_agent_threads_search_provider(tmp_path):
     answer = agent.run("search for heya")
     assert answer == "searched"
     assert any(m["role"] == "tool" and "https://r" in m["content"] for m in client.calls[1])
+
+
+def test_agent_threads_browser_session(tmp_path):
+    class Session:
+        def navigate(self, url):
+            return f"navigated {url}"
+        def close(self):
+            self.closed = True
+
+    scripted = [
+        ChatResult(content=None, tool_calls=[ToolCall(id="1", name="browser_navigate",
+            arguments='{"url": "https://x"}')]),
+        ChatResult(content="done"),
+    ]
+    client = FakeClient(scripted)
+    session = Session()
+    agent = Agent(client, allowed_roots=[tmp_path], cwd=tmp_path, approval=_AllowAll(),
+                  self_review=False, browser_session=session)
+    answer = agent.run("open x")
+    assert answer == "done"
+    assert any(m["role"] == "tool" and "navigated https://x" in m["content"] for m in client.calls[1])
+
+
+def test_agent_close_closes_browser(tmp_path):
+    class Session:
+        closed = False
+        def close(self):
+            self.closed = True
+
+    session = Session()
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), browser_session=session)
+    agent.close()
+    assert session.closed is True

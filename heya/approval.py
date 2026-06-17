@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-GATED_TOOLS = frozenset({"write_file", "run_command"})
+GATED_TOOLS = frozenset({"write_file", "run_command", "browser_click", "browser_type"})
 
 Approver = Callable[[str, str], str]
 

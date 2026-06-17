@@ -44,3 +44,19 @@ def test_interactive_exits_on_quit_command(capsys):
     stdin = io.StringIO("hello\nquit\nnever\n")
     run_cli(build_parser().parse_args([]), make_agent=lambda args: agent, stdin=stdin)
     assert agent.prompts == ["hello"]
+
+
+def test_run_cli_closes_agent(capsys):
+    class ClosableAgent:
+        def __init__(self):
+            self.closed = False
+            self.messages = []
+        def run(self, text):
+            return "ok"
+        def close(self):
+            self.closed = True
+
+    import io
+    agent = ClosableAgent()
+    run_cli(build_parser().parse_args(["hi"]), make_agent=lambda args: agent, stdin=io.StringIO(""))
+    assert agent.closed is True

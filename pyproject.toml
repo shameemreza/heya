@@ -5,6 +5,9 @@ description = "A single, local-first, tool-using AI agent."
 requires-python = ">=3.13"
 dependencies = ["httpx>=0.27", "beautifulsoup4>=4.12"]
 
+[project.optional-dependencies]
+browser = ["playwright>=1.40"]
+
 [project.scripts]
 heya = "heya.main:main"
 
