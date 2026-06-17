@@ -23,6 +23,7 @@ SYSTEM_PROMPT = (
     "done, give a short, plain final answer."
     " When a task involves writing, code review, debugging, or following standards, call read_guidance first to consult relevant internal guidance and follow it — it is the source of truth for standards and voice."
     " You can search the web (web_search) and read pages (web_fetch) when a task needs current or external information; note that these send the query or URL to a third party."
+    " You can drive a real browser to reproduce issues: browser_navigate, browser_snapshot, browser_click, browser_type, browser_screenshot, and browser_evidence (console and network errors). Take a snapshot after each action to see the result."
 )
 
 SELF_REVIEW_NUDGE = (
@@ -49,6 +50,7 @@ class Agent:
         command_timeout: float = DEFAULT_COMMAND_TIMEOUT,
         guidance_sources: Sequence[Path] = (),
         search_provider=None,
+        browser_session=None,
     ) -> None:
         self.client = client
         self.allowed_roots = list(allowed_roots)
@@ -60,6 +62,7 @@ class Agent:
         self.command_timeout = command_timeout
         self.guidance_sources = list(guidance_sources)
         self.search_provider = search_provider
+        self.browser_session = browser_session
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
         self._mutated = False
 
@@ -73,6 +76,11 @@ class Agent:
             self._mutated = False
             answer = self._loop()
         return answer
+
+    def close(self) -> None:
+        """Release external resources (the browser session, if any)."""
+        if self.browser_session is not None:
+            self.browser_session.close()
 
     def _loop(self) -> str:
         for _ in range(self.max_iters):
@@ -112,6 +120,7 @@ class Agent:
             timeout=self.command_timeout,
             guidance_sources=self.guidance_sources,
             search_provider=self.search_provider,
+            browser_session=self.browser_session,
         )
         if call.name in ("write_file", "run_command") and not output.startswith("Error"):
             self._mutated = True

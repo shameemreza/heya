@@ -8,8 +8,12 @@ from typing import Any, Callable, TextIO
 
 from .agent import Agent, DEFAULT_MAX_ITERS
 from .approval import ApprovalPolicy, prompt_stdin
-from .config import load_allowed_roots, load_guidance_paths, load_profiles, load_search_config, resolve_profile
+from .config import (
+    load_allowed_roots, load_browser_headless, load_guidance_paths,
+    load_profiles, load_search_config, resolve_profile,
+)
 from .llm_client import LLMClient
+from .tools_browser import BrowserSession
 from .tools_guidance import BUNDLED_GUIDANCE_DIR
 from .tools_web import build_search_provider
 
@@ -33,6 +37,7 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
     roots = list(load_allowed_roots()) + [Path(p).expanduser().resolve() for p in args.allow]
     guidance_sources = (BUNDLED_GUIDANCE_DIR, *load_guidance_paths())
     search_provider = build_search_provider(load_search_config())
+    browser_session = BrowserSession(headless=load_browser_headless())
     client = LLMClient(profile)
     approval = ApprovalPolicy(auto_approve=args.auto_approve, approver=prompt_stdin)
 
@@ -50,6 +55,7 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
         max_iters=args.max_iters,
         guidance_sources=guidance_sources,
         search_provider=search_provider,
+        browser_session=browser_session,
     )
 
 
@@ -62,26 +68,31 @@ def run_cli(
     agent = make_agent(args)
     # The agent streams its reply live via on_text; run_cli only ends each
     # turn's line, so the answer is printed once (not streamed and re-printed).
-    if args.task:
-        agent.run(" ".join(args.task))
-        sys.stdout.write("\n")
+    try:
+        if args.task:
+            agent.run(" ".join(args.task))
+            sys.stdout.write("\n")
+            return 0
+        stream = stdin if stdin is not None else sys.stdin
+        while True:
+            try:
+                line = stream.readline()
+            except (EOFError, KeyboardInterrupt):
+                break
+            if line == "":  # EOF
+                break
+            text = line.strip()
+            if not text:
+                continue
+            if text.lower() in EXIT_WORDS:
+                break
+            agent.run(text)
+            sys.stdout.write("\n")
         return 0
-    stream = stdin if stdin is not None else sys.stdin
-    while True:
-        try:
-            line = stream.readline()
-        except (EOFError, KeyboardInterrupt):
-            break
-        if line == "":  # EOF
-            break
-        text = line.strip()
-        if not text:
-            continue
-        if text.lower() in EXIT_WORDS:
-            break
-        agent.run(text)
-        sys.stdout.write("\n")
-    return 0
+    finally:
+        close = getattr(agent, "close", None)
+        if callable(close):
+            close()
 
 
 def main(argv: list[str] | None = None) -> int:

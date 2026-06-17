@@ -168,3 +168,72 @@ def test_dispatch_web_fetch_routes(tmp_path, monkeypatch):
 def test_describe_call_web_tools():
     assert "web_search" in describe_call("web_search", json.dumps({"query": "q"}))
     assert "web_fetch" in describe_call("web_fetch", json.dumps({"url": "https://x"}))
+
+
+class _FakeSession:
+    def __init__(self):
+        self.calls = []
+
+    def navigate(self, url):
+        self.calls.append(("navigate", url)); return f"NAV {url}"
+
+    def snapshot(self):
+        self.calls.append(("snapshot",)); return "SNAP"
+
+    def click(self, target):
+        self.calls.append(("click", target)); return f"CLICK {target}"
+
+    def type_text(self, target, text):
+        self.calls.append(("type", target, text)); return f"TYPE {target}={text}"
+
+    def screenshot(self, path):
+        self.calls.append(("screenshot", path)); return f"SHOT {path}"
+
+    def evidence(self):
+        self.calls.append(("evidence",)); return "EVIDENCE"
+
+
+def test_schemas_include_browser_tools():
+    names = {s["function"]["name"] for s in TOOL_SCHEMAS}
+    assert {"browser_navigate", "browser_snapshot", "browser_click",
+            "browser_type", "browser_screenshot", "browser_evidence"} <= names
+
+
+def test_dispatch_browser_navigate(tmp_path):
+    s = _FakeSession()
+    out = dispatch_tool("browser_navigate", json.dumps({"url": "https://x"}),
+                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, browser_session=s)
+    assert out == "NAV https://x"
+
+
+def test_dispatch_browser_click_and_type(tmp_path):
+    s = _FakeSession()
+    assert "CLICK Go" in dispatch_tool("browser_click", json.dumps({"target": "Go"}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, browser_session=s)
+    assert "TYPE Email=a@b" in dispatch_tool("browser_type", json.dumps({"target": "Email", "text": "a@b"}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, browser_session=s)
+
+
+def test_dispatch_browser_screenshot_uses_allowlist(tmp_path):
+    s = _FakeSession()
+    out = dispatch_tool("browser_screenshot", json.dumps({"path": str(tmp_path / "a.png")}),
+                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, browser_session=s)
+    assert "SHOT" in out and "a.png" in out
+
+
+def test_dispatch_browser_screenshot_denies_outside_allowlist(tmp_path):
+    s = _FakeSession()
+    out = dispatch_tool("browser_screenshot", json.dumps({"path": "/etc/evil.png"}),
+                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, browser_session=s)
+    assert "Error" in out
+
+
+def test_dispatch_browser_without_session_errors(tmp_path):
+    out = dispatch_tool("browser_navigate", json.dumps({"url": "https://x"}),
+                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10)
+    assert "Error" in out
+
+
+def test_describe_call_browser_tools():
+    assert "browser_navigate" in describe_call("browser_navigate", json.dumps({"url": "https://x"}))
+    assert "browser_click" in describe_call("browser_click", json.dumps({"target": "Go"}))
