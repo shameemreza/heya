@@ -20,13 +20,14 @@ class ToolError(Exception):
 def resolve_in_allowlist(path: Path | str, allowed_roots: Sequence[Path]) -> Path:
     """Resolve path to a real absolute path under one of allowed_roots, or raise.
 
-    strict=False so a not-yet-created target still resolves its existing prefix
-    (and any symlinks within it), closing traversal and symlink-escape holes.
+    Path.resolve() is non-strict, so a not-yet-created target still resolves its
+    existing prefix (and any symlinks within it), closing traversal and
+    symlink-escape holes before the containment check.
     """
     resolved = Path(path).resolve()
     for root in allowed_roots:
         root_resolved = Path(root).resolve()
-        if resolved == root_resolved or resolved.is_relative_to(root_resolved):
+        if resolved.is_relative_to(root_resolved):
             return resolved
     raise ToolError(f"Path {resolved} is outside the allowed roots")
 
