@@ -110,3 +110,61 @@ def test_dispatch_read_guidance_reads_named(tmp_path):
 
 def test_describe_call_summarizes_read_guidance():
     assert "read_guidance" in describe_call("read_guidance", json.dumps({"name": "voice"}))
+
+
+class _FakeProvider:
+    def search(self, query, max_results=5):
+        from heya.tools_web import SearchResult
+        return [SearchResult(title="Fake", url="https://fake", snippet=f"about {query}")]
+
+
+def test_schemas_include_web_tools():
+    names = {s["function"]["name"] for s in TOOL_SCHEMAS}
+    assert {"web_search", "web_fetch"} <= names
+
+
+def test_dispatch_web_search_uses_provider(tmp_path):
+    out = dispatch_tool(
+        "web_search", json.dumps({"query": "pytest"}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, search_provider=_FakeProvider(),
+    )
+    assert "Fake" in out and "https://fake" in out and "about pytest" in out
+
+
+def test_dispatch_web_search_without_provider_errors(tmp_path):
+    out = dispatch_tool(
+        "web_search", json.dumps({"query": "x"}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10,
+    )
+    assert "Error" in out
+
+
+def test_dispatch_web_search_clamps_max_results_to_at_least_one(tmp_path):
+    class _Recorder:
+        seen = None
+
+        def search(self, query, max_results=5):
+            _Recorder.seen = max_results
+            from heya.tools_web import SearchResult
+            return [SearchResult(title="t", url="https://u", snippet="s")]
+
+    rec = _Recorder()
+    dispatch_tool(
+        "web_search", json.dumps({"query": "x", "max_results": 0}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, search_provider=rec,
+    )
+    assert _Recorder.seen == 1  # 0 clamped up to 1
+
+
+def test_dispatch_web_fetch_routes(tmp_path, monkeypatch):
+    monkeypatch.setattr("heya.tools.web_fetch", lambda url, *, timeout: f"FETCHED {url}")
+    out = dispatch_tool(
+        "web_fetch", json.dumps({"url": "https://example.com"}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10,
+    )
+    assert "FETCHED https://example.com" in out
+
+
+def test_describe_call_web_tools():
+    assert "web_search" in describe_call("web_search", json.dumps({"query": "q"}))
+    assert "web_fetch" in describe_call("web_fetch", json.dumps({"url": "https://x"}))

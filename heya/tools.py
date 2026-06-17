@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .tools_files import ToolError, read_file, run_command, write_file
 from .tools_guidance import read_guidance as _read_guidance
+from .tools_web import web_fetch, web_search
 
 TOOL_SCHEMAS: list[dict] = [
     {
@@ -72,6 +73,33 @@ TOOL_SCHEMAS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the web for current or external information. Returns a numbered list of results (title, URL, snippet).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The search query."},
+                    "max_results": {"type": "integer", "description": "How many results (default 5)."},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_fetch",
+            "description": "Fetch an http/https web page and return its readable text content.",
+            "parameters": {
+                "type": "object",
+                "properties": {"url": {"type": "string", "description": "The page URL to fetch."}},
+                "required": ["url"],
+            },
+        },
+    },
 ]
 
 
@@ -83,6 +111,7 @@ def dispatch_tool(
     cwd: Path,
     timeout: float,
     guidance_sources: Sequence[Path] = (),
+    search_provider=None,
 ) -> str:
     """Run one model tool-call. Returns a string result (errors included)."""
     try:
@@ -106,6 +135,15 @@ def dispatch_tool(
             )
         if name == "read_guidance":
             return _read_guidance(args.get("name") or None, sources=guidance_sources)
+        if name == "web_search":
+            try:
+                max_results = int(args.get("max_results", 5))
+            except (TypeError, ValueError):
+                max_results = 5  # keep dispatch_tool's never-raise contract on bad input
+            max_results = max(1, max_results)  # uniform across providers; never zero/negative
+            return web_search(args["query"], provider=search_provider, max_results=max_results)
+        if name == "web_fetch":
+            return web_fetch(args["url"], timeout=timeout)
         return f"Error: unknown tool {name!r}."
     except ToolError as exc:
         return f"Error: {exc}"
@@ -127,4 +165,8 @@ def describe_call(name: str, arguments: str) -> str:
         return f"read_file → {args.get('path', '?')}"
     if name == "read_guidance":
         return f"read_guidance → {args.get('name') or '(list)'}"
+    if name == "web_search":
+        return f"web_search → {args.get('query', '?')}"
+    if name == "web_fetch":
+        return f"web_fetch → {args.get('url', '?')}"
     return f"{name} {args}"

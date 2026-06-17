@@ -153,3 +153,37 @@ def test_load_guidance_paths_rejects_non_string_entry(tmp_path):
     cfg.write_text("[guidance]\n" "paths = [123]\n")
     with pytest.raises(ConfigError):
         load_guidance_paths(config_path=cfg)
+
+
+from heya.config import SearchConfig, load_search_config
+
+
+def test_search_config_defaults_to_duckduckgo(tmp_path):
+    cfg = load_search_config(config_path=tmp_path / "missing.toml")
+    assert cfg.provider == "duckduckgo"
+    assert cfg.api_key_env is None
+
+
+def test_search_config_reads_section(tmp_path):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text('[search]\nprovider = "brave"\napi_key_env = "BRAVE_API_KEY"\n')
+    cfg = load_search_config(config_path=cfg_file)
+    assert cfg.provider == "brave"
+    assert cfg.api_key_env == "BRAVE_API_KEY"
+
+
+def test_search_config_api_key_reads_env(monkeypatch):
+    monkeypatch.setenv("MY_SEARCH_KEY", "sk-123")
+    cfg = SearchConfig(provider="tavily", api_key_env="MY_SEARCH_KEY")
+    assert cfg.api_key == "sk-123"
+
+
+def test_search_config_api_key_none_without_env():
+    assert SearchConfig(provider="duckduckgo").api_key is None
+
+
+def test_search_config_rejects_unknown_provider(tmp_path):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text('[search]\nprovider = "googol"\n')
+    with pytest.raises(ConfigError):
+        load_search_config(config_path=cfg_file)
