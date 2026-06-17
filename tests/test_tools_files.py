@@ -110,3 +110,13 @@ def test_write_file_denies_outside_root(tmp_path):
     outside = tmp_path.parent / "escape.txt"
     with pytest.raises(ToolError):
         write_file(outside, "data", allowed_roots=[tmp_path])
+
+
+def test_write_file_denies_before_creating_dirs(tmp_path):
+    # Outside-root write must be refused before any directory is created.
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "elsewhere" / "deep" / "out.txt"
+    with pytest.raises(ToolError):
+        write_file(outside, "data", allowed_roots=[root])
+    assert not (tmp_path / "elsewhere").exists()
