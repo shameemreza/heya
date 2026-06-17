@@ -11,6 +11,7 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
+from .text import truncate_output
 from .tools_files import ToolError, read_file, resolve_in_allowlist, run_command, write_file
 from .tools_guidance import read_guidance as _read_guidance
 from .tools_web import web_fetch, web_search
@@ -147,13 +148,13 @@ def dispatch_tool(
         return f"Error: tool arguments must be a JSON object, got {type(args).__name__}."
     try:
         if name == "read_file":
-            return read_file(args["path"], allowed_roots=allowed_roots)
+            return truncate_output(read_file(args["path"], allowed_roots=allowed_roots))
         if name == "write_file":
             n = write_file(args["path"], args["content"], allowed_roots=allowed_roots)
             return f"Wrote {n} bytes to {args['path']}."
         if name == "run_command":
             result = run_command(args["cmd"], cwd=cwd, allowed_roots=allowed_roots, timeout=timeout)
-            return (
+            return truncate_output(
                 f"exit_code: {result.exit_code}\n"
                 f"stdout:\n{result.stdout}\n"
                 f"stderr:\n{result.stderr}"

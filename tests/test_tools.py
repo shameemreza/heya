@@ -48,6 +48,17 @@ def test_dispatch_run_command_returns_output(tmp_path):
     assert "hi" in out
 
 
+def test_dispatch_read_file_is_truncated(tmp_path):
+    big = "z" * 40000
+    (tmp_path / "big.txt").write_text(big)
+    out = dispatch_tool(
+        "read_file", json.dumps({"path": str(tmp_path / "big.txt")}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10,
+    )
+    assert len(out) < len(big)
+    assert "truncated" in out
+
+
 def test_dispatch_tool_error_becomes_string(tmp_path):
     out = dispatch_tool(
         "read_file",
