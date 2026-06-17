@@ -92,3 +92,44 @@ def test_conversation_memory_persists_across_turns(tmp_path):
     second_turn_messages = client.calls[1]
     assert any(m["role"] == "user" and m["content"] == "one" for m in second_turn_messages)
     assert any(m["role"] == "assistant" and m["content"] == "first" for m in second_turn_messages)
+
+
+from heya.agent import SELF_REVIEW_NUDGE
+
+
+def test_self_review_runs_after_a_write(tmp_path):
+    scripted = [
+        ChatResult(content=None, tool_calls=[ToolCall(id="1", name="write_file",
+            arguments=f'{{"path": "{tmp_path / "out.txt"}", "content": "x"}}')]),
+        ChatResult(content="done writing"),
+        ChatResult(content="reviewed, all good"),
+    ]
+    client = FakeClient(scripted)
+    agent = Agent(client, allowed_roots=[tmp_path], cwd=tmp_path, approval=_AllowAll(), self_review=True)
+    answer = agent.run("write out.txt")
+    assert answer == "reviewed, all good"
+    assert any(
+        m["role"] == "user" and m["content"] == SELF_REVIEW_NUDGE
+        for m in client.calls[-1]
+    )
+
+
+def test_self_review_skipped_when_nothing_changed(tmp_path):
+    client = FakeClient([ChatResult(content="just an answer")])
+    agent = Agent(client, allowed_roots=[tmp_path], cwd=tmp_path, approval=_AllowAll(), self_review=True)
+    answer = agent.run("what is 2+2?")
+    assert answer == "just an answer"
+    assert len(client.calls) == 1  # no extra review turn
+
+
+def test_self_review_skipped_when_disabled(tmp_path):
+    scripted = [
+        ChatResult(content=None, tool_calls=[ToolCall(id="1", name="write_file",
+            arguments=f'{{"path": "{tmp_path / "out.txt"}", "content": "x"}}')]),
+        ChatResult(content="done writing"),
+    ]
+    client = FakeClient(scripted)
+    agent = Agent(client, allowed_roots=[tmp_path], cwd=tmp_path, approval=_AllowAll(), self_review=False)
+    answer = agent.run("write out.txt")
+    assert answer == "done writing"
+    assert len(client.calls) == 2  # no review turn
