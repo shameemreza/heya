@@ -14,6 +14,6 @@ heya = "heya.main:main"
 [tool.pytest.ini_options]
 addopts = "-m 'not integration'"
 markers = [
-    "integration: hits a live model endpoint (run with: pytest -m integration)",
+    "integration: hits a live model endpoint or external CLI/subprocess (run with: pytest -m integration)",
 ]
 testpaths = ["tests"]

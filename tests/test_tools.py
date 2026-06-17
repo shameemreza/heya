@@ -48,6 +48,17 @@ def test_dispatch_run_command_returns_output(tmp_path):
     assert "hi" in out
 
 
+def test_dispatch_read_file_is_truncated(tmp_path):
+    big = "z" * 40000
+    (tmp_path / "big.txt").write_text(big)
+    out = dispatch_tool(
+        "read_file", json.dumps({"path": str(tmp_path / "big.txt")}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10,
+    )
+    assert len(out) < len(big)
+    assert "truncated" in out
+
+
 def test_dispatch_tool_error_becomes_string(tmp_path):
     out = dispatch_tool(
         "read_file",
@@ -237,3 +248,114 @@ def test_dispatch_browser_without_session_errors(tmp_path):
 def test_describe_call_browser_tools():
     assert "browser_navigate" in describe_call("browser_navigate", json.dumps({"url": "https://x"}))
     assert "browser_click" in describe_call("browser_click", json.dumps({"target": "Go"}))
+
+
+class _FakeRegistry:
+    def __init__(self):
+        self.started = []
+        self.killed = []
+
+    def start(self, cmd, *, cwd):
+        self.started.append((cmd, cwd))
+        from heya.process import ManagedProcess
+        return ManagedProcess(id="p1", pid=4242)
+
+    def poll(self, id):
+        return f"[{id} running]\nsome output"
+
+    def kill(self, id):
+        self.killed.append(id)
+        return f"Killed background process {id}."
+
+
+def test_run_command_background_starts_and_returns_handle(tmp_path):
+    reg = _FakeRegistry()
+    out = dispatch_tool(
+        "run_command", json.dumps({"cmd": "npm run dev", "background": True}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, process_registry=reg,
+    )
+    assert "p1" in out and "4242" in out
+    assert reg.started and reg.started[0][0] == "npm run dev"
+
+
+def test_check_command_polls_registry(tmp_path):
+    reg = _FakeRegistry()
+    out = dispatch_tool(
+        "check_command", json.dumps({"id": "p1"}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, process_registry=reg,
+    )
+    assert "some output" in out
+
+
+def test_kill_command_kills_registry(tmp_path):
+    reg = _FakeRegistry()
+    out = dispatch_tool(
+        "kill_command", json.dumps({"id": "p1"}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, process_registry=reg,
+    )
+    assert "Killed" in out and reg.killed == ["p1"]
+
+
+def test_background_tools_without_registry_error(tmp_path):
+    out = dispatch_tool(
+        "check_command", json.dumps({"id": "p1"}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10,
+    )
+    assert "Error" in out
+
+
+def test_dispatch_read_log_routes(tmp_path):
+    (tmp_path / "wp-content").mkdir()
+    (tmp_path / "wp-content" / "debug.log").write_text("PHP Fatal error: boom\n")
+    out = dispatch_tool(
+        "read_log", json.dumps({"path": str(tmp_path), "grep": "Fatal"}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, wp_default_root=None,
+    )
+    assert "boom" in out
+
+
+def test_schemas_include_read_log():
+    names = {s["function"]["name"] for s in TOOL_SCHEMAS}
+    assert "read_log" in names
+
+
+def test_dispatch_run_wp_cli_routes(tmp_path, monkeypatch):
+    import heya.tools_wp as wp_mod
+    monkeypatch.setattr(wp_mod.shutil, "which", lambda _: "/usr/bin/wp")
+    monkeypatch.setattr(wp_mod, "run_command", lambda cmd, **k: __import__("heya.tools_files", fromlist=["CommandResult"]).CommandResult(stdout=cmd, stderr="", exit_code=0))
+    out = dispatch_tool(
+        "run_wp_cli", json.dumps({"args": "plugin list", "path": str(tmp_path)}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10,
+    )
+    assert "plugin list" in out
+
+
+def test_describe_run_wp_cli_shows_command():
+    assert "wp plugin list" in describe_call("run_wp_cli", json.dumps({"args": "plugin list"}))
+
+
+class _FakePlayground:
+    def __init__(self):
+        self.calls = []
+
+    def start(self, blueprint=None):
+        self.calls.append(("start", blueprint)); return "URL http://127.0.0.1:9400"
+
+    def stop(self):
+        self.calls.append(("stop",)); return "stopped"
+
+
+def test_dispatch_wp_playground_start_and_stop(tmp_path):
+    pg = _FakePlayground()
+    out = dispatch_tool("wp_playground", json.dumps({"action": "start"}),
+                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, playground_session=pg)
+    assert "9400" in out
+    out2 = dispatch_tool("wp_playground", json.dumps({"action": "stop"}),
+                         allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, playground_session=pg)
+    assert "stopped" in out2
+
+
+def test_dispatch_wp_playground_without_session_errors(tmp_path):
+    out = dispatch_tool("wp_playground", json.dumps({"action": "start"}),
+                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10)
+    assert "Error" in out

@@ -9,11 +9,13 @@ from typing import Any, Callable, TextIO
 from .agent import Agent, DEFAULT_MAX_ITERS
 from .approval import ApprovalPolicy, prompt_stdin
 from .config import (
-    load_allowed_roots, load_browser_headless, load_guidance_paths,
-    load_profiles, load_search_config, resolve_profile,
+    load_allowed_roots, load_approval_allow, load_browser_headless, load_guidance_paths,
+    load_profiles, load_search_config, load_wp_path, resolve_profile,
 )
 from .llm_client import LLMClient
+from .process import ProcessRegistry
 from .tools_browser import BrowserSession
+from .tools_wp import PlaygroundSession
 from .tools_guidance import BUNDLED_GUIDANCE_DIR
 from .tools_web import build_search_provider
 
@@ -38,8 +40,13 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
     guidance_sources = (BUNDLED_GUIDANCE_DIR, *load_guidance_paths())
     search_provider = build_search_provider(load_search_config())
     browser_session = BrowserSession(headless=load_browser_headless())
+    process_registry = ProcessRegistry()
+    playground_session = PlaygroundSession(process_registry, cwd=Path.cwd(), allowed_roots=roots)
+    wp_default_root = load_wp_path()
     client = LLMClient(profile)
-    approval = ApprovalPolicy(auto_approve=args.auto_approve, approver=prompt_stdin)
+    approval = ApprovalPolicy(
+        auto_approve=args.auto_approve, approver=prompt_stdin, allow=load_approval_allow()
+    )
 
     def on_text(chunk: str) -> None:
         sys.stdout.write(chunk)
@@ -56,6 +63,9 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
         guidance_sources=guidance_sources,
         search_provider=search_provider,
         browser_session=browser_session,
+        process_registry=process_registry,
+        playground_session=playground_session,
+        wp_default_root=wp_default_root,
     )
 
 

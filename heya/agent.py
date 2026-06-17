@@ -24,6 +24,8 @@ SYSTEM_PROMPT = (
     " When a task involves writing, code review, debugging, or following standards, call read_guidance first to consult relevant internal guidance and follow it — it is the source of truth for standards and voice."
     " You can search the web (web_search) and read pages (web_fetch) when a task needs current or external information; note that these send the query or URL to a third party."
     " You can drive a real browser to reproduce issues: browser_navigate, browser_snapshot, browser_click, browser_type, browser_screenshot, and browser_evidence (console and network errors). Take a snapshot after each action to see the result."
+    " For WordPress work you can tail a site's error log (read_log), run WP-CLI (run_wp_cli), and boot a disposable clean WordPress to reproduce on (wp_playground). Each takes the site's root directory as `path`; if you cannot tell which site is meant, ask the user rather than guessing. Use dev/staging sites only, never production, and back up before destructive WP-CLI ops (db reset, site empty)."
+    " For long-lived commands (a dev server, a watcher), run_command with background=true returns a process id; read its output with check_command and stop it with kill_command."
 )
 
 SELF_REVIEW_NUDGE = (
@@ -51,6 +53,9 @@ class Agent:
         guidance_sources: Sequence[Path] = (),
         search_provider=None,
         browser_session=None,
+        process_registry=None,
+        wp_default_root=None,
+        playground_session=None,
     ) -> None:
         self.client = client
         self.allowed_roots = list(allowed_roots)
@@ -63,6 +68,9 @@ class Agent:
         self.guidance_sources = list(guidance_sources)
         self.search_provider = search_provider
         self.browser_session = browser_session
+        self.process_registry = process_registry
+        self.wp_default_root = wp_default_root
+        self.playground_session = playground_session
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
         self._mutated = False
 
@@ -78,9 +86,13 @@ class Agent:
         return answer
 
     def close(self) -> None:
-        """Release external resources (the browser session, if any)."""
+        """Release external resources (browser session and background processes)."""
         if self.browser_session is not None:
             self.browser_session.close()
+        if self.process_registry is not None:
+            self.process_registry.close()
+        if self.playground_session is not None:
+            self.playground_session.close()
 
     def _loop(self) -> str:
         for _ in range(self.max_iters):
@@ -121,7 +133,11 @@ class Agent:
             guidance_sources=self.guidance_sources,
             search_provider=self.search_provider,
             browser_session=self.browser_session,
+            process_registry=self.process_registry,
+            wp_default_root=self.wp_default_root,
+            playground_session=self.playground_session,
         )
-        if call.name in ("write_file", "run_command") and not output.startswith("Error"):
+        mutating = call.name in ("write_file", "run_command", "run_wp_cli")
+        if mutating and not output.startswith(("Error", "Started background process", "Declined")):
             self._mutated = True
         return output

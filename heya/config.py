@@ -187,6 +187,49 @@ def load_browser_headless(config_path: Path | None = None) -> bool:
     return bool(data.get("browser", {}).get("headless", True))
 
 
+def load_wp_path(config_path: Path | None = None) -> Path | None:
+    """Default WordPress root for the WP tools, if the user sets one.
+
+    User file shape:
+        [wordpress]
+        path = "~/Herd/my-site"   # optional; tools also accept a per-call path
+
+    Returns None when unset — the tools then use a per-call path or the cwd.
+    """
+    path = config_path or default_config_path()
+    if not path.exists():
+        return None
+    data = tomllib.loads(path.read_text())
+    raw = data.get("wordpress", {}).get("path")
+    if not raw:
+        return None
+    if not isinstance(raw, str):
+        raise ConfigError(f"wordpress.path must be a string, got {type(raw).__name__}")
+    return Path(raw).expanduser().resolve()
+
+
+def load_approval_allow(config_path: Path | None = None) -> tuple[str, ...]:
+    """Command prefixes that auto-approve, skipping the gate (fail-closed).
+
+    User file shape:
+        [approval]
+        allow = ["wp plugin list", "wp option get", "git status"]
+
+    A gated command auto-approves only when it starts with one of these. No
+    denylist — anything not listed still prompts. Defaults to none.
+    """
+    path = config_path or default_config_path()
+    if not path.exists():
+        return ()
+    data = tomllib.loads(path.read_text())
+    raw = data.get("approval", {}).get("allow")
+    if not raw:
+        return ()
+    if not isinstance(raw, list) or not all(isinstance(e, str) for e in raw):
+        raise ConfigError("approval.allow must be a list of strings.")
+    return tuple(raw)
+
+
 def load_profiles(config_path: Path | None = None) -> dict[str, Profile]:
     """Built-in profiles merged with any user-defined ones from a TOML file.
 

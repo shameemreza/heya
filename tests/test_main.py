@@ -60,3 +60,14 @@ def test_run_cli_closes_agent(capsys):
     agent = ClosableAgent()
     run_cli(build_parser().parse_args(["hi"]), make_agent=lambda args: agent, stdin=io.StringIO(""))
     assert agent.closed is True
+
+
+def test_default_make_agent_builds_with_wp_wiring(monkeypatch, tmp_path):
+    import heya.main as main_mod
+    # avoid a real LLM client/network: stub it
+    monkeypatch.setattr(main_mod, "LLMClient", lambda profile: object())
+    args = main_mod.build_parser().parse_args(["hi"])
+    agent = main_mod._default_make_agent(args)
+    assert agent.process_registry is not None
+    assert agent.playground_session is not None
+    agent.close()  # must tear down registry + sessions without error

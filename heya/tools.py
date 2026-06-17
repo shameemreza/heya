@@ -11,9 +11,11 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
+from .text import truncate_output
 from .tools_files import ToolError, read_file, resolve_in_allowlist, run_command, write_file
 from .tools_guidance import read_guidance as _read_guidance
 from .tools_web import web_fetch, web_search
+from .tools_wp import read_log, run_wp_cli
 
 TOOL_SCHEMAS: list[dict] = [
     {
@@ -47,14 +49,40 @@ TOOL_SCHEMAS: list[dict] = [
         "type": "function",
         "function": {
             "name": "run_command",
-            "description": "Run a shell command in the working directory (inside the allowed folders). Returns stdout, stderr, and exit code.",
+            "description": "Run a shell command in the working directory (inside the allowed folders). Returns stdout, stderr, and exit code. Set background=true for a long-lived process (dev server, watcher) — it returns a process id immediately; read it later with check_command and stop it with kill_command.",
             "parameters": {
                 "type": "object",
-                "properties": {"cmd": {"type": "string", "description": "The shell command to run."}},
+                "properties": {
+                    "cmd": {"type": "string", "description": "The shell command to run."},
+                    "background": {"type": "boolean", "description": "Run without waiting; returns a process id. Default false."},
+                },
                 "required": ["cmd"],
             },
         },
     },
+    {"type": "function", "function": {
+        "name": "check_command",
+        "description": "Read new output from a background process started with run_command(background=true), by its id.",
+        "parameters": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}}},
+    {"type": "function", "function": {
+        "name": "kill_command",
+        "description": "Stop a background process by its id.",
+        "parameters": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}}},
+    {"type": "function", "function": {
+        "name": "read_log",
+        "description": "Tail a WordPress site's wp-content/debug.log. Give the site's root as `path` (or rely on the configured default). Use `grep` to filter (e.g. 'Fatal error') and `lines` for how many.",
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string", "description": "WordPress root directory. Optional if a default is configured."},
+            "lines": {"type": "integer", "description": "How many trailing lines (default 200, max 2000)."},
+            "grep": {"type": "string", "description": "Only lines containing this substring."},
+        }, "required": []}}},
+    {"type": "function", "function": {
+        "name": "run_wp_cli",
+        "description": "Run a WP-CLI command against a WordPress site. Give the WP-CLI arguments in `args` (e.g. 'plugin list', 'option get siteurl'); the site root goes in `path` (or the configured default). Dev/staging only — back up before destructive ops (db reset, site empty).",
+        "parameters": {"type": "object", "properties": {
+            "args": {"type": "string", "description": "WP-CLI arguments after `wp`, e.g. 'plugin list'."},
+            "path": {"type": "string", "description": "WordPress root directory. Optional if a default is configured."},
+        }, "required": ["args"]}}},
     {
         "type": "function",
         "function": {
@@ -101,6 +129,13 @@ TOOL_SCHEMAS: list[dict] = [
         },
     },
     {"type": "function", "function": {
+        "name": "wp_playground",
+        "description": "Boot a disposable clean WordPress (WASM) to reproduce on, or stop it. action='start' returns a local URL you can drive with the browser tools; action='stop' tears it down. Optional `blueprint` (path or JSON) sets the WP version and plugins.",
+        "parameters": {"type": "object", "properties": {
+            "action": {"type": "string", "description": "'start' (default) or 'stop'."},
+            "blueprint": {"type": "string", "description": "Optional Playground blueprint path or JSON."},
+        }, "required": []}}},
+    {"type": "function", "function": {
         "name": "browser_navigate",
         "description": "Open a URL in the browser and return the page's readable text. Starts the browser if needed.",
         "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}}},
@@ -137,6 +172,9 @@ def dispatch_tool(
     guidance_sources: Sequence[Path] = (),
     search_provider=None,
     browser_session=None,
+    process_registry=None,
+    wp_default_root=None,
+    playground_session=None,
 ) -> str:
     """Run one model tool-call. Returns a string result (errors included)."""
     try:
@@ -147,17 +185,31 @@ def dispatch_tool(
         return f"Error: tool arguments must be a JSON object, got {type(args).__name__}."
     try:
         if name == "read_file":
-            return read_file(args["path"], allowed_roots=allowed_roots)
+            return truncate_output(read_file(args["path"], allowed_roots=allowed_roots))
         if name == "write_file":
             n = write_file(args["path"], args["content"], allowed_roots=allowed_roots)
             return f"Wrote {n} bytes to {args['path']}."
         if name == "run_command":
+            if args.get("background"):
+                if process_registry is None:
+                    raise ToolError("background processes are not available in this context")
+                safe_cwd = resolve_in_allowlist(cwd, allowed_roots)
+                mp = process_registry.start(args["cmd"], cwd=safe_cwd)
+                return f"Started background process {mp.id} (pid {mp.pid}). Use check_command {mp.id!r} to read output, kill_command to stop it."
             result = run_command(args["cmd"], cwd=cwd, allowed_roots=allowed_roots, timeout=timeout)
-            return (
+            return truncate_output(
                 f"exit_code: {result.exit_code}\n"
                 f"stdout:\n{result.stdout}\n"
                 f"stderr:\n{result.stderr}"
             )
+        if name == "check_command":
+            if process_registry is None:
+                raise ToolError("background processes are not available in this context")
+            return truncate_output(process_registry.poll(args["id"]))
+        if name == "kill_command":
+            if process_registry is None:
+                raise ToolError("background processes are not available in this context")
+            return process_registry.kill(args["id"])
         if name == "read_guidance":
             return _read_guidance(args.get("name") or None, sources=guidance_sources)
         if name == "web_search":
@@ -189,6 +241,22 @@ def dispatch_tool(
                 raw = args.get("path") or str(Path(cwd) / "heya-screenshot.png")
                 safe = resolve_in_allowlist(raw, allowed_roots)
                 return browser_session.screenshot(safe)
+        if name == "wp_playground":
+            if playground_session is None:
+                raise ToolError("the WordPress Playground is not available in this context")
+            if args.get("action") == "stop":
+                return playground_session.stop()
+            return playground_session.start(args.get("blueprint"))
+        if name == "read_log":
+            return read_log(
+                args.get("path"), allowed_roots=allowed_roots, cwd=cwd,
+                default_root=wp_default_root, lines=args.get("lines", 200), grep=args.get("grep"),
+            )
+        if name == "run_wp_cli":
+            return run_wp_cli(
+                args["args"], args.get("path"), allowed_roots=allowed_roots,
+                cwd=cwd, default_root=wp_default_root, timeout=timeout,
+            )
         return f"Error: unknown tool {name!r}."
     except ToolError as exc:
         return f"Error: {exc}"
@@ -205,7 +273,12 @@ def describe_call(name: str, arguments: str) -> str:
     if name == "write_file":
         return f"write_file → {args.get('path', '?')}"
     if name == "run_command":
-        return f"run_command → {args.get('cmd', '?')}"
+        bg = " (background)" if args.get("background") else ""
+        return f"run_command{bg} → {args.get('cmd', '?')}"
+    if name == "check_command":
+        return f"check_command → {args.get('id', '?')}"
+    if name == "kill_command":
+        return f"kill_command → {args.get('id', '?')}"
     if name == "read_file":
         return f"read_file → {args.get('path', '?')}"
     if name == "read_guidance":
@@ -222,4 +295,10 @@ def describe_call(name: str, arguments: str) -> str:
         return f"browser_type → {args.get('target', '?')}"
     if name in ("browser_snapshot", "browser_screenshot", "browser_evidence"):
         return name
+    if name == "wp_playground":
+        return f"wp_playground → {args.get('action') or 'start'}"
+    if name == "read_log":
+        return f"read_log → {args.get('path') or '(default site)'}"
+    if name == "run_wp_cli":
+        return f"run_wp_cli → wp {args.get('args', '?')}"
     return f"{name} {args}"

@@ -233,3 +233,40 @@ def test_agent_close_closes_browser(tmp_path):
                   approval=_AllowAll(), browser_session=session)
     agent.close()
     assert session.closed is True
+
+
+def test_agent_threads_process_registry(tmp_path, monkeypatch):
+    import heya.agent as agent_mod
+
+    captured = {}
+
+    def fake_dispatch(name, arguments, **kwargs):
+        captured.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr(agent_mod, "dispatch_tool", fake_dispatch)
+    agent = Agent(
+        FakeClient([ChatResult(content=None, tool_calls=[
+            ToolCall(id="1", name="check_command", arguments='{"id": "p1"}')
+        ]), ChatResult(content="done")]),
+        allowed_roots=[tmp_path],
+        cwd=tmp_path,
+        approval=_AllowAll(),
+        self_review=False,
+        process_registry="REG",
+    )
+    agent.run("check p1")
+    assert captured.get("process_registry") == "REG"
+
+
+def test_agent_close_closes_registry(tmp_path):
+    class Registry:
+        closed = False
+        def close(self):
+            self.closed = True
+
+    reg = Registry()
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), process_registry=reg)
+    agent.close()
+    assert reg.closed is True

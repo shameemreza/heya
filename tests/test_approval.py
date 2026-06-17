@@ -40,3 +40,27 @@ def test_browser_click_and_type_are_gated():
 def test_browser_navigate_is_not_gated():
     denied = ApprovalPolicy(approver=lambda name, detail: "no")
     assert denied.check("browser_navigate", "browser_navigate → https://x") is True
+
+
+def _deny(name, detail):
+    return "no"  # any prompt → denied, so only the allowlist can approve
+
+
+def test_allowlist_auto_approves_matching_command():
+    policy = ApprovalPolicy(approver=_deny, allow=["wp plugin list", "wp option get"])
+    assert policy.check("run_wp_cli", "run_wp_cli → wp plugin list --path=/x") is True
+
+
+def test_allowlist_does_not_approve_nonmatching():
+    policy = ApprovalPolicy(approver=_deny, allow=["wp plugin list"])
+    assert policy.check("run_wp_cli", "run_wp_cli → wp db reset --path=/x") is False
+
+
+def test_allowlist_matches_plain_run_command():
+    policy = ApprovalPolicy(approver=_deny, allow=["echo"])
+    assert policy.check("run_command", "run_command → echo hi") is True
+
+
+def test_empty_allowlist_still_prompts():
+    policy = ApprovalPolicy(approver=_deny, allow=[])
+    assert policy.check("run_command", "run_command → echo hi") is False
