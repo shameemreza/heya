@@ -21,6 +21,7 @@ SYSTEM_PROMPT = (
     "use. Prefer reading before writing. Use tools to get real answers rather than "
     "guessing. Keep replies clear and direct, in natural human prose. When a task is "
     "done, give a short, plain final answer."
+    " When a task involves writing, code review, debugging, or following standards, call read_guidance first to consult relevant internal guidance and follow it — it is the source of truth for standards and voice."
 )
 
 SELF_REVIEW_NUDGE = (
@@ -45,6 +46,7 @@ class Agent:
         self_review: bool = True,
         max_iters: int = DEFAULT_MAX_ITERS,
         command_timeout: float = DEFAULT_COMMAND_TIMEOUT,
+        guidance_sources=(),
     ) -> None:
         self.client = client
         self.allowed_roots = list(allowed_roots)
@@ -54,6 +56,7 @@ class Agent:
         self.self_review = self_review
         self.max_iters = max_iters
         self.command_timeout = command_timeout
+        self.guidance_sources = list(guidance_sources)
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
         self._mutated = False
 
@@ -104,6 +107,7 @@ class Agent:
             allowed_roots=self.allowed_roots,
             cwd=self.cwd,
             timeout=self.command_timeout,
+            guidance_sources=self.guidance_sources,
         )
         if call.name in ("write_file", "run_command") and not output.startswith("Error"):
             self._mutated = True

@@ -8,8 +8,9 @@ from typing import Any, Callable, TextIO
 
 from .agent import Agent, DEFAULT_MAX_ITERS
 from .approval import ApprovalPolicy, prompt_stdin
-from .config import load_allowed_roots, load_profiles, resolve_profile
+from .config import load_allowed_roots, load_guidance_paths, load_profiles, resolve_profile
 from .llm_client import LLMClient
+from .tools_guidance import BUNDLED_GUIDANCE_DIR
 
 EXIT_WORDS = frozenset({"exit", "quit"})
 
@@ -29,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
 def _default_make_agent(args: argparse.Namespace) -> Agent:
     profile = resolve_profile(args.profile, profiles=load_profiles())
     roots = list(load_allowed_roots()) + [Path(p).expanduser().resolve() for p in args.allow]
+    guidance_sources = (BUNDLED_GUIDANCE_DIR, *load_guidance_paths())
     client = LLMClient(profile)
     approval = ApprovalPolicy(auto_approve=args.auto_approve, approver=prompt_stdin)
 
@@ -44,6 +46,7 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
         on_text=on_text,
         self_review=not args.no_self_review,
         max_iters=args.max_iters,
+        guidance_sources=guidance_sources,
     )
 
 

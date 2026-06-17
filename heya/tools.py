@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .tools_files import ToolError, read_file, run_command, write_file
+from .tools_guidance import read_guidance as _read_guidance
 
 TOOL_SCHEMAS: list[dict] = [
     {
@@ -53,6 +54,24 @@ TOOL_SCHEMAS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_guidance",
+            "description": (
+                "List available internal guidance, or read one by name. Consult relevant "
+                "guidance before related work — it is the source of truth for standards and voice. "
+                "Call with no name to see what is available."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Guidance name to read. Omit to list all."}
+                },
+                "required": [],
+            },
+        },
+    },
 ]
 
 
@@ -63,6 +82,7 @@ def dispatch_tool(
     allowed_roots: Sequence[Path],
     cwd: Path,
     timeout: float,
+    guidance_sources: Sequence[Path] = (),
 ) -> str:
     """Run one model tool-call. Returns a string result (errors included)."""
     try:
@@ -84,6 +104,8 @@ def dispatch_tool(
                 f"stdout:\n{result.stdout}\n"
                 f"stderr:\n{result.stderr}"
             )
+        if name == "read_guidance":
+            return _read_guidance(args.get("name") or None, sources=guidance_sources)
         return f"Error: unknown tool {name!r}."
     except ToolError as exc:
         return f"Error: {exc}"
@@ -103,4 +125,6 @@ def describe_call(name: str, arguments: str) -> str:
         return f"run_command → {args.get('cmd', '?')}"
     if name == "read_file":
         return f"read_file → {args.get('path', '?')}"
+    if name == "read_guidance":
+        return f"read_guidance → {args.get('name') or '(list)'}"
     return f"{name} {args}"
