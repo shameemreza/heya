@@ -136,6 +136,43 @@ def load_guidance_paths(config_path: Path | None = None) -> tuple[Path, ...]:
     return tuple(Path(p).expanduser().resolve() for p in raw)
 
 
+KNOWN_SEARCH_PROVIDERS = frozenset({"duckduckgo", "brave", "tavily"})
+
+
+@dataclass(frozen=True)
+class SearchConfig:
+    provider: str = "duckduckgo"
+    api_key_env: str | None = None  # env var NAME holding the key, never the key
+
+    @property
+    def api_key(self) -> str | None:
+        if self.api_key_env is None:
+            return None
+        return os.environ.get(self.api_key_env)
+
+
+def load_search_config(config_path: Path | None = None) -> SearchConfig:
+    """Web-search provider selection.
+
+    User file shape:
+        [search]
+        provider = "brave"            # duckduckgo (default, keyless) | brave | tavily
+        api_key_env = "BRAVE_API_KEY" # required for brave/tavily; never the key itself
+    """
+    path = config_path or default_config_path()
+    if not path.exists():
+        return SearchConfig()
+    data = tomllib.loads(path.read_text())
+    raw = data.get("search")
+    if not raw:
+        return SearchConfig()
+    provider = raw.get("provider", "duckduckgo")
+    if provider not in KNOWN_SEARCH_PROVIDERS:
+        known = ", ".join(sorted(KNOWN_SEARCH_PROVIDERS))
+        raise ConfigError(f"Unknown search provider {provider!r}. Known: {known}")
+    return SearchConfig(provider=provider, api_key_env=raw.get("api_key_env"))
+
+
 def load_profiles(config_path: Path | None = None) -> dict[str, Profile]:
     """Built-in profiles merged with any user-defined ones from a TOML file.
 
