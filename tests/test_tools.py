@@ -69,6 +69,13 @@ def test_dispatch_unknown_tool_becomes_string(tmp_path):
     assert "Error" in out and "nope" in out
 
 
+def test_dispatch_non_dict_json_becomes_string(tmp_path):
+    # Valid JSON that isn't an object must not raise — the loop must keep going.
+    for arguments in ("123", "[1, 2, 3]", '"hi"', "null"):
+        out = dispatch_tool("read_file", arguments, allowed_roots=[tmp_path], cwd=tmp_path, timeout=10)
+        assert "Error" in out
+
+
 def test_describe_call_summarizes_write(tmp_path):
     summary = describe_call("write_file", json.dumps({"path": "out.txt", "content": "x"}))
     assert "write_file" in summary and "out.txt" in summary

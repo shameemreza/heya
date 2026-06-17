@@ -69,6 +69,8 @@ def dispatch_tool(
         args = json.loads(arguments) if arguments.strip() else {}
     except json.JSONDecodeError as exc:
         return f"Error: could not parse tool arguments as JSON: {exc}"
+    if not isinstance(args, dict):
+        return f"Error: tool arguments must be a JSON object, got {type(args).__name__}."
     try:
         if name == "read_file":
             return read_file(args["path"], allowed_roots=allowed_roots)
