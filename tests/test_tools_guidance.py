@@ -68,3 +68,14 @@ def test_malformed_utf8_file_does_not_crash_collection(tmp_path):
     items = collect_guidance([tmp_path])  # must not raise
     assert "good" in items and "bad" in items
     assert items["bad"].read()  # readable via errors="replace"
+
+
+from heya.tools_guidance import BUNDLED_GUIDANCE_DIR
+
+
+def test_bundled_guidance_is_discoverable():
+    items = collect_guidance([BUNDLED_GUIDANCE_DIR])
+    assert "writing-voice" in items
+    assert "code-review" in items
+    assert items["writing-voice"].description  # non-empty description
+    assert "voice" in items["writing-voice"].read().lower()
