@@ -27,3 +27,14 @@ def resolve_in_allowlist(path: Path | str, allowed_roots: Sequence[Path]) -> Pat
         if resolved == root_resolved or resolved.is_relative_to(root_resolved):
             return resolved
     raise ToolError(f"Path {resolved} is outside the allowed roots")
+
+
+def read_file(path: Path | str, *, allowed_roots: Sequence[Path]) -> str:
+    """Return the UTF-8 text of a file inside the allow-list."""
+    resolved = resolve_in_allowlist(path, allowed_roots)
+    try:
+        return resolved.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise ToolError(f"No such file: {resolved}") from exc
+    except IsADirectoryError as exc:
+        raise ToolError(f"Is a directory, not a file: {resolved}") from exc

@@ -60,3 +60,24 @@ def test_accepts_under_any_of_multiple_roots(tmp_path):
     root_b.mkdir()
     target = root_b / "file.txt"
     assert resolve_in_allowlist(target, [root_a, root_b]) == target.resolve()
+
+
+from heya.tools_files import read_file
+
+
+def test_read_file_returns_text_inside_root(tmp_path):
+    f = tmp_path / "note.txt"
+    f.write_text("hello heya")
+    assert read_file(f, allowed_roots=[tmp_path]) == "hello heya"
+
+
+def test_read_file_denies_outside_root(tmp_path):
+    outside = tmp_path.parent / "outside.txt"
+    outside.write_text("secret")
+    with pytest.raises(ToolError):
+        read_file(outside, allowed_roots=[tmp_path])
+
+
+def test_read_file_missing_raises_tool_error(tmp_path):
+    with pytest.raises(ToolError):
+        read_file(tmp_path / "ghost.txt", allowed_roots=[tmp_path])
