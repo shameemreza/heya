@@ -78,12 +78,16 @@ class BrowserSession:
     def snapshot(self) -> str:
         page = self._require_page()
         try:
-            text = page.inner_text("body")
-        except Exception:
-            text = ""
+            url, title = page.url, page.title()
+            try:
+                text = page.inner_text("body")
+            except Exception:
+                text = ""
+        except Exception as exc:  # keep the never-raise contract if the page is gone
+            raise ToolError(f"Could not read the page: {exc}") from exc
         if len(text) > _MAX_TEXT:
             text = text[:_MAX_TEXT] + "\n…[truncated]"
-        return f"URL: {page.url}\nTitle: {page.title()}\n\n{text}".strip()
+        return f"URL: {url}\nTitle: {title}\n\n{text}".strip()
 
     def _locate(self, page, target: str, *, fillable: bool = False):
         """Find an element by user-visible cues, falling back to a CSS selector."""
