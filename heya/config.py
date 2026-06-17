@@ -96,6 +96,15 @@ def load_allowed_roots(config_path: Path | None = None) -> tuple[Path, ...]:
     raw = data.get("workspace", {}).get("allowed_roots")
     if not raw:
         return default_allowed_roots()
+    if not isinstance(raw, list):
+        raise ConfigError(
+            f"workspace.allowed_roots must be a list of paths, got {type(raw).__name__}"
+        )
+    for entry in raw:
+        if not isinstance(entry, str):
+            raise ConfigError(
+                f"workspace.allowed_roots entries must be strings, got {entry!r}"
+            )
     return tuple(Path(p).expanduser().resolve() for p in raw)
 
 

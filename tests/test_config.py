@@ -98,3 +98,23 @@ def test_load_allowed_roots_expands_user(tmp_path):
     )
     roots = load_allowed_roots(config_path=cfg)
     assert roots == (Path.home().resolve(),)
+
+
+def test_load_allowed_roots_rejects_non_list(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        "[workspace]\n"
+        'allowed_roots = "/just/a/string"\n'
+    )
+    with pytest.raises(ConfigError):
+        load_allowed_roots(config_path=cfg)
+
+
+def test_load_allowed_roots_rejects_non_string_entry(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        "[workspace]\n"
+        'allowed_roots = [123]\n'
+    )
+    with pytest.raises(ConfigError):
+        load_allowed_roots(config_path=cfg)
