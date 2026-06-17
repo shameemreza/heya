@@ -15,7 +15,7 @@ from .text import truncate_output
 from .tools_files import ToolError, read_file, resolve_in_allowlist, run_command, write_file
 from .tools_guidance import read_guidance as _read_guidance
 from .tools_web import web_fetch, web_search
-from .tools_wp import read_log
+from .tools_wp import read_log, run_wp_cli
 
 TOOL_SCHEMAS: list[dict] = [
     {
@@ -76,6 +76,13 @@ TOOL_SCHEMAS: list[dict] = [
             "lines": {"type": "integer", "description": "How many trailing lines (default 200, max 2000)."},
             "grep": {"type": "string", "description": "Only lines containing this substring."},
         }, "required": []}}},
+    {"type": "function", "function": {
+        "name": "run_wp_cli",
+        "description": "Run a WP-CLI command against a WordPress site. Give the WP-CLI arguments in `args` (e.g. 'plugin list', 'option get siteurl'); the site root goes in `path` (or the configured default). Dev/staging only — back up before destructive ops (db reset, site empty).",
+        "parameters": {"type": "object", "properties": {
+            "args": {"type": "string", "description": "WP-CLI arguments after `wp`, e.g. 'plugin list'."},
+            "path": {"type": "string", "description": "WordPress root directory. Optional if a default is configured."},
+        }, "required": ["args"]}}},
     {
         "type": "function",
         "function": {
@@ -231,6 +238,11 @@ def dispatch_tool(
                 args.get("path"), allowed_roots=allowed_roots, cwd=cwd,
                 default_root=wp_default_root, lines=args.get("lines", 200), grep=args.get("grep"),
             )
+        if name == "run_wp_cli":
+            return run_wp_cli(
+                args["args"], args.get("path"), allowed_roots=allowed_roots,
+                cwd=cwd, default_root=wp_default_root, timeout=timeout,
+            )
         return f"Error: unknown tool {name!r}."
     except ToolError as exc:
         return f"Error: {exc}"
@@ -271,4 +283,6 @@ def describe_call(name: str, arguments: str) -> str:
         return name
     if name == "read_log":
         return f"read_log → {args.get('path') or '(default site)'}"
+    if name == "run_wp_cli":
+        return f"run_wp_cli → wp {args.get('args', '?')}"
     return f"{name} {args}"

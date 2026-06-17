@@ -1,5 +1,6 @@
 import pytest
 
+import heya.tools_wp as wp_mod
 from heya.tools_wp import read_log, resolve_wp_root
 from heya.tools_files import ToolError
 
@@ -38,3 +39,38 @@ def test_resolve_wp_root_falls_back_to_default_then_cwd(tmp_path):
     assert resolve_wp_root(None, allowed_roots=[tmp_path], cwd=tmp_path) == tmp_path.resolve()
     sub = tmp_path / "site"; sub.mkdir()
     assert resolve_wp_root(None, allowed_roots=[tmp_path], cwd=tmp_path, default_root=sub) == sub.resolve()
+
+
+def test_run_wp_cli_injects_path(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake_run_command(cmd, *, cwd, allowed_roots, timeout):
+        seen["cmd"] = cmd
+        from heya.tools_files import CommandResult
+        return CommandResult(stdout="ok", stderr="", exit_code=0)
+
+    monkeypatch.setattr(wp_mod, "run_command", fake_run_command)
+    monkeypatch.setattr(wp_mod.shutil, "which", lambda _: "/usr/bin/wp")
+    out = wp_mod.run_wp_cli("plugin list", str(tmp_path), allowed_roots=[tmp_path], cwd=tmp_path, timeout=10)
+    assert "--path=" in seen["cmd"] and "plugin list" in seen["cmd"]
+    assert "ok" in out
+
+
+def test_run_wp_cli_respects_user_path(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake_run_command(cmd, *, cwd, allowed_roots, timeout):
+        seen["cmd"] = cmd
+        from heya.tools_files import CommandResult
+        return CommandResult(stdout="", stderr="", exit_code=0)
+
+    monkeypatch.setattr(wp_mod, "run_command", fake_run_command)
+    monkeypatch.setattr(wp_mod.shutil, "which", lambda _: "/usr/bin/wp")
+    wp_mod.run_wp_cli("plugin list --path=/custom", str(tmp_path), allowed_roots=[tmp_path], cwd=tmp_path, timeout=10)
+    assert seen["cmd"].count("--path=") == 1  # did not double-inject
+
+
+def test_run_wp_cli_missing_binary_hint(tmp_path, monkeypatch):
+    monkeypatch.setattr(wp_mod.shutil, "which", lambda _: None)
+    out = wp_mod.run_wp_cli("plugin list", str(tmp_path), allowed_roots=[tmp_path], cwd=tmp_path, timeout=10)
+    assert "WP-CLI is not available" in out

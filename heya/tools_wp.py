@@ -8,6 +8,7 @@ present; absent, the tools return install hints and never raise.
 """
 from __future__ import annotations
 
+import shlex
 import shutil
 from pathlib import Path
 
@@ -30,6 +31,21 @@ def resolve_wp_root(path, *, allowed_roots, cwd, default_root=None) -> Path:
     if not root.is_dir():
         raise ToolError(f"WordPress root is not a directory: {root}")
     return root
+
+
+def run_wp_cli(args, path, *, allowed_roots, cwd, default_root=None, timeout) -> str:
+    """Run `wp <args> --path=<root>`, confined to the resolved WordPress root."""
+    if shutil.which("wp") is None:
+        return _WPCLI_HINT
+    root = resolve_wp_root(path, allowed_roots=allowed_roots, cwd=cwd, default_root=default_root)
+    args = (args or "").strip()
+    cmd = f"wp {args}"
+    if "--path" not in args:
+        cmd += f" --path={shlex.quote(str(root))}"
+    result = run_command(cmd, cwd=root, allowed_roots=allowed_roots, timeout=timeout)
+    return truncate_output(
+        f"exit_code: {result.exit_code}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
 
 
 def read_log(path, *, allowed_roots, cwd, default_root=None, lines=200, grep=None) -> str:
