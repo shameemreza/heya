@@ -15,6 +15,7 @@ from .text import truncate_output
 from .tools_files import ToolError, read_file, resolve_in_allowlist, run_command, write_file
 from .tools_guidance import read_guidance as _read_guidance
 from .tools_web import web_fetch, web_search
+from .tools_wp import read_log
 
 TOOL_SCHEMAS: list[dict] = [
     {
@@ -67,6 +68,14 @@ TOOL_SCHEMAS: list[dict] = [
         "name": "kill_command",
         "description": "Stop a background process by its id.",
         "parameters": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}}},
+    {"type": "function", "function": {
+        "name": "read_log",
+        "description": "Tail a WordPress site's wp-content/debug.log. Give the site's root as `path` (or rely on the configured default). Use `grep` to filter (e.g. 'Fatal error') and `lines` for how many.",
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string", "description": "WordPress root directory. Optional if a default is configured."},
+            "lines": {"type": "integer", "description": "How many trailing lines (default 200, max 2000)."},
+            "grep": {"type": "string", "description": "Only lines containing this substring."},
+        }, "required": []}}},
     {
         "type": "function",
         "function": {
@@ -150,6 +159,7 @@ def dispatch_tool(
     search_provider=None,
     browser_session=None,
     process_registry=None,
+    wp_default_root=None,
 ) -> str:
     """Run one model tool-call. Returns a string result (errors included)."""
     try:
@@ -216,6 +226,11 @@ def dispatch_tool(
                 raw = args.get("path") or str(Path(cwd) / "heya-screenshot.png")
                 safe = resolve_in_allowlist(raw, allowed_roots)
                 return browser_session.screenshot(safe)
+        if name == "read_log":
+            return read_log(
+                args.get("path"), allowed_roots=allowed_roots, cwd=cwd,
+                default_root=wp_default_root, lines=args.get("lines", 200), grep=args.get("grep"),
+            )
         return f"Error: unknown tool {name!r}."
     except ToolError as exc:
         return f"Error: {exc}"
@@ -254,4 +269,6 @@ def describe_call(name: str, arguments: str) -> str:
         return f"browser_type → {args.get('target', '?')}"
     if name in ("browser_snapshot", "browser_screenshot", "browser_evidence"):
         return name
+    if name == "read_log":
+        return f"read_log → {args.get('path') or '(default site)'}"
     return f"{name} {args}"

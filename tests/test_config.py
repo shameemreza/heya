@@ -200,3 +200,15 @@ def test_browser_headless_can_be_disabled(tmp_path):
     cfg = tmp_path / "config.toml"
     cfg.write_text("[browser]\nheadless = false\n")
     assert load_browser_headless(config_path=cfg) is False
+
+
+def test_load_wp_path_reads_wordpress_section(tmp_path):
+    from heya.config import load_wp_path
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('[wordpress]\npath = "~/Herd/site"\n')
+    assert str(load_wp_path(cfg)).endswith("Herd/site")
+
+
+def test_load_wp_path_absent_is_none(tmp_path):
+    from heya.config import load_wp_path
+    assert load_wp_path(tmp_path / "missing.toml") is None

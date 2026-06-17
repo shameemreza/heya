@@ -302,3 +302,18 @@ def test_background_tools_without_registry_error(tmp_path):
         allowed_roots=[tmp_path], cwd=tmp_path, timeout=10,
     )
     assert "Error" in out
+
+
+def test_dispatch_read_log_routes(tmp_path):
+    (tmp_path / "wp-content").mkdir()
+    (tmp_path / "wp-content" / "debug.log").write_text("PHP Fatal error: boom\n")
+    out = dispatch_tool(
+        "read_log", json.dumps({"path": str(tmp_path), "grep": "Fatal"}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, wp_default_root=None,
+    )
+    assert "boom" in out
+
+
+def test_schemas_include_read_log():
+    names = {s["function"]["name"] for s in TOOL_SCHEMAS}
+    assert "read_log" in names
