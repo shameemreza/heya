@@ -7,8 +7,10 @@ policy and the tools stay trivially testable.
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
+import subprocess
+from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Sequence
 
 
 class ToolError(Exception):
@@ -47,3 +49,35 @@ def write_file(path: Path | str, content: str, *, allowed_roots: Sequence[Path])
     data = content.encode("utf-8")
     resolved.write_bytes(data)
     return len(data)
+
+
+@dataclass
+class CommandResult:
+    stdout: str
+    stderr: str
+    exit_code: int
+
+
+def run_command(
+    cmd: str,
+    *,
+    cwd: Path | str,
+    allowed_roots: Sequence[Path],
+    timeout: float,
+) -> CommandResult:
+    """Run a shell command confined to the allow-list. Timeout is required."""
+    resolved_cwd = resolve_in_allowlist(cwd, allowed_roots)
+    if not resolved_cwd.is_dir():
+        raise ToolError(f"cwd is not a directory: {resolved_cwd}")
+    try:
+        proc = subprocess.run(
+            cmd,
+            shell=True,
+            cwd=resolved_cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ToolError(f"Command timed out after {timeout}s: {cmd}") from exc
+    return CommandResult(stdout=proc.stdout, stderr=proc.stderr, exit_code=proc.returncode)

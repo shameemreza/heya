@@ -120,3 +120,37 @@ def test_write_file_denies_before_creating_dirs(tmp_path):
     with pytest.raises(ToolError):
         write_file(outside, "data", allowed_roots=[root])
     assert not (tmp_path / "elsewhere").exists()
+
+
+from heya.tools_files import run_command, CommandResult
+
+
+def test_run_command_captures_stdout_and_exit_zero(tmp_path):
+    result = run_command("echo hi", cwd=tmp_path, allowed_roots=[tmp_path], timeout=10)
+    assert isinstance(result, CommandResult)
+    assert result.stdout.strip() == "hi"
+    assert result.exit_code == 0
+
+
+def test_run_command_captures_nonzero_exit_and_stderr(tmp_path):
+    result = run_command(
+        "echo oops 1>&2; exit 3", cwd=tmp_path, allowed_roots=[tmp_path], timeout=10
+    )
+    assert result.exit_code == 3
+    assert "oops" in result.stderr
+
+
+def test_run_command_runs_in_given_cwd(tmp_path):
+    (tmp_path / "marker.txt").write_text("here")
+    result = run_command("ls", cwd=tmp_path, allowed_roots=[tmp_path], timeout=10)
+    assert "marker.txt" in result.stdout
+
+
+def test_run_command_denies_cwd_outside_root(tmp_path):
+    with pytest.raises(ToolError):
+        run_command("echo hi", cwd=tmp_path.parent, allowed_roots=[tmp_path], timeout=10)
+
+
+def test_run_command_times_out(tmp_path):
+    with pytest.raises(ToolError):
+        run_command("sleep 5", cwd=tmp_path, allowed_roots=[tmp_path], timeout=0.3)
