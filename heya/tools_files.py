@@ -8,9 +8,9 @@ policy and the tools stay trivially testable.
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Sequence
 
 
 class ToolError(Exception):

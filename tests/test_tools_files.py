@@ -1,6 +1,13 @@
 import pytest
 
-from heya.tools_files import ToolError, resolve_in_allowlist
+from heya.tools_files import (
+    CommandResult,
+    ToolError,
+    read_file,
+    resolve_in_allowlist,
+    run_command,
+    write_file,
+)
 
 
 def test_resolves_path_inside_root(tmp_path):
@@ -62,9 +69,6 @@ def test_accepts_under_any_of_multiple_roots(tmp_path):
     assert resolve_in_allowlist(target, [root_a, root_b]) == target.resolve()
 
 
-from heya.tools_files import read_file
-
-
 def test_read_file_returns_text_inside_root(tmp_path):
     f = tmp_path / "note.txt"
     f.write_text("hello heya")
@@ -81,9 +85,6 @@ def test_read_file_denies_outside_root(tmp_path):
 def test_read_file_missing_raises_tool_error(tmp_path):
     with pytest.raises(ToolError):
         read_file(tmp_path / "ghost.txt", allowed_roots=[tmp_path])
-
-
-from heya.tools_files import write_file
 
 
 def test_write_file_creates_and_returns_byte_count(tmp_path):
@@ -120,9 +121,6 @@ def test_write_file_denies_before_creating_dirs(tmp_path):
     with pytest.raises(ToolError):
         write_file(outside, "data", allowed_roots=[root])
     assert not (tmp_path / "elsewhere").exists()
-
-
-from heya.tools_files import run_command, CommandResult
 
 
 def test_run_command_captures_stdout_and_exit_zero(tmp_path):
