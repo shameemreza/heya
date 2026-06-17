@@ -60,3 +60,11 @@ def test_description_falls_back_to_first_real_line(tmp_path):
     (tmp_path / "note.md").write_text("# Heading\n\nThe first real line here.\n")
     items = collect_guidance([tmp_path])
     assert items["note"].description == "The first real line here."
+
+
+def test_malformed_utf8_file_does_not_crash_collection(tmp_path):
+    _skill(tmp_path, "good", "a good one")
+    (tmp_path / "bad.md").write_bytes(b"# Note\n\xff\xfe not valid utf-8\n")
+    items = collect_guidance([tmp_path])  # must not raise
+    assert "good" in items and "bad" in items
+    assert items["bad"].read()  # readable via errors="replace"

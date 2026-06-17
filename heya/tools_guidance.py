@@ -22,7 +22,8 @@ class GuidanceItem:
     path: Path
 
     def read(self) -> str:
-        return self.path.read_text(encoding="utf-8")
+        # errors="replace" so one malformed file in a user folder can't crash a read.
+        return self.path.read_text(encoding="utf-8", errors="replace")
 
 
 def _frontmatter(text: str) -> dict[str, str]:
@@ -43,7 +44,7 @@ def _frontmatter(text: str) -> dict[str, str]:
 def _describe(text: str, fallback: str) -> str:
     fm = _frontmatter(text)
     if fm.get("description"):
-        return fm["description"]
+        return fm["description"][:200]
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("---") or stripped.startswith("#"):
@@ -63,13 +64,11 @@ def collect_guidance(sources: Sequence[Path]) -> dict[str, GuidanceItem]:
             if entry.is_dir():
                 skill = entry / "SKILL.md"
                 if skill.is_file():
-                    items[entry.name] = GuidanceItem(
-                        entry.name, _describe(skill.read_text(encoding="utf-8"), entry.name), skill
-                    )
+                    text = skill.read_text(encoding="utf-8", errors="replace")
+                    items[entry.name] = GuidanceItem(entry.name, _describe(text, entry.name), skill)
             elif entry.suffix.lower() == ".md":
-                items[entry.stem] = GuidanceItem(
-                    entry.stem, _describe(entry.read_text(encoding="utf-8"), entry.stem), entry
-                )
+                text = entry.read_text(encoding="utf-8", errors="replace")
+                items[entry.stem] = GuidanceItem(entry.stem, _describe(text, entry.stem), entry)
     return items
 
 
