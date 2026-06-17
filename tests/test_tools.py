@@ -7,7 +7,7 @@ from heya.tools import TOOL_SCHEMAS, dispatch_tool, describe_call
 
 def test_schemas_cover_the_three_tools():
     names = {s["function"]["name"] for s in TOOL_SCHEMAS}
-    assert names == {"read_file", "write_file", "run_command"}
+    assert {"read_file", "write_file", "run_command"} <= names
     for s in TOOL_SCHEMAS:
         assert s["type"] == "function"
         assert "parameters" in s["function"]
@@ -79,3 +79,34 @@ def test_dispatch_non_dict_json_becomes_string(tmp_path):
 def test_describe_call_summarizes_write(tmp_path):
     summary = describe_call("write_file", json.dumps({"path": "out.txt", "content": "x"}))
     assert "write_file" in summary and "out.txt" in summary
+
+
+def test_schemas_include_read_guidance():
+    names = {s["function"]["name"] for s in TOOL_SCHEMAS}
+    assert "read_guidance" in names
+
+
+def test_dispatch_read_guidance_lists(tmp_path):
+    skill = tmp_path / "voice"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: voice\ndescription: how to write\n---\nbody\n")
+    out = dispatch_tool(
+        "read_guidance", "{}",
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, guidance_sources=[tmp_path],
+    )
+    assert "voice" in out and "how to write" in out
+
+
+def test_dispatch_read_guidance_reads_named(tmp_path):
+    skill = tmp_path / "voice"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: voice\ndescription: d\n---\nTHE VOICE RULES\n")
+    out = dispatch_tool(
+        "read_guidance", json.dumps({"name": "voice"}),
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, guidance_sources=[tmp_path],
+    )
+    assert "THE VOICE RULES" in out
+
+
+def test_describe_call_summarizes_read_guidance():
+    assert "read_guidance" in describe_call("read_guidance", json.dumps({"name": "voice"}))

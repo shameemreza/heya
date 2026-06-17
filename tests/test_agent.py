@@ -158,3 +158,24 @@ def test_assistant_message_carries_wire_valid_tool_calls(tmp_path):
     # The matching tool result references the same id.
     tool_msg = next(m for m in agent.messages if m["role"] == "tool")
     assert tool_msg["tool_call_id"] == "call_7"
+
+
+def test_agent_threads_guidance_sources(tmp_path):
+    skill = tmp_path / "voice"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: voice\ndescription: d\n---\nGROUNDING TEXT\n")
+    scripted = [
+        ChatResult(content=None, tool_calls=[ToolCall(id="1", name="read_guidance",
+            arguments='{"name": "voice"}')]),
+        ChatResult(content="grounded answer"),
+    ]
+    client = FakeClient(scripted)
+    agent = Agent(
+        client, allowed_roots=[tmp_path], cwd=tmp_path, approval=_AllowAll(),
+        self_review=False, guidance_sources=[tmp_path],
+    )
+    answer = agent.run("use the voice guidance")
+    assert answer == "grounded answer"
+    assert any(
+        m["role"] == "tool" and "GROUNDING TEXT" in m["content"] for m in client.calls[1]
+    )
