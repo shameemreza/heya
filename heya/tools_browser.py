@@ -85,6 +85,49 @@ class BrowserSession:
             text = text[:_MAX_TEXT] + "\n…[truncated]"
         return f"URL: {page.url}\nTitle: {page.title()}\n\n{text}".strip()
 
+    def _locate(self, page, target: str, *, fillable: bool = False):
+        """Find an element by user-visible cues, falling back to a CSS selector."""
+        if fillable:
+            for finder in (page.get_by_label, page.get_by_placeholder):
+                loc = finder(target)
+                if loc.count() > 0:
+                    return loc.first
+            return page.locator(target).first
+        for loc in (
+            page.get_by_role("button", name=target),
+            page.get_by_role("link", name=target),
+            page.get_by_text(target),
+        ):
+            if loc.count() > 0:
+                return loc.first
+        return page.locator(target).first
+
+    def click(self, target: str) -> str:
+        page = self._require_page()
+        try:
+            self._locate(page, target).click(timeout=10000)
+        except Exception as exc:
+            raise ToolError(f"Could not click {target!r}: {exc}") from exc
+        return self.snapshot()
+
+    def type_text(self, target: str, text: str) -> str:
+        page = self._require_page()
+        try:
+            self._locate(page, target, fillable=True).fill(text, timeout=10000)
+        except Exception as exc:
+            raise ToolError(f"Could not type into {target!r}: {exc}") from exc
+        return self.snapshot()
+
+    def screenshot(self, path: Path) -> str:
+        page = self._require_page()
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            page.screenshot(path=str(path), full_page=True)
+        except Exception as exc:
+            raise ToolError(f"Could not capture screenshot: {exc}") from exc
+        return f"Saved screenshot to {path}"
+
     def evidence(self) -> str:
         console = "\n".join(self._console[-50:]) or "(none)"
         network = "\n".join(self._network[-50:]) or "(none)"

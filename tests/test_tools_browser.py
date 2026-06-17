@@ -57,3 +57,57 @@ def test_console_is_captured_real():
         assert "evi-marker" in session.evidence()
     finally:
         session.close()
+
+
+def test_click_before_navigate_errors():
+    with pytest.raises(ToolError):
+        BrowserSession().click("Submit")
+
+
+def test_type_before_navigate_errors():
+    with pytest.raises(ToolError):
+        BrowserSession().type_text("Email", "x@y.com")
+
+
+FORM = (
+    "data:text/html,<title>F</title><body>"
+    "<input aria-label='Name'>"
+    "<button onclick=\"document.querySelector('h1')?document.querySelector('h1').remove():document.body.insertAdjacentHTML('beforeend','<h1>Clicked</h1>')\">Go</button>"
+    "</body>"
+)
+
+
+@pytest.mark.integration
+def test_click_changes_page_real():
+    session = BrowserSession()
+    try:
+        session.navigate(FORM)
+        out = session.click("Go")
+        assert "Clicked" in out
+    finally:
+        session.close()
+
+
+@pytest.mark.integration
+def test_type_fills_input_real():
+    session = BrowserSession()
+    try:
+        session.navigate(FORM)
+        session.type_text("Name", "Heya")
+        value = session._require_page().get_by_label("Name").input_value()
+        assert value == "Heya"
+    finally:
+        session.close()
+
+
+@pytest.mark.integration
+def test_screenshot_writes_png_real(tmp_path):
+    session = BrowserSession()
+    try:
+        session.navigate(FORM)
+        target = tmp_path / "shot.png"
+        out = session.screenshot(target)
+        assert target.exists() and target.stat().st_size > 0
+        assert str(target) in out
+    finally:
+        session.close()
