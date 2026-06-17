@@ -133,3 +133,28 @@ def test_self_review_skipped_when_disabled(tmp_path):
     answer = agent.run("write out.txt")
     assert answer == "done writing"
     assert len(client.calls) == 2  # no review turn
+
+
+def test_assistant_message_carries_wire_valid_tool_calls(tmp_path):
+    # Lock the OpenAI message envelope: an assistant turn with tool calls must
+    # serialize as {"type": "function", "function": {name, arguments}} so the
+    # following tool-result messages are accepted by the API.
+    (tmp_path / "a.txt").write_text("x")
+    scripted = [
+        ChatResult(content=None, tool_calls=[ToolCall(id="call_7", name="read_file",
+            arguments=f'{{"path": "{tmp_path / "a.txt"}"}}')]),
+        ChatResult(content="done"),
+    ]
+    agent, _ = make_agent(tmp_path, scripted)
+    agent.run("read it")
+    assistant = next(
+        m for m in agent.messages if m["role"] == "assistant" and m.get("tool_calls")
+    )
+    call = assistant["tool_calls"][0]
+    assert call["id"] == "call_7"
+    assert call["type"] == "function"
+    assert call["function"]["name"] == "read_file"
+    assert "path" in call["function"]["arguments"]
+    # The matching tool result references the same id.
+    tool_msg = next(m for m in agent.messages if m["role"] == "tool")
+    assert tool_msg["tool_call_id"] == "call_7"
