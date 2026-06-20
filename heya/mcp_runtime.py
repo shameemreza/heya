@@ -14,6 +14,7 @@ the REPL.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json as _json
 import os
 import sys
@@ -241,5 +242,61 @@ def render_tool_result(result) -> str:
     return "\n".join(p for p in parts if p) or "(no content)"
 
 
-async def _default_open_session(server, env, roots_cb):  # replaced in Task 5
-    raise ToolError("the mcp SDK opener is not installed yet")
+class _SDKToolsPage:
+    def __init__(self, result):
+        self.tools = [_SDKTool(t) for t in result.tools]
+        # SDK 1.x uses camelCase on the result object
+        self.next_cursor = getattr(result, "nextCursor", None)
+
+
+class _SDKTool:
+    def __init__(self, tool):
+        self.name = tool.name
+        self.description = tool.description or ""
+        # inputSchema is always a dict in SDK 1.x (required field)
+        self.input_schema = tool.inputSchema or {"type": "object", "properties": {}}
+
+
+class _SDKResult:
+    def __init__(self, result):
+        self.content = list(getattr(result, "content", None) or [])
+        # SDK 1.x uses camelCase on the result object
+        self.is_error = bool(getattr(result, "isError", False))
+        self.structured_content = getattr(result, "structuredContent", None)
+        # Normalize image block attribute: render_tool_result reads `block.mime`
+        # but SDK 1.x ImageContent uses `mimeType`.
+        for block in self.content:
+            if getattr(block, "type", "") == "image" and not hasattr(block, "mime"):
+                block.mime = getattr(block, "mimeType", None)
+
+
+class _SDKSession:
+    """Adapts an mcp.ClientSession to Heya's uniform Session interface."""
+
+    def __init__(self, session):
+        self._session = session
+
+    async def initialize(self):
+        await self._session.initialize()
+
+    async def list_tools(self, cursor):
+        return _SDKToolsPage(await self._session.list_tools(cursor=cursor))
+
+    async def call_tool(self, name, arguments):
+        return _SDKResult(await self._session.call_tool(name, arguments or {}))
+
+
+@contextlib.asynccontextmanager
+async def _default_open_session(server, env, roots_cb):
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+    from mcp.types import ListRootsResult, Root
+
+    # SDK 1.x ListRootsFnT signature: async def __call__(self, context) -> ListRootsResult
+    async def _list_roots(_context):
+        return ListRootsResult(roots=[Root(uri=uri, name=name) for uri, name in roots_cb])
+
+    params = StdioServerParameters(command=server.command, args=list(server.args), env=env)
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write, list_roots_callback=_list_roots) as session:
+            yield _SDKSession(session)
