@@ -20,10 +20,47 @@ class FakePage:
         self.next_cursor = next_cursor
 
 
+class FakeResource:
+    def __init__(self, uri, name="", description="", mime_type="text/plain"):
+        self.uri = uri
+        self.name = name
+        self.description = description
+        self.mime_type = mime_type
+
+
+class FakeResourcePage:
+    def __init__(self, resources, next_cursor=None):
+        self.resources = resources
+        self.next_cursor = next_cursor
+
+
+class FakePromptArg:
+    def __init__(self, name):
+        self.name = name
+
+
+class FakePrompt:
+    def __init__(self, name, description="", arguments=()):
+        self.name = name
+        self.description = description
+        self.arguments = [FakePromptArg(a) for a in arguments]
+
+
+class FakePromptPage:
+    def __init__(self, prompts, next_cursor=None):
+        self.prompts = prompts
+        self.next_cursor = next_cursor
+
+
 class FakeSession:
     """Uniform Session the opener yields. Pages tools to exercise pagination."""
-    def __init__(self, pages, *, roots_cb=None):
+    def __init__(self, pages, *, resource_pages=None, prompt_pages=None, roots_cb=None,
+                 supports_resources=True, supports_prompts=True):
         self._pages = pages            # list[FakePage]
+        self._resource_pages = resource_pages if resource_pages is not None else [FakeResourcePage([])]
+        self._prompt_pages = prompt_pages if prompt_pages is not None else [FakePromptPage([])]
+        self._supports_resources = supports_resources
+        self._supports_prompts = supports_prompts
         self.initialized = False
         self.roots_cb = roots_cb
         self.closed = False
@@ -34,6 +71,18 @@ class FakeSession:
     async def list_tools(self, cursor):
         idx = 0 if cursor is None else int(cursor)
         return self._pages[idx]
+
+    async def list_resources(self, cursor):
+        if not self._supports_resources:
+            raise RuntimeError("Method not found")
+        idx = 0 if cursor is None else int(cursor)
+        return self._resource_pages[idx]
+
+    async def list_prompts(self, cursor):
+        if not self._supports_prompts:
+            raise RuntimeError("Method not found")
+        idx = 0 if cursor is None else int(cursor)
+        return self._prompt_pages[idx]
 
 
 def make_opener(pages_by_server, *, fail=(), hang=()):
@@ -251,5 +300,68 @@ def test_call_tool_unknown_server_raises():
     try:
         with pytest.raises(ToolError):
             rt.call_tool("nope", "x", {})
+    finally:
+        rt.close()
+
+
+# --- resources and prompts capture tests ---
+
+def _res_opener(pages, resource_pages=None, prompt_pages=None, **kw):
+    import contextlib
+    @contextlib.asynccontextmanager
+    async def opener(server, env, roots_cb):
+        yield FakeSession(pages, resource_pages=resource_pages, prompt_pages=prompt_pages,
+                          roots_cb=roots_cb, **kw)
+    return opener
+
+
+def test_resources_and_prompts_captured_at_connect():
+    rt = MCPRuntime([cfg("demo")], open_session=_res_opener(
+        [FakePage([FakeTool("t")])],
+        resource_pages=[FakeResourcePage([FakeResource("file:///a", "A")])],
+        prompt_pages=[FakePromptPage([FakePrompt("p", "desc", ("x",))])],
+    ))
+    rt.connect_all()
+    try:
+        assert rt.has_resources() is True
+        assert rt.has_prompts() is True
+        (srv, res), = rt.list_resources()
+        assert srv == "demo" and res["uri"] == "file:///a" and res["name"] == "A"
+        (psrv, pr), = rt.list_prompts()
+        assert psrv == "demo" and pr["name"] == "p" and pr["arguments"] == ["x"]
+    finally:
+        rt.close()
+
+
+def test_resource_pagination_collects_all_pages():
+    rt = MCPRuntime([cfg("demo")], open_session=_res_opener(
+        [FakePage([FakeTool("t")])],
+        resource_pages=[
+            FakeResourcePage([FakeResource("file:///a")], next_cursor="1"),
+            FakeResourcePage([FakeResource("file:///b")], next_cursor=None),
+        ],
+    ))
+    rt.connect_all()
+    try:
+        uris = sorted(r["uri"] for _, r in rt.list_resources())
+        assert uris == ["file:///a", "file:///b"]
+    finally:
+        rt.close()
+
+
+def test_capability_absence_is_tolerant():
+    # A server that does not support resources/prompts captures empty, connect still succeeds.
+    rt = MCPRuntime([cfg("demo")], open_session=_res_opener(
+        [FakePage([FakeTool("t")])],
+        supports_resources=False, supports_prompts=False,
+    ))
+    rt.connect_all()
+    try:
+        assert rt.has_resources() is False
+        assert rt.has_prompts() is False
+        assert rt.list_resources() == []
+        assert rt.list_prompts() == []
+        # the server is still connected — its tool is present
+        assert [s["name"] for _, s in rt.list_tools()] == ["t"]
     finally:
         rt.close()

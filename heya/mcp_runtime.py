@@ -27,10 +27,12 @@ from .tools_files import ToolError
 
 
 class _Connected:
-    def __init__(self, server: MCPServerConfig, session, tools: list, stop: asyncio.Event):
+    def __init__(self, server: MCPServerConfig, session, tools: list, resources: list, prompts: list, stop: asyncio.Event):
         self.server = server
         self.session = session
         self.tools = tools          # list of uniform tool objects (.name/.description/.input_schema)
+        self.resources = resources  # list of resource objects captured at connect
+        self.prompts = prompts      # list of prompt objects captured at connect
         self.stop = stop
 
 
@@ -128,8 +130,10 @@ class MCPRuntime:
         try:
             async with self._open_session(server, env, self._roots_cb()) as session:
                 await session.initialize()
-                tools = await self._list_all_tools(session)
-                connected = _Connected(server, session, tools, stop)
+                tools = await self._list_all(session.list_tools, "tools", tolerant=False)
+                resources = await self._list_all(session.list_resources, "resources", tolerant=True)
+                prompts = await self._list_all(session.list_prompts, "prompts", tolerant=True)
+                connected = _Connected(server, session, tools, resources, prompts, stop)
                 ready.set_result(connected)
                 await stop.wait()
         except asyncio.CancelledError:
@@ -140,14 +144,19 @@ class MCPRuntime:
             if not ready.done():
                 ready.set_exception(exc if isinstance(exc, Exception) else RuntimeError(str(exc)))
 
-    async def _list_all_tools(self, session) -> list:
-        tools, cursor = [], None
-        while True:
-            page = await session.list_tools(cursor)
-            tools.extend(page.tools)
-            cursor = page.next_cursor
-            if not cursor:
-                return tools
+    async def _list_all(self, list_fn, attr, *, tolerant) -> list:
+        items, cursor = [], None
+        try:
+            while True:
+                page = await list_fn(cursor)
+                items.extend(getattr(page, attr))
+                cursor = page.next_cursor
+                if not cursor:
+                    return items
+        except Exception:
+            if tolerant:
+                return []
+            raise
 
     # ---- accessors ------------------------------------------------------------
 
@@ -163,6 +172,35 @@ class MCPRuntime:
                         "inputSchema": tool.input_schema or {"type": "object", "properties": {}},
                     }))
         return out
+
+    def list_resources(self) -> list[tuple[str, dict]]:
+        out: list[tuple[str, dict]] = []
+        for conn in self._connected.values():
+            for r in conn.resources:
+                out.append((conn.server.name, {
+                    "uri": getattr(r, "uri", ""),
+                    "name": getattr(r, "name", "") or "",
+                    "description": getattr(r, "description", "") or "",
+                    "mimeType": getattr(r, "mime_type", "") or "",
+                }))
+        return out
+
+    def list_prompts(self) -> list[tuple[str, dict]]:
+        out: list[tuple[str, dict]] = []
+        for conn in self._connected.values():
+            for p in conn.prompts:
+                out.append((conn.server.name, {
+                    "name": getattr(p, "name", ""),
+                    "description": getattr(p, "description", "") or "",
+                    "arguments": [getattr(a, "name", str(a)) for a in (getattr(p, "arguments", None) or [])],
+                }))
+        return out
+
+    def has_resources(self) -> bool:
+        return any(conn.resources for conn in self._connected.values())
+
+    def has_prompts(self) -> bool:
+        return any(conn.prompts for conn in self._connected.values())
 
     def call_tool(self, server: str, tool: str, arguments: dict, *, timeout: float = 120.0) -> str:
         conn = self._connected.get(server)
@@ -270,6 +308,38 @@ class _SDKResult:
                 block.mime = getattr(block, "mimeType", None)
 
 
+class _SDKResourcesPage:
+    def __init__(self, result):
+        self.resources = [_SDKResource(r) for r in result.resources]
+        self.next_cursor = getattr(result, "nextCursor", None)
+
+
+class _SDKResource:
+    def __init__(self, r):
+        self.uri = r.uri
+        self.name = getattr(r, "name", "") or ""
+        self.description = getattr(r, "description", "") or ""
+        self.mime_type = getattr(r, "mimeType", "") or ""
+
+
+class _SDKPromptsPage:
+    def __init__(self, result):
+        self.prompts = [_SDKPrompt(p) for p in result.prompts]
+        self.next_cursor = getattr(result, "nextCursor", None)
+
+
+class _SDKPrompt:
+    def __init__(self, p):
+        self.name = p.name
+        self.description = getattr(p, "description", "") or ""
+        self.arguments = [_SDKPromptArg(a) for a in (getattr(p, "arguments", None) or [])]
+
+
+class _SDKPromptArg:
+    def __init__(self, a):
+        self.name = a.name
+
+
 class _SDKSession:
     """Adapts an mcp.ClientSession to Heya's uniform Session interface."""
 
@@ -281,6 +351,12 @@ class _SDKSession:
 
     async def list_tools(self, cursor):
         return _SDKToolsPage(await self._session.list_tools(cursor=cursor))
+
+    async def list_resources(self, cursor):
+        return _SDKResourcesPage(await self._session.list_resources(cursor=cursor))
+
+    async def list_prompts(self, cursor):
+        return _SDKPromptsPage(await self._session.list_prompts(cursor=cursor))
 
     async def call_tool(self, name, arguments):
         return _SDKResult(await self._session.call_tool(name, arguments or {}))
