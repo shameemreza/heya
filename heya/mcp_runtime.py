@@ -243,8 +243,6 @@ class MCPRuntime:
 
     # ---- live refresh ---------------------------------------------------------
 
-    _REFRESH_ATTR = {"tools": "tools", "resources": "resources", "prompts": "prompts"}
-
     async def _refresh(self, server_name, which):
         conn = self._connected.get(server_name)
         if conn is None:
