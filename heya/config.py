@@ -230,6 +230,69 @@ def load_approval_allow(config_path: Path | None = None) -> tuple[str, ...]:
     return tuple(raw)
 
 
+@dataclass(frozen=True)
+class MCPServerConfig:
+    name: str
+    command: str
+    transport: str = "stdio"
+    args: tuple[str, ...] = ()
+    env_keys: tuple[str, ...] = ()
+    enabled: bool = True
+    tools: tuple[str, ...] = ("*",)
+
+
+def _str_tuple(value, *, field: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list) or not all(isinstance(e, str) for e in value):
+        raise ConfigError(f"mcp.servers.{field} must be a list of strings.")
+    return tuple(value)
+
+
+def load_mcp_servers(config_path: Path | None = None) -> tuple[MCPServerConfig, ...]:
+    """MCP servers Heya may connect to.
+
+    User file shape:
+        [mcp.servers.<name>]
+        transport = "stdio"          # only stdio in 7b-1
+        command   = "npx"
+        args      = ["-y", "some-mcp-server"]
+        env_keys  = ["SOME_TOKEN"]   # env var NAMES; values injected at spawn, never stored
+        enabled   = true             # default true
+        tools     = ["*"]            # "*" = all, or an explicit allowlist
+
+    Defaults to no servers when the file or [mcp] section is absent.
+    """
+    path = config_path or default_config_path()
+    if not path.exists():
+        return ()
+    data = tomllib.loads(path.read_text())
+    raw_servers = data.get("mcp", {}).get("servers", {})
+    servers: list[MCPServerConfig] = []
+    for name, raw in raw_servers.items():
+        transport = raw.get("transport", "stdio")
+        if transport != "stdio":
+            raise ConfigError(
+                f"mcp.servers.{name}.transport {transport!r} is unsupported in this build; "
+                "only \"stdio\" is available (HTTP arrives in phase 7b-3)."
+            )
+        command = raw.get("command")
+        if not isinstance(command, str) or not command:
+            raise ConfigError(f"mcp.servers.{name}.command is required and must be a string.")
+        enabled = raw.get("enabled", True)
+        if not isinstance(enabled, bool):
+            raise ConfigError(f"mcp.servers.{name}.enabled must be a boolean.")
+        tools_raw = raw.get("tools")
+        tools = _str_tuple(tools_raw, field=f"{name}.tools") if tools_raw is not None else ("*",)
+        servers.append(MCPServerConfig(
+            name=name, command=command, transport=transport,
+            args=_str_tuple(raw.get("args"), field=f"{name}.args"),
+            env_keys=_str_tuple(raw.get("env_keys"), field=f"{name}.env_keys"),
+            enabled=enabled, tools=tools,
+        ))
+    return tuple(servers)
+
+
 def load_profiles(config_path: Path | None = None) -> dict[str, Profile]:
     """Built-in profiles merged with any user-defined ones from a TOML file.
 
