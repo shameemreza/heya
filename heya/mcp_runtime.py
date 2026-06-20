@@ -214,6 +214,30 @@ class MCPRuntime:
             raise ToolError(f"MCP call {server}.{tool} failed: {exc}") from exc
         return render_tool_result(result)
 
+    def read_resource(self, server, uri, *, timeout: float = 120.0) -> str:
+        conn = self._connected.get(server)
+        if conn is None:
+            raise ToolError(f"MCP server {server!r} is not connected")
+        try:
+            contents = self._run(conn.session.read_resource(uri), timeout=timeout)
+        except ToolError:
+            raise
+        except Exception as exc:
+            raise ToolError(f"MCP read_resource {server}:{uri} failed: {exc}") from exc
+        return render_resource(contents)
+
+    def get_prompt(self, server, name, arguments, *, timeout: float = 120.0) -> str:
+        conn = self._connected.get(server)
+        if conn is None:
+            raise ToolError(f"MCP server {server!r} is not connected")
+        try:
+            result = self._run(conn.session.get_prompt(name, arguments), timeout=timeout)
+        except ToolError:
+            raise
+        except Exception as exc:
+            raise ToolError(f"MCP get_prompt {server}.{name} failed: {exc}") from exc
+        return render_prompt(result)
+
     # ---- teardown -------------------------------------------------------------
 
     def close(self) -> None:
@@ -278,6 +302,43 @@ def render_tool_result(result) -> str:
     if structured:
         parts.append(_json.dumps(structured))
     return "\n".join(p for p in parts if p) or "(no content)"
+
+
+def render_resource(contents) -> str:
+    """Render an MCP read_resource result (a list of contents) to text.
+
+    Text contents are joined; a binary/blob content (no text) becomes a short
+    placeholder rather than being dropped. Empty -> "(empty resource)".
+    """
+    parts: list[str] = []
+    for c in contents or []:
+        text = getattr(c, "text", None)
+        if text is not None:
+            parts.append(text)
+        else:
+            parts.append(f"[binary resource: {getattr(c, 'mime_type', None) or 'application/octet-stream'}]")
+    return "\n".join(p for p in parts if p) or "(empty resource)"
+
+
+def render_prompt(result) -> str:
+    """Render an MCP get_prompt result (description + messages) to text.
+
+    Each message becomes a `role: text` line; non-text message content becomes a
+    short placeholder. Empty -> "(empty prompt)".
+    """
+    parts: list[str] = []
+    desc = getattr(result, "description", None)
+    if desc:
+        parts.append(desc)
+    for m in getattr(result, "messages", None) or []:
+        role = getattr(m, "role", "?")
+        content = getattr(m, "content", None)
+        text = getattr(content, "text", None)
+        if text is not None:
+            parts.append(f"{role}: {text}")
+        else:
+            parts.append(f"{role}: [{getattr(content, 'type', 'content')}]")
+    return "\n".join(parts) or "(empty prompt)"
 
 
 class _SDKToolsPage:
@@ -360,6 +421,13 @@ class _SDKSession:
 
     async def call_tool(self, name, arguments):
         return _SDKResult(await self._session.call_tool(name, arguments or {}))
+
+    async def read_resource(self, uri):
+        result = await self._session.read_resource(uri)
+        return list(getattr(result, "contents", None) or [])
+
+    async def get_prompt(self, name, arguments):
+        return await self._session.get_prompt(name, arguments=arguments or {})
 
 
 @contextlib.asynccontextmanager

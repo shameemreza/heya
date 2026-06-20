@@ -5,6 +5,7 @@ import pytest
 
 from heya.config import MCPServerConfig
 from heya.mcp_runtime import MCPRuntime
+from heya.mcp_runtime import render_resource, render_prompt
 
 
 class FakeTool:
@@ -363,5 +364,101 @@ def test_capability_absence_is_tolerant():
         assert rt.list_prompts() == []
         # the server is still connected — its tool is present
         assert [s["name"] for _, s in rt.list_tools()] == ["t"]
+    finally:
+        rt.close()
+
+
+# --- render_resource / render_prompt / read_resource / get_prompt ---
+
+class _RC:  # resource content
+    def __init__(self, text=None, mime_type="text/plain"):
+        if text is not None:
+            self.text = text
+        self.mime_type = mime_type
+
+
+class _PM:  # prompt message
+    def __init__(self, role, content):
+        self.role = role
+        self.content = content
+
+
+class _TextContent:
+    def __init__(self, text):
+        self.type = "text"
+        self.text = text
+
+
+class _PromptResult:
+    def __init__(self, description, messages):
+        self.description = description
+        self.messages = messages
+
+
+def test_render_resource_text_and_binary():
+    assert render_resource([_RC(text="hello"), _RC(text="world")]) == "hello\nworld"
+    out = render_resource([_RC(text="ok"), _RC(mime_type="image/png")])
+    assert "ok" in out and "image/png" in out
+    assert render_resource([]) == "(empty resource)"
+
+
+def test_render_prompt_roles_and_empty():
+    r = _PromptResult("a desc", [_PM("user", _TextContent("hi")), _PM("assistant", _TextContent("yo"))])
+    out = render_prompt(r)
+    assert "a desc" in out and "user: hi" in out and "assistant: yo" in out
+    assert render_prompt(_PromptResult(None, [])) == "(empty prompt)"
+
+
+# read_resource / get_prompt via a fake session that records calls
+class RWSession(FakeSession):
+    def __init__(self, pages, **kw):
+        super().__init__(pages, **kw)
+        self.reads = []
+        self.gets = []
+
+    async def read_resource(self, uri):
+        self.reads.append(uri)
+        if uri == "file:///missing":
+            raise RuntimeError("not found")
+        return [_RC(text=f"contents of {uri}")]
+
+    async def get_prompt(self, name, arguments):
+        self.gets.append((name, arguments))
+        if name == "missing":
+            raise RuntimeError("no such prompt")
+        return _PromptResult("d", [_PM("user", _TextContent(f"{name} {arguments}"))])
+
+
+def _rw_opener(pages, **kw):
+    import contextlib
+    @contextlib.asynccontextmanager
+    async def opener(server, env, roots_cb):
+        yield RWSession(pages, roots_cb=roots_cb, **kw)
+    return opener
+
+
+def test_read_resource_success_and_errors():
+    rt = MCPRuntime([cfg("demo")], open_session=_rw_opener([FakePage([FakeTool("t")])]))
+    rt.connect_all()
+    try:
+        assert "contents of file:///a" in rt.read_resource("demo", "file:///a")
+        with pytest.raises(ToolError):
+            rt.read_resource("demo", "file:///missing")
+        with pytest.raises(ToolError):
+            rt.read_resource("nope", "file:///a")
+    finally:
+        rt.close()
+
+
+def test_get_prompt_success_and_errors():
+    rt = MCPRuntime([cfg("demo")], open_session=_rw_opener([FakePage([FakeTool("t")])]))
+    rt.connect_all()
+    try:
+        out = rt.get_prompt("demo", "summarize", {"n": 3})
+        assert "summarize" in out
+        with pytest.raises(ToolError):
+            rt.get_prompt("demo", "missing", {})
+        with pytest.raises(ToolError):
+            rt.get_prompt("nope", "x", {})
     finally:
         rt.close()
