@@ -146,3 +146,110 @@ def test_close_is_idempotent():
     rt.connect_all()
     rt.close()
     rt.close()  # must not raise
+
+
+import json
+from heya.mcp_runtime import render_tool_result
+from heya.tools_files import ToolError
+
+
+class _Block:
+    def __init__(self, type, text=None, uri=None, mime=None):
+        self.type = type
+        self.text = text
+        self.uri = uri
+        self.mime = mime
+
+
+class _Result:
+    def __init__(self, content, is_error=False, structured=None):
+        self.content = content
+        self.is_error = is_error
+        self.structured_content = structured
+
+
+def test_render_joins_text_blocks():
+    r = _Result([_Block("text", text="hello"), _Block("text", text="world")])
+    assert render_tool_result(r) == "hello\nworld"
+
+
+def test_render_summarizes_non_text():
+    r = _Result([_Block("text", text="ok"), _Block("image", mime="image/png")])
+    out = render_tool_result(r)
+    assert "ok" in out and "image" in out
+
+
+def test_render_includes_structured_content():
+    r = _Result([], structured={"count": 3})
+    assert json.dumps({"count": 3}) in render_tool_result(r)
+
+
+def test_render_tolerates_empty():
+    assert render_tool_result(_Result([])) == "(no content)"
+
+
+# --- call_tool via a fake session that records calls ---
+
+class CallSession(FakeSession):
+    def __init__(self, pages, **kw):
+        super().__init__(pages, **kw)
+        self.calls = []
+
+    async def call_tool(self, name, arguments):
+        self.calls.append((name, arguments))
+        if name == "boom":
+            raise RuntimeError("protocol failure")
+        if name == "toolerr":
+            return _Result([_Block("text", text="bad input")], is_error=True)
+        return _Result([_Block("text", text=f"ran {name} {arguments}")])
+
+
+def _call_opener(pages):
+    import contextlib
+    @contextlib.asynccontextmanager
+    async def opener(server, env, roots_cb):
+        yield CallSession(pages[server.name], roots_cb=roots_cb)
+    return opener
+
+
+def test_call_tool_success():
+    pages = {"demo": [FakePage([FakeTool("greet")])]}
+    rt = MCPRuntime([cfg("demo")], open_session=_call_opener(pages))
+    rt.connect_all()
+    try:
+        out = rt.call_tool("demo", "greet", {"x": 1})
+        assert "ran greet" in out and "'x': 1" in out
+    finally:
+        rt.close()
+
+
+def test_call_tool_tool_error_is_returned_not_raised():
+    pages = {"demo": [FakePage([FakeTool("toolerr")])]}
+    rt = MCPRuntime([cfg("demo")], open_session=_call_opener(pages))
+    rt.connect_all()
+    try:
+        out = rt.call_tool("demo", "toolerr", {})
+        assert "bad input" in out  # model-visible, no raise
+    finally:
+        rt.close()
+
+
+def test_call_tool_protocol_error_raises_toolerror():
+    pages = {"demo": [FakePage([FakeTool("boom")])]}
+    rt = MCPRuntime([cfg("demo")], open_session=_call_opener(pages))
+    rt.connect_all()
+    try:
+        with pytest.raises(ToolError):
+            rt.call_tool("demo", "boom", {})
+    finally:
+        rt.close()
+
+
+def test_call_tool_unknown_server_raises():
+    rt = MCPRuntime([], open_session=_call_opener({}))
+    rt.connect_all()
+    try:
+        with pytest.raises(ToolError):
+            rt.call_tool("nope", "x", {})
+    finally:
+        rt.close()

@@ -14,6 +14,7 @@ the REPL.
 from __future__ import annotations
 
 import asyncio
+import json as _json
 import os
 import sys
 import threading
@@ -162,6 +163,18 @@ class MCPRuntime:
                     }))
         return out
 
+    def call_tool(self, server: str, tool: str, arguments: dict, *, timeout: float = 120.0) -> str:
+        conn = self._connected.get(server)
+        if conn is None:
+            raise ToolError(f"MCP server {server!r} is not connected")
+        try:
+            result = self._run(conn.session.call_tool(tool, arguments), timeout=timeout)
+        except ToolError:
+            raise
+        except Exception as exc:  # protocol/transport error or timeout
+            raise ToolError(f"MCP call {server}.{tool} failed: {exc}") from exc
+        return render_tool_result(result)
+
     # ---- teardown -------------------------------------------------------------
 
     def close(self) -> None:
@@ -202,6 +215,30 @@ def build_roots(allowed_roots: Sequence[Path]):
     SDK's ListRootsResult. Kept SDK-free so it is unit-testable.
     """
     return [(Path(p).resolve().as_uri(), Path(p).name or str(p)) for p in allowed_roots]
+
+
+def render_tool_result(result) -> str:
+    """Render an MCP CallToolResult to a model-visible string.
+
+    Text blocks are joined; non-text blocks become a short placeholder rather
+    than being dropped; structuredContent is appended as compact JSON. isError
+    does not change rendering — the error content is returned to the model.
+    """
+    parts: list[str] = []
+    for block in getattr(result, "content", None) or []:
+        btype = getattr(block, "type", "")
+        if btype == "text":
+            parts.append(getattr(block, "text", "") or "")
+        elif btype == "image":
+            parts.append(f"[image: {getattr(block, 'mime', None) or 'image'}]")
+        elif btype in ("resource", "embedded_resource"):
+            parts.append(f"[embedded resource: {getattr(block, 'uri', None) or 'resource'}]")
+        else:
+            parts.append(f"[{btype or 'content'}]")
+    structured = getattr(result, "structured_content", None)
+    if structured:
+        parts.append(_json.dumps(structured))
+    return "\n".join(p for p in parts if p) or "(no content)"
 
 
 async def _default_open_session(server, env, roots_cb):  # replaced in Task 5
