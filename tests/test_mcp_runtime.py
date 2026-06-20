@@ -545,3 +545,75 @@ def test_trigger_refresh_unknown_server_is_noop():
         assert [s["name"] for _, s in rt.list_tools()] == ["t"]
     finally:
         rt.close()
+
+
+# --- Task 2: auth headers and TLS client builders ---
+
+import os
+from heya.mcp_runtime import _build_headers, _http_client_kwargs, _build_http_client
+
+
+def _http_cfg(**kw):
+    return MCPServerConfig(name="h", transport="http", url="https://h/mcp", **kw)
+
+
+def test_build_headers_static_only():
+    assert _build_headers(_http_cfg(headers=(("X-Tenant", "acme"),))) == {"X-Tenant": "acme"}
+
+
+def test_build_headers_bearer_from_env(monkeypatch):
+    monkeypatch.setenv("HT", "secret-token")
+    h = _build_headers(_http_cfg(auth_token_env="HT", headers=(("X-A", "b"),)))
+    assert h == {"X-A": "b", "Authorization": "Bearer secret-token"}
+
+
+def test_build_headers_missing_env_raises(monkeypatch):
+    monkeypatch.delenv("ABSENT", raising=False)
+    with pytest.raises(ToolError):
+        _build_headers(_http_cfg(auth_token_env="ABSENT"))
+
+
+def test_client_kwargs_default_verify_true():
+    kw = _http_client_kwargs(_http_cfg())
+    assert kw["verify"] is True and "cert" not in kw
+
+
+def test_client_kwargs_ca_cert_path(tmp_path):
+    import ssl
+    import trustme
+    ca = trustme.CA()
+    ca_file = tmp_path / "ca.pem"
+    ca.cert_pem.write_to_path(str(ca_file))
+    kw = _http_client_kwargs(_http_cfg(tls_ca_cert=str(ca_file)))
+    assert isinstance(kw["verify"], ssl.SSLContext) and "cert" not in kw
+
+
+def test_client_kwargs_verify_false():
+    kw = _http_client_kwargs(_http_cfg(tls_verify=False))
+    assert kw["verify"] is False and "cert" not in kw
+
+
+def test_client_kwargs_mtls_folds_into_context(tmp_path):
+    # mTLS: the client cert+key are loaded INTO the SSLContext, never returned
+    # as a separate cert tuple (httpx deprecated cert=, dropping it breaks mTLS).
+    import ssl
+    import trustme
+    ca = trustme.CA()
+    client_cert = ca.issue_cert("client@canary")
+    cert_file = tmp_path / "client.pem"
+    key_file = tmp_path / "client.key"
+    client_cert.cert_chain_pems[0].write_to_path(str(cert_file))
+    client_cert.private_key_pem.write_to_path(str(key_file))
+    kw = _http_client_kwargs(_http_cfg(
+        tls_client_cert=str(cert_file), tls_client_key=str(key_file),
+    ))
+    assert isinstance(kw["verify"], ssl.SSLContext) and "cert" not in kw
+
+
+def test_build_http_client_warns_on_verify_false(capsys):
+    import asyncio
+    client = _build_http_client(_http_cfg(tls_verify=False))
+    try:
+        assert "TLS verification disabled" in capsys.readouterr().err
+    finally:
+        asyncio.run(client.aclose())  # close the offline client so no ResourceWarning leaks

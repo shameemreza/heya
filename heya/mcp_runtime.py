@@ -17,10 +17,13 @@ import asyncio
 import contextlib
 import json as _json
 import os
+import ssl
 import sys
 import threading
 from collections.abc import Sequence
 from pathlib import Path
+
+import httpx
 
 from .config import MCPServerConfig
 from .tools_files import ToolError
@@ -316,6 +319,52 @@ def build_roots(allowed_roots: Sequence[Path]):
     return [(Path(p).resolve().as_uri(), Path(p).name or str(p)) for p in allowed_roots]
 
 
+def _build_headers(server) -> dict[str, str]:
+    """Static headers plus an Authorization: Bearer header from a named env var.
+
+    The token is referenced by env-var NAME and read here; a missing var raises
+    ToolError so the server is skipped with a warning (like a missing stdio secret).
+    """
+    headers = dict(server.headers)
+    if server.auth_token_env:
+        value = os.environ.get(server.auth_token_env)
+        if value is None:
+            raise ToolError(f"required env var {server.auth_token_env} is not set")
+        headers["Authorization"] = f"Bearer {value}"
+    return headers
+
+
+def _http_client_kwargs(server) -> dict:
+    """Pure: the kwargs for the httpx.AsyncClient used by http/sse transports.
+
+    A custom CA and/or a client cert (mTLS) are folded into ONE ssl.SSLContext
+    passed as `verify`; no separate `cert=` is ever handed to httpx (httpx
+    deprecated that path, and dropping it would silently break mTLS).
+    """
+    headers = _build_headers(server)
+    if server.tls_verify is False:
+        return {"headers": headers, "verify": False}
+    needs_ctx = bool(server.tls_ca_cert) or bool(server.tls_client_cert and server.tls_client_key)
+    if not needs_ctx:
+        return {"headers": headers, "verify": True}
+    cafile = str(Path(server.tls_ca_cert).expanduser()) if server.tls_ca_cert else None
+    ctx = ssl.create_default_context(cafile=cafile)
+    if server.tls_client_cert and server.tls_client_key:
+        ctx.load_cert_chain(
+            str(Path(server.tls_client_cert).expanduser()),
+            str(Path(server.tls_client_key).expanduser()),
+        )
+    return {"headers": headers, "verify": ctx}
+
+
+def _build_http_client(server) -> httpx.AsyncClient:
+    """Construct the auth+TLS httpx client; warn loudly if verification is off."""
+    kwargs = _http_client_kwargs(server)
+    if kwargs["verify"] is False:
+        print(f"MCP server {server.name!r}: TLS verification disabled", file=sys.stderr)
+    return httpx.AsyncClient(**kwargs)
+
+
 def render_tool_result(result) -> str:
     """Render an MCP CallToolResult to a model-visible string.
 
@@ -504,11 +553,53 @@ async def _default_open_session(server, env, roots_cb, on_list_changed):
             elif isinstance(root, PromptListChangedNotification):
                 on_list_changed("prompts")
 
-    params = StdioServerParameters(command=server.command, args=list(server.args), env=env)
-    async with stdio_client(params) as (read, write):
-        async with ClientSession(
+    def _wire(read, write):
+        return ClientSession(
             read, write,
             list_roots_callback=_list_roots,
             message_handler=_message_handler,
-        ) as session:
+        )
+
+    if server.transport in ("http", "sse"):
+        # mcp 1.28.0:
+        #   streamable_http_client: accepts http_client=<AsyncClient> directly.
+        #   sse_client: accepts httpx_client_factory(headers, timeout, auth) -> AsyncClient.
+        # For streamable-http we pass a pre-built client carrying auth+TLS kwargs.
+        # For SSE we use a factory that merges SDK-provided base headers onto ours.
+        if server.transport == "http":
+            from mcp.client.streamable_http import streamable_http_client
+            # streamable_http_client only manages the client lifecycle when it
+            # creates the client itself; we own ours and must close it.
+            http_client = _build_http_client(server)
+            try:
+                async with streamable_http_client(
+                    server.url, http_client=http_client
+                ) as (read, write, _get_session_id):
+                    async with _wire(read, write) as session:
+                        yield _SDKSession(session)
+            finally:
+                await http_client.aclose()
+        else:  # sse
+            from mcp.client.sse import sse_client
+
+            def _client_factory(headers=None, timeout=None, auth=None):
+                # Merge SDK-provided base headers under ours so auth wins.
+                kwargs = _http_client_kwargs(server)
+                kwargs["headers"] = {**(headers or {}), **kwargs["headers"]}
+                if timeout is not None:
+                    kwargs["timeout"] = timeout
+                if auth is not None:
+                    kwargs["auth"] = auth
+                return httpx.AsyncClient(**kwargs)
+
+            async with sse_client(
+                server.url, httpx_client_factory=_client_factory
+            ) as (read, write):
+                async with _wire(read, write) as session:
+                    yield _SDKSession(session)
+        return
+
+    params = StdioServerParameters(command=server.command, args=list(server.args), env=env)
+    async with stdio_client(params) as (read, write):
+        async with _wire(read, write) as session:
             yield _SDKSession(session)

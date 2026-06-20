@@ -233,12 +233,40 @@ def load_approval_allow(config_path: Path | None = None) -> tuple[str, ...]:
 @dataclass(frozen=True)
 class MCPServerConfig:
     name: str
-    command: str
+    command: str = ""
     transport: str = "stdio"
     args: tuple[str, ...] = ()
     env_keys: tuple[str, ...] = ()
     enabled: bool = True
     tools: tuple[str, ...] = ("*",)
+    url: str = ""
+    auth_token_env: str | None = None
+    headers: tuple[tuple[str, str], ...] = ()
+    tls_verify: bool = True
+    tls_ca_cert: str | None = None
+    tls_client_cert: str | None = None
+    tls_client_key: str | None = None
+
+
+_VALID_TRANSPORTS = ("stdio", "http", "sse")
+
+
+def _headers_pairs(value, *, field: str) -> tuple[tuple[str, str], ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in value.items()
+    ):
+        raise ConfigError(f"mcp.servers.{field} must be a table of string values.")
+    return tuple(value.items())
+
+
+def _opt_str(value, *, field: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ConfigError(f"mcp.servers.{field} must be a string.")
+    return value
 
 
 def _str_tuple(value, *, field: str) -> tuple[str, ...]:
@@ -254,12 +282,19 @@ def load_mcp_servers(config_path: Path | None = None) -> tuple[MCPServerConfig, 
 
     User file shape:
         [mcp.servers.<name>]
-        transport = "stdio"          # only stdio in 7b-1
-        command   = "npx"
+        transport = "stdio"          # stdio | http | sse
+        command   = "npx"            # required for stdio; optional for http/sse
         args      = ["-y", "some-mcp-server"]
         env_keys  = ["SOME_TOKEN"]   # env var NAMES; values injected at spawn, never stored
         enabled   = true             # default true
         tools     = ["*"]            # "*" = all, or an explicit allowlist
+        url       = "https://..."    # required for http/sse
+        auth_token_env = "MY_TOKEN"  # env var NAME holding a bearer token
+        headers   = { "X-Tenant" = "acme" }  # extra request headers (string→string)
+        tls_verify     = true        # set false to skip TLS verification
+        tls_ca_cert    = "~/ca.pem"  # custom CA bundle path
+        tls_client_cert = "~/c.pem"  # mTLS client cert (requires tls_client_key)
+        tls_client_key  = "~/c.key"  # mTLS client private key
 
     Defaults to no servers when the file or [mcp] section is absent.
     """
@@ -271,17 +306,30 @@ def load_mcp_servers(config_path: Path | None = None) -> tuple[MCPServerConfig, 
     servers: list[MCPServerConfig] = []
     for name, raw in raw_servers.items():
         transport = raw.get("transport", "stdio")
-        if transport != "stdio":
+        if transport not in _VALID_TRANSPORTS:
+            allowed = ", ".join(_VALID_TRANSPORTS)
             raise ConfigError(
-                f"mcp.servers.{name}.transport {transport!r} is unsupported in this build; "
-                "only \"stdio\" is available (HTTP arrives in phase 7b-3)."
+                f"mcp.servers.{name}.transport {transport!r} is invalid; allowed: {allowed}."
             )
-        command = raw.get("command")
-        if not isinstance(command, str) or not command:
-            raise ConfigError(f"mcp.servers.{name}.command is required and must be a string.")
+        command = raw.get("command", "")
+        url = raw.get("url", "")
+        if transport == "stdio":
+            if not isinstance(command, str) or not command:
+                raise ConfigError(f"mcp.servers.{name}.command is required for stdio and must be a string.")
+        else:  # http / sse
+            if not isinstance(url, str) or not url:
+                raise ConfigError(f"mcp.servers.{name}.url is required for {transport} and must be a string.")
+            command = command if isinstance(command, str) else ""
         enabled = raw.get("enabled", True)
         if not isinstance(enabled, bool):
             raise ConfigError(f"mcp.servers.{name}.enabled must be a boolean.")
+        tls_verify = raw.get("tls_verify", True)
+        if not isinstance(tls_verify, bool):
+            raise ConfigError(f"mcp.servers.{name}.tls_verify must be a boolean.")
+        tls_client_cert = _opt_str(raw.get("tls_client_cert"), field=f"{name}.tls_client_cert")
+        tls_client_key = _opt_str(raw.get("tls_client_key"), field=f"{name}.tls_client_key")
+        if tls_client_cert and not tls_client_key:
+            raise ConfigError(f"mcp.servers.{name}.tls_client_cert requires tls_client_key (mTLS needs both).")
         tools_raw = raw.get("tools")
         tools = _str_tuple(tools_raw, field=f"{name}.tools") if tools_raw is not None else ("*",)
         servers.append(MCPServerConfig(
@@ -289,6 +337,12 @@ def load_mcp_servers(config_path: Path | None = None) -> tuple[MCPServerConfig, 
             args=_str_tuple(raw.get("args"), field=f"{name}.args"),
             env_keys=_str_tuple(raw.get("env_keys"), field=f"{name}.env_keys"),
             enabled=enabled, tools=tools,
+            url=url,
+            auth_token_env=_opt_str(raw.get("auth_token_env"), field=f"{name}.auth_token_env"),
+            headers=_headers_pairs(raw.get("headers"), field=f"{name}.headers"),
+            tls_verify=tls_verify,
+            tls_ca_cert=_opt_str(raw.get("tls_ca_cert"), field=f"{name}.tls_ca_cert"),
+            tls_client_cert=tls_client_cert, tls_client_key=tls_client_key,
         ))
     return tuple(servers)
 

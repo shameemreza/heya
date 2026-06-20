@@ -4,3 +4,6 @@ mcp>=1.0
 
 # Browser tools are optional. To enable them:
 #   pip install playwright>=1.40 && python -m playwright install chromium
+
+# Test-only (MCP TLS integration canary): generate throwaway CA/server certs.
+trustme>=1.1
