@@ -27,10 +27,12 @@ from .tools_files import ToolError
 
 
 class _Connected:
-    def __init__(self, server: MCPServerConfig, session, tools: list, stop: asyncio.Event):
+    def __init__(self, server: MCPServerConfig, session, tools: list, resources: list, prompts: list, stop: asyncio.Event):
         self.server = server
         self.session = session
         self.tools = tools          # list of uniform tool objects (.name/.description/.input_schema)
+        self.resources = resources  # list of resource objects captured at connect
+        self.prompts = prompts      # list of prompt objects captured at connect
         self.stop = stop
 
 
@@ -51,6 +53,8 @@ class MCPRuntime:
         self._thread: threading.Thread | None = None
         self._connected: dict[str, _Connected] = {}
         self._closed = False
+        # Keeps pending refresh tasks alive so they can't be GC'd mid-flight.
+        self._pending_refreshes: set[asyncio.Task] = set()
 
     # ---- loop-thread plumbing -------------------------------------------------
 
@@ -126,10 +130,13 @@ class MCPRuntime:
 
     async def _serve(self, server, env, ready: asyncio.Future, stop: asyncio.Event):
         try:
-            async with self._open_session(server, env, self._roots_cb()) as session:
+            on_list_changed = lambda which: self._schedule_refresh(server.name, which)  # noqa: E731
+            async with self._open_session(server, env, self._roots_cb(), on_list_changed) as session:
                 await session.initialize()
-                tools = await self._list_all_tools(session)
-                connected = _Connected(server, session, tools, stop)
+                tools = await self._list_all(session.list_tools, "tools", tolerant=False)
+                resources = await self._list_all(session.list_resources, "resources", tolerant=True)
+                prompts = await self._list_all(session.list_prompts, "prompts", tolerant=True)
+                connected = _Connected(server, session, tools, resources, prompts, stop)
                 ready.set_result(connected)
                 await stop.wait()
         except asyncio.CancelledError:
@@ -140,14 +147,19 @@ class MCPRuntime:
             if not ready.done():
                 ready.set_exception(exc if isinstance(exc, Exception) else RuntimeError(str(exc)))
 
-    async def _list_all_tools(self, session) -> list:
-        tools, cursor = [], None
-        while True:
-            page = await session.list_tools(cursor)
-            tools.extend(page.tools)
-            cursor = page.next_cursor
-            if not cursor:
-                return tools
+    async def _list_all(self, list_fn, attr, *, tolerant) -> list:
+        items, cursor = [], None
+        try:
+            while True:
+                page = await list_fn(cursor)
+                items.extend(getattr(page, attr))
+                cursor = page.next_cursor
+                if not cursor:
+                    return items
+        except Exception:
+            if tolerant:
+                return []
+            raise
 
     # ---- accessors ------------------------------------------------------------
 
@@ -164,6 +176,35 @@ class MCPRuntime:
                     }))
         return out
 
+    def list_resources(self) -> list[tuple[str, dict]]:
+        out: list[tuple[str, dict]] = []
+        for conn in self._connected.values():
+            for r in conn.resources:
+                out.append((conn.server.name, {
+                    "uri": getattr(r, "uri", ""),
+                    "name": getattr(r, "name", "") or "",
+                    "description": getattr(r, "description", "") or "",
+                    "mimeType": getattr(r, "mime_type", "") or "",
+                }))
+        return out
+
+    def list_prompts(self) -> list[tuple[str, dict]]:
+        out: list[tuple[str, dict]] = []
+        for conn in self._connected.values():
+            for p in conn.prompts:
+                out.append((conn.server.name, {
+                    "name": getattr(p, "name", ""),
+                    "description": getattr(p, "description", "") or "",
+                    "arguments": [getattr(a, "name", str(a)) for a in (getattr(p, "arguments", None) or [])],
+                }))
+        return out
+
+    def has_resources(self) -> bool:
+        return any(conn.resources for conn in self._connected.values())
+
+    def has_prompts(self) -> bool:
+        return any(conn.prompts for conn in self._connected.values())
+
     def call_tool(self, server: str, tool: str, arguments: dict, *, timeout: float = 120.0) -> str:
         conn = self._connected.get(server)
         if conn is None:
@@ -175,6 +216,60 @@ class MCPRuntime:
         except Exception as exc:  # protocol/transport error or timeout
             raise ToolError(f"MCP call {server}.{tool} failed: {exc}") from exc
         return render_tool_result(result)
+
+    def read_resource(self, server, uri, *, timeout: float = 120.0) -> str:
+        conn = self._connected.get(server)
+        if conn is None:
+            raise ToolError(f"MCP server {server!r} is not connected")
+        try:
+            contents = self._run(conn.session.read_resource(uri), timeout=timeout)
+        except ToolError:
+            raise
+        except Exception as exc:
+            raise ToolError(f"MCP read_resource {server}:{uri} failed: {exc}") from exc
+        return render_resource(contents)
+
+    def get_prompt(self, server, name, arguments, *, timeout: float = 120.0) -> str:
+        conn = self._connected.get(server)
+        if conn is None:
+            raise ToolError(f"MCP server {server!r} is not connected")
+        try:
+            result = self._run(conn.session.get_prompt(name, arguments), timeout=timeout)
+        except ToolError:
+            raise
+        except Exception as exc:
+            raise ToolError(f"MCP get_prompt {server}.{name} failed: {exc}") from exc
+        return render_prompt(result)
+
+    # ---- live refresh ---------------------------------------------------------
+
+    async def _refresh(self, server_name, which):
+        conn = self._connected.get(server_name)
+        if conn is None:
+            return
+        list_fn = {
+            "tools": conn.session.list_tools,
+            "resources": conn.session.list_resources,
+            "prompts": conn.session.list_prompts,
+        }.get(which)
+        if list_fn is None:
+            return
+        try:
+            fresh = await self._list_all(list_fn, which, tolerant=False)
+        except Exception as exc:  # keep the prior snapshot on failure
+            print(f"MCP refresh {which} for {server_name!r} failed: {exc}", file=sys.stderr)
+            return
+        setattr(conn, which, fresh)  # atomic reference swap
+
+    def trigger_refresh(self, server_name, which) -> None:
+        self._run(self._refresh(server_name, which))
+
+    def _schedule_refresh(self, server_name, which) -> None:
+        # Called on the loop thread by the real notification handler.
+        # Store the task reference to prevent GC mid-flight; discard on completion.
+        task = asyncio.ensure_future(self._refresh(server_name, which))
+        self._pending_refreshes.add(task)
+        task.add_done_callback(self._pending_refreshes.discard)
 
     # ---- teardown -------------------------------------------------------------
 
@@ -207,6 +302,9 @@ class MCPRuntime:
         # Let each _serve task finish exiting its async-with before the loop stops.
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        # Drain any pending refresh tasks so they don't become orphaned/GC'd.
+        if self._pending_refreshes:
+            await asyncio.gather(*list(self._pending_refreshes), return_exceptions=True)
 
 
 def build_roots(allowed_roots: Sequence[Path]):
@@ -242,6 +340,43 @@ def render_tool_result(result) -> str:
     return "\n".join(p for p in parts if p) or "(no content)"
 
 
+def render_resource(contents) -> str:
+    """Render an MCP read_resource result (a list of contents) to text.
+
+    Text contents are joined; a binary/blob content (no text) becomes a short
+    placeholder rather than being dropped. Empty -> "(empty resource)".
+    """
+    parts: list[str] = []
+    for c in contents or []:
+        text = getattr(c, "text", None)
+        if text is not None:
+            parts.append(text)
+        else:
+            parts.append(f"[binary resource: {getattr(c, 'mime_type', None) or 'application/octet-stream'}]")
+    return "\n".join(p for p in parts if p) or "(empty resource)"
+
+
+def render_prompt(result) -> str:
+    """Render an MCP get_prompt result (description + messages) to text.
+
+    Each message becomes a `role: text` line; non-text message content becomes a
+    short placeholder. Empty -> "(empty prompt)".
+    """
+    parts: list[str] = []
+    desc = getattr(result, "description", None)
+    if desc:
+        parts.append(desc)
+    for m in getattr(result, "messages", None) or []:
+        role = getattr(m, "role", "?")
+        content = getattr(m, "content", None)
+        text = getattr(content, "text", None)
+        if text is not None:
+            parts.append(f"{role}: {text}")
+        else:
+            parts.append(f"{role}: [{getattr(content, 'type', 'content')}]")
+    return "\n".join(parts) or "(empty prompt)"
+
+
 class _SDKToolsPage:
     def __init__(self, result):
         self.tools = [_SDKTool(t) for t in result.tools]
@@ -270,6 +405,39 @@ class _SDKResult:
                 block.mime = getattr(block, "mimeType", None)
 
 
+class _SDKResourcesPage:
+    def __init__(self, result):
+        self.resources = [_SDKResource(r) for r in result.resources]
+        self.next_cursor = getattr(result, "nextCursor", None)
+
+
+class _SDKResource:
+    def __init__(self, r):
+        # URI is an AnyUrl on the SDK object; stringify for the uniform interface.
+        self.uri = str(r.uri)
+        self.name = getattr(r, "name", "") or ""
+        self.description = getattr(r, "description", "") or ""
+        self.mime_type = getattr(r, "mimeType", "") or ""
+
+
+class _SDKPromptsPage:
+    def __init__(self, result):
+        self.prompts = [_SDKPrompt(p) for p in result.prompts]
+        self.next_cursor = getattr(result, "nextCursor", None)
+
+
+class _SDKPrompt:
+    def __init__(self, p):
+        self.name = p.name
+        self.description = getattr(p, "description", "") or ""
+        self.arguments = [_SDKPromptArg(a) for a in (getattr(p, "arguments", None) or [])]
+
+
+class _SDKPromptArg:
+    def __init__(self, a):
+        self.name = a.name
+
+
 class _SDKSession:
     """Adapts an mcp.ClientSession to Heya's uniform Session interface."""
 
@@ -282,21 +450,65 @@ class _SDKSession:
     async def list_tools(self, cursor):
         return _SDKToolsPage(await self._session.list_tools(cursor=cursor))
 
+    async def list_resources(self, cursor):
+        return _SDKResourcesPage(await self._session.list_resources(cursor=cursor))
+
+    async def list_prompts(self, cursor):
+        return _SDKPromptsPage(await self._session.list_prompts(cursor=cursor))
+
     async def call_tool(self, name, arguments):
         return _SDKResult(await self._session.call_tool(name, arguments or {}))
 
+    async def read_resource(self, uri):
+        # SDK 1.x requires AnyUrl, not a plain str.
+        from pydantic import AnyUrl
+        result = await self._session.read_resource(AnyUrl(uri))
+        contents = list(getattr(result, "contents", None) or [])
+        # SDK ResourceContents uses camelCase `mimeType`; render_resource reads
+        # snake_case `mime_type` on the fallback branch — patch it on each item.
+        for c in contents:
+            if not hasattr(c, "mime_type"):
+                c.mime_type = getattr(c, "mimeType", None)
+        return contents
+
+    async def get_prompt(self, name, arguments):
+        return await self._session.get_prompt(name, arguments=arguments or {})
+
 
 @contextlib.asynccontextmanager
-async def _default_open_session(server, env, roots_cb):
+async def _default_open_session(server, env, roots_cb, on_list_changed):
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
-    from mcp.types import ListRootsResult, Root
+    from mcp.types import (
+        ListRootsResult,
+        Root,
+        ServerNotification,
+        ToolListChangedNotification,
+        ResourceListChangedNotification,
+        PromptListChangedNotification,
+    )
 
     # SDK 1.x ListRootsFnT signature: async def __call__(self, context) -> ListRootsResult
     async def _list_roots(_context):
         return ListRootsResult(roots=[Root(uri=uri, name=name) for uri, name in roots_cb])
 
+    # message_handler receives RequestResponder | ServerNotification | Exception.
+    # ServerNotification is a RootModel; its .root holds the concrete notification.
+    async def _message_handler(message):
+        if isinstance(message, ServerNotification):
+            root = message.root
+            if isinstance(root, ToolListChangedNotification):
+                on_list_changed("tools")
+            elif isinstance(root, ResourceListChangedNotification):
+                on_list_changed("resources")
+            elif isinstance(root, PromptListChangedNotification):
+                on_list_changed("prompts")
+
     params = StdioServerParameters(command=server.command, args=list(server.args), env=env)
     async with stdio_client(params) as (read, write):
-        async with ClientSession(read, write, list_roots_callback=_list_roots) as session:
+        async with ClientSession(
+            read, write,
+            list_roots_callback=_list_roots,
+            message_handler=_message_handler,
+        ) as session:
             yield _SDKSession(session)
