@@ -10,9 +10,11 @@ class FakeClient:
     def __init__(self, scripted):
         self._scripted = list(scripted)
         self.calls = []
+        self.last_tools = None  # captures the `tools` list passed to chat_stream
 
     def chat_stream(self, messages, tools=None, on_text=None):
         self.calls.append([dict(m) for m in messages])
+        self.last_tools = tools
         result = self._scripted.pop(0)
         if result.content and on_text:
             on_text(result.content)
@@ -270,3 +272,36 @@ def test_agent_close_closes_registry(tmp_path):
                   approval=_AllowAll(), process_registry=reg)
     agent.close()
     assert reg.closed is True
+
+
+class FakeMCPRuntime:
+    def __init__(self):
+        self.closed = False
+        self.calls = []
+
+    def list_tools(self):
+        return [("demo", {"name": "ping", "description": "p", "inputSchema": {"type": "object"}})]
+
+    def call_tool(self, server, tool, arguments, *, timeout=120.0):
+        self.calls.append((server, tool, arguments))
+        return "PONG"
+
+    def close(self):
+        self.closed = True
+
+
+def test_agent_sends_mcp_tools_to_model(tmp_path):
+    rt = FakeMCPRuntime()
+    # make_agent passes **kw through to Agent, so mcp_runtime is accepted
+    agent, client = make_agent(tmp_path, [ChatResult(content="done")], mcp_runtime=rt)
+    agent.run("hi")
+    assert client.last_tools is not None
+    assert any(t["function"]["name"] == "mcp__demo__ping" for t in client.last_tools)
+
+
+def test_agent_close_tears_down_runtime(tmp_path):
+    rt = FakeMCPRuntime()
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), mcp_runtime=rt)
+    agent.close()
+    assert rt.closed is True
