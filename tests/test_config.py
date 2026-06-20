@@ -272,11 +272,12 @@ def test_load_mcp_servers_respects_enabled_and_tools(tmp_path):
     assert server.args == () and server.env_keys == ()
 
 
-def test_load_mcp_servers_rejects_non_stdio_transport(tmp_path):
-    p = _write(tmp_path, '[mcp.servers.demo]\ncommand = "x"\ntransport = "http"\n')
+def test_load_mcp_servers_rejects_unknown_transport(tmp_path):
+    # "http" is now valid; use a genuinely unknown transport to exercise the guard
+    p = _write(tmp_path, '[mcp.servers.demo]\ncommand = "x"\ntransport = "ws"\nurl = "wss://x"\n')
     with pytest.raises(ConfigError) as exc:
         load_mcp_servers(p)
-    assert "http" in str(exc.value) and "7b-3" in str(exc.value)
+    assert "ws" in str(exc.value) and "stdio" in str(exc.value)
 
 
 def test_load_mcp_servers_requires_command(tmp_path):
@@ -287,5 +288,80 @@ def test_load_mcp_servers_requires_command(tmp_path):
 
 def test_load_mcp_servers_rejects_non_string_list_entries(tmp_path):
     p = _write(tmp_path, '[mcp.servers.demo]\ncommand = "x"\nargs = [1, 2]\n')
+    with pytest.raises(ConfigError):
+        load_mcp_servers(p)
+
+
+def test_load_mcp_http_server_parses(tmp_path):
+    p = _write(tmp_path, (
+        '[mcp.servers.hosted]\n'
+        'transport = "http"\n'
+        'url = "https://mcp.example.com/mcp"\n'
+        'auth_token_env = "EXAMPLE_TOKEN"\n'
+        'headers = { "X-Tenant" = "acme" }\n'
+    ))
+    (s,) = load_mcp_servers(p)
+    assert s.transport == "http"
+    assert s.url == "https://mcp.example.com/mcp"
+    assert s.auth_token_env == "EXAMPLE_TOKEN"
+    assert s.headers == (("X-Tenant", "acme"),)
+    assert s.command == ""  # optional for http
+
+
+def test_load_mcp_sse_server_parses(tmp_path):
+    p = _write(tmp_path, '[mcp.servers.legacy]\ntransport = "sse"\nurl = "https://old/sse"\n')
+    (s,) = load_mcp_servers(p)
+    assert s.transport == "sse" and s.url == "https://old/sse"
+
+
+def test_load_mcp_http_requires_url(tmp_path):
+    p = _write(tmp_path, '[mcp.servers.h]\ntransport = "http"\n')
+    with pytest.raises(ConfigError) as exc:
+        load_mcp_servers(p)
+    assert "url" in str(exc.value)
+
+
+def test_load_mcp_stdio_still_requires_command(tmp_path):
+    p = _write(tmp_path, '[mcp.servers.s]\ntransport = "stdio"\n')
+    with pytest.raises(ConfigError) as exc:
+        load_mcp_servers(p)
+    assert "command" in str(exc.value)
+
+
+def test_load_mcp_unknown_transport_rejected(tmp_path):
+    p = _write(tmp_path, '[mcp.servers.x]\ntransport = "ws"\nurl = "wss://x"\n')
+    with pytest.raises(ConfigError) as exc:
+        load_mcp_servers(p)
+    assert "ws" in str(exc.value) and "stdio" in str(exc.value)
+
+
+def test_load_mcp_tls_fields_parse(tmp_path):
+    p = _write(tmp_path, (
+        '[mcp.servers.corp]\n'
+        'transport = "http"\n'
+        'url = "https://corp/mcp"\n'
+        'tls_verify = false\n'
+        'tls_ca_cert = "~/ca.pem"\n'
+        'tls_client_cert = "~/c.pem"\n'
+        'tls_client_key = "~/c.key"\n'
+    ))
+    (s,) = load_mcp_servers(p)
+    assert s.tls_verify is False
+    assert s.tls_ca_cert == "~/ca.pem"
+    assert s.tls_client_cert == "~/c.pem" and s.tls_client_key == "~/c.key"
+
+
+def test_load_mcp_mtls_cert_requires_key(tmp_path):
+    p = _write(tmp_path, (
+        '[mcp.servers.corp]\ntransport = "http"\nurl = "https://corp/mcp"\n'
+        'tls_client_cert = "~/c.pem"\n'  # no key
+    ))
+    with pytest.raises(ConfigError) as exc:
+        load_mcp_servers(p)
+    assert "tls_client_key" in str(exc.value)
+
+
+def test_load_mcp_headers_must_be_string_table(tmp_path):
+    p = _write(tmp_path, '[mcp.servers.h]\ntransport = "http"\nurl = "https://h"\nheaders = { X = 1 }\n')
     with pytest.raises(ConfigError):
         load_mcp_servers(p)
