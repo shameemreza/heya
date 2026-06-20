@@ -92,7 +92,7 @@ def make_opener(pages_by_server, *, fail=(), hang=()):
     import asyncio
 
     @contextlib.asynccontextmanager
-    async def opener(server, env, roots_cb):
+    async def opener(server, env, roots_cb, on_list_changed):
         if server.name in hang:
             await asyncio.Event().wait()  # never returns
         if server.name in fail:
@@ -257,7 +257,7 @@ class CallSession(FakeSession):
 def _call_opener(pages):
     import contextlib
     @contextlib.asynccontextmanager
-    async def opener(server, env, roots_cb):
+    async def opener(server, env, roots_cb, on_list_changed):
         yield CallSession(pages[server.name], roots_cb=roots_cb)
     return opener
 
@@ -310,7 +310,7 @@ def test_call_tool_unknown_server_raises():
 def _res_opener(pages, resource_pages=None, prompt_pages=None, **kw):
     import contextlib
     @contextlib.asynccontextmanager
-    async def opener(server, env, roots_cb):
+    async def opener(server, env, roots_cb, on_list_changed):
         yield FakeSession(pages, resource_pages=resource_pages, prompt_pages=prompt_pages,
                           roots_cb=roots_cb, **kw)
     return opener
@@ -432,7 +432,7 @@ class RWSession(FakeSession):
 def _rw_opener(pages, **kw):
     import contextlib
     @contextlib.asynccontextmanager
-    async def opener(server, env, roots_cb):
+    async def opener(server, env, roots_cb, on_list_changed):
         yield RWSession(pages, roots_cb=roots_cb, **kw)
     return opener
 
@@ -460,5 +460,88 @@ def test_get_prompt_success_and_errors():
             rt.get_prompt("demo", "missing", {})
         with pytest.raises(ToolError):
             rt.get_prompt("nope", "x", {})
+    finally:
+        rt.close()
+
+
+# --- live refresh tests (Task 3) ---
+
+def test_trigger_refresh_tools_swaps_snapshot():
+    pages = [FakePage([FakeTool("old")])]
+    session_box = {}
+
+    @contextlib.asynccontextmanager
+    async def opener(server, env, roots_cb, on_list_changed):
+        s = FakeSession(pages, roots_cb=roots_cb)
+        session_box["s"] = s
+        yield s
+
+    rt = MCPRuntime([cfg("demo")], open_session=opener)
+    rt.connect_all()
+    try:
+        assert [s["name"] for _, s in rt.list_tools()] == ["old"]
+        # server's tool set changes; a list_changed would fire — simulate the re-fetch
+        session_box["s"]._pages = [FakePage([FakeTool("new1"), FakeTool("new2")])]
+        rt.trigger_refresh("demo", "tools")
+        assert sorted(s["name"] for _, s in rt.list_tools()) == ["new1", "new2"]
+    finally:
+        rt.close()
+
+
+def test_trigger_refresh_resources_swaps_snapshot():
+    box = {}
+
+    @contextlib.asynccontextmanager
+    async def opener(server, env, roots_cb, on_list_changed):
+        s = FakeSession([FakePage([FakeTool("t")])],
+                        resource_pages=[FakeResourcePage([FakeResource("file:///a")])],
+                        roots_cb=roots_cb)
+        box["s"] = s
+        yield s
+
+    rt = MCPRuntime([cfg("demo")], open_session=opener)
+    rt.connect_all()
+    try:
+        assert [r["uri"] for _, r in rt.list_resources()] == ["file:///a"]
+        box["s"]._resource_pages = [FakeResourcePage([FakeResource("file:///b"), FakeResource("file:///c")])]
+        rt.trigger_refresh("demo", "resources")
+        assert sorted(r["uri"] for _, r in rt.list_resources()) == ["file:///b", "file:///c"]
+    finally:
+        rt.close()
+
+
+def test_refresh_failure_keeps_old_snapshot(capsys):
+    box = {}
+
+    @contextlib.asynccontextmanager
+    async def opener(server, env, roots_cb, on_list_changed):
+        s = FakeSession([FakePage([FakeTool("keep")])], roots_cb=roots_cb)
+        box["s"] = s
+        yield s
+
+    rt = MCPRuntime([cfg("demo")], open_session=opener)
+    rt.connect_all()
+    try:
+        # make the next list_tools raise -> refresh fails -> old snapshot kept
+        async def boom(cursor):
+            raise RuntimeError("server hiccup")
+        box["s"].list_tools = boom
+        rt.trigger_refresh("demo", "tools")
+        assert [s["name"] for _, s in rt.list_tools()] == ["keep"]
+        assert "demo" in capsys.readouterr().err
+    finally:
+        rt.close()
+
+
+def test_trigger_refresh_unknown_server_is_noop():
+    @contextlib.asynccontextmanager
+    async def opener(server, env, roots_cb, on_list_changed):
+        yield FakeSession([FakePage([FakeTool("t")])], roots_cb=roots_cb)
+
+    rt = MCPRuntime([cfg("demo")], open_session=opener)
+    rt.connect_all()
+    try:
+        rt.trigger_refresh("ghost", "tools")  # must not raise
+        assert [s["name"] for _, s in rt.list_tools()] == ["t"]
     finally:
         rt.close()

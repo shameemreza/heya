@@ -128,7 +128,8 @@ class MCPRuntime:
 
     async def _serve(self, server, env, ready: asyncio.Future, stop: asyncio.Event):
         try:
-            async with self._open_session(server, env, self._roots_cb()) as session:
+            on_list_changed = lambda which: self._schedule_refresh(server.name, which)  # noqa: E731
+            async with self._open_session(server, env, self._roots_cb(), on_list_changed) as session:
                 await session.initialize()
                 tools = await self._list_all(session.list_tools, "tools", tolerant=False)
                 resources = await self._list_all(session.list_resources, "resources", tolerant=True)
@@ -237,6 +238,35 @@ class MCPRuntime:
         except Exception as exc:
             raise ToolError(f"MCP get_prompt {server}.{name} failed: {exc}") from exc
         return render_prompt(result)
+
+    # ---- live refresh ---------------------------------------------------------
+
+    _REFRESH_ATTR = {"tools": "tools", "resources": "resources", "prompts": "prompts"}
+
+    async def _refresh(self, server_name, which):
+        conn = self._connected.get(server_name)
+        if conn is None:
+            return
+        list_fn = {
+            "tools": conn.session.list_tools,
+            "resources": conn.session.list_resources,
+            "prompts": conn.session.list_prompts,
+        }.get(which)
+        if list_fn is None:
+            return
+        try:
+            fresh = await self._list_all(list_fn, which, tolerant=False)
+        except Exception as exc:  # keep the prior snapshot on failure
+            print(f"MCP refresh {which} for {server_name!r} failed: {exc}", file=sys.stderr)
+            return
+        setattr(conn, which, fresh)  # atomic reference swap
+
+    def trigger_refresh(self, server_name, which) -> None:
+        self._run(self._refresh(server_name, which))
+
+    def _schedule_refresh(self, server_name, which) -> None:
+        # Called on the loop thread by the real notification handler (Task 4).
+        asyncio.ensure_future(self._refresh(server_name, which))
 
     # ---- teardown -------------------------------------------------------------
 
@@ -431,7 +461,7 @@ class _SDKSession:
 
 
 @contextlib.asynccontextmanager
-async def _default_open_session(server, env, roots_cb):
+async def _default_open_session(server, env, roots_cb, on_list_changed):
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
     from mcp.types import ListRootsResult, Root
