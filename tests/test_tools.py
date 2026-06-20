@@ -1,8 +1,77 @@
 import json
+from pathlib import Path
 
 import pytest
 
-from heya.tools import TOOL_SCHEMAS, dispatch_tool, describe_call
+from heya.tools import TOOL_SCHEMAS, build_tool_schemas, dispatch_tool, describe_call
+from heya.tools_mcp import _MAX_DESC  # noqa: F401  (referenced for the truncation test)
+
+
+class FakeMCPRuntime:
+    def __init__(self, tools, *, result="MCP_OK"):
+        self._tools = tools          # list[(server, {"name","description","inputSchema"})]
+        self._result = result
+        self.calls = []
+
+    def list_tools(self):
+        return self._tools
+
+    def call_tool(self, server, tool, arguments, *, timeout=120.0):
+        self.calls.append((server, tool, arguments))
+        return self._result
+
+
+def test_build_tool_schemas_none_matches_static():
+    assert build_tool_schemas(None) == TOOL_SCHEMAS
+
+
+def test_build_tool_schemas_appends_namespaced_mcp_tools():
+    rt = FakeMCPRuntime([("linear", {
+        "name": "create_issue", "description": "Make an issue",
+        "inputSchema": {"type": "object", "properties": {"title": {"type": "string"}}},
+    })])
+    schemas = build_tool_schemas(rt)
+    assert schemas[:len(TOOL_SCHEMAS)] == TOOL_SCHEMAS
+    extra = schemas[len(TOOL_SCHEMAS):]
+    assert len(extra) == 1
+    fn = extra[0]["function"]
+    assert fn["name"] == "mcp__linear__create_issue"
+    assert fn["parameters"] == {"type": "object", "properties": {"title": {"type": "string"}}}
+
+
+def test_build_tool_schemas_truncates_long_description():
+    rt = FakeMCPRuntime([("s", {
+        "name": "t", "description": "x" * 5000, "inputSchema": {"type": "object"},
+    })])
+    desc = build_tool_schemas(rt)[len(TOOL_SCHEMAS):][0]["function"]["description"]
+    assert len(desc) <= 1024
+
+
+def test_dispatch_routes_mcp_call_to_runtime():
+    rt = FakeMCPRuntime([("linear", {"name": "create_issue", "description": "", "inputSchema": {}})])
+    out = dispatch_tool(
+        "mcp__linear__create_issue", '{"title": "Bug"}',
+        allowed_roots=[], cwd=Path("."), timeout=10, mcp_runtime=rt,
+    )
+    assert out == "MCP_OK"
+    assert rt.calls == [("linear", "create_issue", {"title": "Bug"})]
+
+
+def test_dispatch_unknown_mcp_tool_errors():
+    rt = FakeMCPRuntime([])
+    out = dispatch_tool(
+        "mcp__nope__nope", "{}", allowed_roots=[], cwd=Path("."), timeout=10, mcp_runtime=rt,
+    )
+    assert out.startswith("Error")
+
+
+def test_dispatch_mcp_without_runtime_errors():
+    out = dispatch_tool("mcp__x__y", "{}", allowed_roots=[], cwd=Path("."), timeout=10)
+    assert out.startswith("Error")
+
+
+def test_describe_call_renders_mcp():
+    assert describe_call("mcp__linear__create_issue", '{"title": "Bug"}') == "mcp__linear__create_issue → linear.create_issue({'title': 'Bug'})"
 
 
 def test_schemas_cover_the_three_tools():

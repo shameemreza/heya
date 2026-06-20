@@ -14,6 +14,7 @@ from pathlib import Path
 from .text import truncate_output
 from .tools_files import ToolError, read_file, resolve_in_allowlist, run_command, write_file
 from .tools_guidance import read_guidance as _read_guidance
+from .tools_mcp import MCP_PREFIX, build_reverse_map, mcp_tool_name, parse_mcp_name, _MAX_DESC
 from .tools_web import web_fetch, web_search
 from .tools_wp import read_log, run_wp_cli
 
@@ -162,6 +163,24 @@ TOOL_SCHEMAS: list[dict] = [
 ]
 
 
+def build_tool_schemas(mcp_runtime=None) -> list[dict]:
+    """Native tools plus, when a runtime is connected, one schema per MCP tool."""
+    if mcp_runtime is None:
+        return TOOL_SCHEMAS
+    extra: list[dict] = []
+    for server, tool in mcp_runtime.list_tools():
+        description = (tool.get("description") or "")[:_MAX_DESC]
+        extra.append({
+            "type": "function",
+            "function": {
+                "name": mcp_tool_name(server, tool["name"]),
+                "description": description,
+                "parameters": tool.get("inputSchema") or {"type": "object", "properties": {}},
+            },
+        })
+    return TOOL_SCHEMAS + extra
+
+
 def dispatch_tool(
     name: str,
     arguments: str,
@@ -175,6 +194,7 @@ def dispatch_tool(
     process_registry=None,
     wp_default_root=None,
     playground_session=None,
+    mcp_runtime=None,
 ) -> str:
     """Run one model tool-call. Returns a string result (errors included)."""
     try:
@@ -184,6 +204,14 @@ def dispatch_tool(
     if not isinstance(args, dict):
         return f"Error: tool arguments must be a JSON object, got {type(args).__name__}."
     try:
+        if name.startswith(MCP_PREFIX):
+            if mcp_runtime is None:
+                return f"Error: unknown tool {name!r}."
+            target = parse_mcp_name(name, build_reverse_map(mcp_runtime.list_tools()))
+            if target is None:
+                return f"Error: unknown tool {name!r}."
+            server, tool = target
+            return truncate_output(mcp_runtime.call_tool(server, tool, args))
         if name == "read_file":
             return truncate_output(read_file(args["path"], allowed_roots=allowed_roots))
         if name == "write_file":
@@ -301,4 +329,9 @@ def describe_call(name: str, arguments: str) -> str:
         return f"read_log → {args.get('path') or '(default site)'}"
     if name == "run_wp_cli":
         return f"run_wp_cli → wp {args.get('args', '?')}"
+    if name.startswith(MCP_PREFIX):
+        # name is mcp__<server>__<tool>; recover a readable server.tool(args)
+        body = name[len(MCP_PREFIX):]
+        server, _, tool = body.partition("__")
+        return f"{name} → {server}.{tool}({args})"
     return f"{name} {args}"
