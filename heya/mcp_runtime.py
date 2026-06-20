@@ -53,6 +53,8 @@ class MCPRuntime:
         self._thread: threading.Thread | None = None
         self._connected: dict[str, _Connected] = {}
         self._closed = False
+        # Keeps pending refresh tasks alive so they can't be GC'd mid-flight.
+        self._pending_refreshes: set[asyncio.Task] = set()
 
     # ---- loop-thread plumbing -------------------------------------------------
 
@@ -265,8 +267,11 @@ class MCPRuntime:
         self._run(self._refresh(server_name, which))
 
     def _schedule_refresh(self, server_name, which) -> None:
-        # Called on the loop thread by the real notification handler (Task 4).
-        asyncio.ensure_future(self._refresh(server_name, which))
+        # Called on the loop thread by the real notification handler.
+        # Store the task reference to prevent GC mid-flight; discard on completion.
+        task = asyncio.ensure_future(self._refresh(server_name, which))
+        self._pending_refreshes.add(task)
+        task.add_done_callback(self._pending_refreshes.discard)
 
     # ---- teardown -------------------------------------------------------------
 
@@ -299,6 +304,9 @@ class MCPRuntime:
         # Let each _serve task finish exiting its async-with before the loop stops.
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        # Drain any pending refresh tasks so they don't become orphaned/GC'd.
+        if self._pending_refreshes:
+            await asyncio.gather(*list(self._pending_refreshes), return_exceptions=True)
 
 
 def build_roots(allowed_roots: Sequence[Path]):
@@ -407,7 +415,8 @@ class _SDKResourcesPage:
 
 class _SDKResource:
     def __init__(self, r):
-        self.uri = r.uri
+        # URI is an AnyUrl on the SDK object; stringify for the uniform interface.
+        self.uri = str(r.uri)
         self.name = getattr(r, "name", "") or ""
         self.description = getattr(r, "description", "") or ""
         self.mime_type = getattr(r, "mimeType", "") or ""
@@ -453,8 +462,16 @@ class _SDKSession:
         return _SDKResult(await self._session.call_tool(name, arguments or {}))
 
     async def read_resource(self, uri):
-        result = await self._session.read_resource(uri)
-        return list(getattr(result, "contents", None) or [])
+        # SDK 1.x requires AnyUrl, not a plain str.
+        from pydantic import AnyUrl
+        result = await self._session.read_resource(AnyUrl(uri))
+        contents = list(getattr(result, "contents", None) or [])
+        # SDK ResourceContents uses camelCase `mimeType`; render_resource reads
+        # snake_case `mime_type` on the fallback branch — patch it on each item.
+        for c in contents:
+            if not hasattr(c, "mime_type"):
+                c.mime_type = getattr(c, "mimeType", None)
+        return contents
 
     async def get_prompt(self, name, arguments):
         return await self._session.get_prompt(name, arguments=arguments or {})
@@ -464,13 +481,36 @@ class _SDKSession:
 async def _default_open_session(server, env, roots_cb, on_list_changed):
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
-    from mcp.types import ListRootsResult, Root
+    from mcp.types import (
+        ListRootsResult,
+        Root,
+        ServerNotification,
+        ToolListChangedNotification,
+        ResourceListChangedNotification,
+        PromptListChangedNotification,
+    )
 
     # SDK 1.x ListRootsFnT signature: async def __call__(self, context) -> ListRootsResult
     async def _list_roots(_context):
         return ListRootsResult(roots=[Root(uri=uri, name=name) for uri, name in roots_cb])
 
+    # message_handler receives RequestResponder | ServerNotification | Exception.
+    # ServerNotification is a RootModel; its .root holds the concrete notification.
+    async def _message_handler(message):
+        if isinstance(message, ServerNotification):
+            root = message.root
+            if isinstance(root, ToolListChangedNotification):
+                on_list_changed("tools")
+            elif isinstance(root, ResourceListChangedNotification):
+                on_list_changed("resources")
+            elif isinstance(root, PromptListChangedNotification):
+                on_list_changed("prompts")
+
     params = StdioServerParameters(command=server.command, args=list(server.args), env=env)
     async with stdio_client(params) as (read, write):
-        async with ClientSession(read, write, list_roots_callback=_list_roots) as session:
+        async with ClientSession(
+            read, write,
+            list_roots_callback=_list_roots,
+            message_handler=_message_handler,
+        ) as session:
             yield _SDKSession(session)

@@ -16,6 +16,15 @@ _SERVER = textwrap.dedent('''
         "Echo the text back."
         return f"echo: {text}"
 
+    @mcp.resource("file:///canary.txt")
+    def canary_doc() -> str:
+        return "canary resource body"
+
+    @mcp.prompt()
+    def greet(name: str) -> str:
+        "A greeting prompt."
+        return f"Say hello to {name}"
+
     if __name__ == "__main__":
         mcp.run()
 ''')
@@ -34,5 +43,26 @@ def test_real_stdio_bridge_end_to_end(tmp_path):
         assert "echo" in names
         out = runtime.call_tool("canary", "echo", {"text": "hi"})
         assert "echo: hi" in out
+    finally:
+        runtime.close()
+
+
+@pytest.mark.integration
+def test_real_resources_and_prompts(tmp_path):
+    server_file = tmp_path / "canary_server.py"
+    server_file.write_text(_SERVER)
+    runtime = MCPRuntime([MCPServerConfig(
+        name="canary", command=sys.executable, args=(str(server_file),),
+    )], connect_timeout=20.0)
+    runtime.connect_all()
+    try:
+        assert runtime.has_resources() is True
+        assert runtime.has_prompts() is True
+        uris = [r["uri"] for _, r in runtime.list_resources()]
+        assert "file:///canary.txt" in uris
+        assert "canary resource body" in runtime.read_resource("canary", "file:///canary.txt")
+        names = [p["name"] for _, p in runtime.list_prompts()]
+        assert "greet" in names
+        assert "hello" in runtime.get_prompt("canary", "greet", {"name": "Ada"}).lower()
     finally:
         runtime.close()
