@@ -545,3 +545,58 @@ def test_trigger_refresh_unknown_server_is_noop():
         assert [s["name"] for _, s in rt.list_tools()] == ["t"]
     finally:
         rt.close()
+
+
+# --- Task 2: auth headers and TLS client builders ---
+
+import os
+from pathlib import Path as _P
+from heya.mcp_runtime import _build_headers, _http_client_kwargs, _build_http_client
+
+
+def _http_cfg(**kw):
+    return MCPServerConfig(name="h", transport="http", url="https://h/mcp", **kw)
+
+
+def test_build_headers_static_only():
+    assert _build_headers(_http_cfg(headers=(("X-Tenant", "acme"),))) == {"X-Tenant": "acme"}
+
+
+def test_build_headers_bearer_from_env(monkeypatch):
+    monkeypatch.setenv("HT", "secret-token")
+    h = _build_headers(_http_cfg(auth_token_env="HT", headers=(("X-A", "b"),)))
+    assert h == {"X-A": "b", "Authorization": "Bearer secret-token"}
+
+
+def test_build_headers_missing_env_raises(monkeypatch):
+    monkeypatch.delenv("ABSENT", raising=False)
+    with pytest.raises(ToolError):
+        _build_headers(_http_cfg(auth_token_env="ABSENT"))
+
+
+def test_client_kwargs_default_verify_true():
+    kw = _http_client_kwargs(_http_cfg())
+    assert kw["verify"] is True and kw["cert"] is None
+
+
+def test_client_kwargs_ca_cert_path(monkeypatch):
+    kw = _http_client_kwargs(_http_cfg(tls_ca_cert="~/ca.pem"))
+    assert kw["verify"] == str(_P("~/ca.pem").expanduser())
+
+
+def test_client_kwargs_verify_false():
+    assert _http_client_kwargs(_http_cfg(tls_verify=False))["verify"] is False
+
+
+def test_client_kwargs_mtls_cert_tuple():
+    kw = _http_client_kwargs(_http_cfg(tls_client_cert="~/c.pem", tls_client_key="~/c.key"))
+    assert kw["cert"] == (str(_P("~/c.pem").expanduser()), str(_P("~/c.key").expanduser()))
+
+
+def test_build_http_client_warns_on_verify_false(capsys):
+    import asyncio
+    client = _build_http_client(_http_cfg(tls_verify=False))
+    try:
+        assert "TLS verification disabled" in capsys.readouterr().err
+    finally:
+        asyncio.run(client.aclose())  # close the offline client so no ResourceWarning leaks

@@ -22,6 +22,8 @@ import threading
 from collections.abc import Sequence
 from pathlib import Path
 
+import httpx
+
 from .config import MCPServerConfig
 from .tools_files import ToolError
 
@@ -314,6 +316,41 @@ def build_roots(allowed_roots: Sequence[Path]):
     SDK's ListRootsResult. Kept SDK-free so it is unit-testable.
     """
     return [(Path(p).resolve().as_uri(), Path(p).name or str(p)) for p in allowed_roots]
+
+
+def _build_headers(server) -> dict[str, str]:
+    """Static headers plus an Authorization: Bearer header from a named env var.
+
+    The token is referenced by env-var NAME and read here; a missing var raises
+    ToolError so the server is skipped with a warning (like a missing stdio secret).
+    """
+    headers = dict(server.headers)
+    if server.auth_token_env:
+        value = os.environ.get(server.auth_token_env)
+        if value is None:
+            raise ToolError(f"required env var {server.auth_token_env} is not set")
+        headers["Authorization"] = f"Bearer {value}"
+    return headers
+
+
+def _http_client_kwargs(server) -> dict:
+    """Pure: the kwargs for the httpx.AsyncClient used by http/sse transports."""
+    verify = str(Path(server.tls_ca_cert).expanduser()) if server.tls_ca_cert else server.tls_verify
+    cert = None
+    if server.tls_client_cert and server.tls_client_key:
+        cert = (
+            str(Path(server.tls_client_cert).expanduser()),
+            str(Path(server.tls_client_key).expanduser()),
+        )
+    return {"headers": _build_headers(server), "verify": verify, "cert": cert}
+
+
+def _build_http_client(server) -> httpx.AsyncClient:
+    """Construct the auth+TLS httpx client; warn loudly if verification is off."""
+    kwargs = _http_client_kwargs(server)
+    if kwargs["verify"] is False:
+        print(f"MCP server {server.name!r}: TLS verification disabled", file=sys.stderr)
+    return httpx.AsyncClient(**kwargs)
 
 
 def render_tool_result(result) -> str:
