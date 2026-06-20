@@ -46,12 +46,14 @@ class ApprovalPolicy:
 
     def check(self, name: str, detail: str) -> bool:
         """Return True if the tool may run."""
-        if name not in GATED_TOOLS:
+        is_mcp = name.startswith("mcp__")
+        if name not in GATED_TOOLS and not is_mcp:
             return True
         if self.auto_approve or name in self._always:
             return True
         command = self._command_of(detail)
-        if any(command.startswith(prefix) for prefix in self._allow):
+        candidates = (command, name) if is_mcp else (command,)
+        if any(c.startswith(prefix) for c in candidates for prefix in self._allow):
             return True
         decision = self._approver(name, detail)
         if decision == "always":

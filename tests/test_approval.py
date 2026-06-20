@@ -64,3 +64,26 @@ def test_allowlist_matches_plain_run_command():
 def test_empty_allowlist_still_prompts():
     policy = ApprovalPolicy(approver=_deny, allow=[])
     assert policy.check("run_command", "run_command → echo hi") is False
+
+
+def test_mcp_call_is_gated():
+    policy = ApprovalPolicy(approver=_deny)
+    # gated -> approver says no -> not allowed
+    assert policy.check("mcp__linear__create_issue",
+                        "mcp__linear__create_issue → linear.create_issue({})") is False
+
+
+def test_mcp_call_allowlist_by_namespaced_prefix():
+    policy = ApprovalPolicy(approver=_deny, allow=("mcp__linear__",))
+    assert policy.check("mcp__linear__create_issue",
+                        "mcp__linear__create_issue → linear.create_issue({})") is True
+
+
+def test_mcp_call_auto_approve():
+    policy = ApprovalPolicy(auto_approve=True, approver=_deny)
+    assert policy.check("mcp__x__y", "mcp__x__y → x.y({})") is True
+
+
+def test_non_mcp_unknown_tool_still_ungated():
+    policy = ApprovalPolicy(approver=_deny)
+    assert policy.check("read_file", "read_file → /tmp/x") is True

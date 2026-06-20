@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .approval import ApprovalPolicy
-from .tools import TOOL_SCHEMAS, describe_call, dispatch_tool
+from .tools import build_tool_schemas, describe_call, dispatch_tool
 
 SYSTEM_PROMPT = (
     "You are Heya, a careful, capable command-line assistant. You help with "
@@ -26,6 +26,7 @@ SYSTEM_PROMPT = (
     " You can drive a real browser to reproduce issues: browser_navigate, browser_snapshot, browser_click, browser_type, browser_screenshot, and browser_evidence (console and network errors). Take a snapshot after each action to see the result."
     " For WordPress work you can tail a site's error log (read_log), run WP-CLI (run_wp_cli), and boot a disposable clean WordPress to reproduce on (wp_playground). Each takes the site's root directory as `path`; if you cannot tell which site is meant, ask the user rather than guessing. Use dev/staging sites only, never production, and back up before destructive WP-CLI ops (db reset, site empty)."
     " For long-lived commands (a dev server, a watcher), run_command with background=true returns a process id; read its output with check_command and stop it with kill_command."
+    " You may also have MCP tools from servers the user configured (names like mcp__<server>__<tool>); these reach external systems and are approval-gated, and the user controls which servers are connected."
 )
 
 SELF_REVIEW_NUDGE = (
@@ -56,6 +57,7 @@ class Agent:
         process_registry=None,
         wp_default_root=None,
         playground_session=None,
+        mcp_runtime=None,
     ) -> None:
         self.client = client
         self.allowed_roots = list(allowed_roots)
@@ -71,6 +73,7 @@ class Agent:
         self.process_registry = process_registry
         self.wp_default_root = wp_default_root
         self.playground_session = playground_session
+        self.mcp_runtime = mcp_runtime
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
         self._mutated = False
 
@@ -86,17 +89,21 @@ class Agent:
         return answer
 
     def close(self) -> None:
-        """Release external resources (browser session and background processes)."""
+        """Release external resources: browser session, background processes,
+        the WordPress Playground session, and the MCP runtime."""
         if self.browser_session is not None:
             self.browser_session.close()
         if self.process_registry is not None:
             self.process_registry.close()
         if self.playground_session is not None:
             self.playground_session.close()
+        if self.mcp_runtime is not None:
+            self.mcp_runtime.close()
 
     def _loop(self) -> str:
+        tools = build_tool_schemas(self.mcp_runtime)
         for _ in range(self.max_iters):
-            result = self.client.chat_stream(self.messages, tools=TOOL_SCHEMAS, on_text=self.on_text)
+            result = self.client.chat_stream(self.messages, tools=tools, on_text=self.on_text)
             self.messages.append(self._assistant_message(result))
             if not result.tool_calls:
                 return result.content or ""
@@ -136,6 +143,7 @@ class Agent:
             process_registry=self.process_registry,
             wp_default_root=self.wp_default_root,
             playground_session=self.playground_session,
+            mcp_runtime=self.mcp_runtime,
         )
         mutating = call.name in ("write_file", "run_command", "run_wp_cli")
         if mutating and not output.startswith(("Error", "Started background process", "Declined")):

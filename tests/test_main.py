@@ -71,3 +71,15 @@ def test_default_make_agent_builds_with_wp_wiring(monkeypatch, tmp_path):
     assert agent.process_registry is not None
     assert agent.playground_session is not None
     agent.close()  # must tear down registry + sessions without error
+
+
+def test_default_make_agent_wires_mcp_runtime(monkeypatch):
+    import heya.main as main_mod
+    monkeypatch.setattr(main_mod, "LLMClient", lambda profile: object())
+    monkeypatch.setattr(main_mod, "load_mcp_servers", lambda *a, **k: ())
+    args = main_mod.build_parser().parse_args([])
+    agent = main_mod._default_make_agent(args)
+    try:
+        assert agent.mcp_runtime is not None
+    finally:
+        agent.close()

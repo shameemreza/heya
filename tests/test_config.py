@@ -4,6 +4,7 @@ import pytest
 
 from heya.config import Profile, resolve_profile, ConfigError
 from heya.config import BUILTIN_PROFILES, load_profiles
+from heya.config import MCPServerConfig, load_mcp_servers
 
 
 def test_profile_api_key_reads_named_env_var(monkeypatch):
@@ -224,3 +225,67 @@ def test_load_approval_allow_reads_list(tmp_path):
 def test_load_approval_allow_absent_is_empty(tmp_path):
     from heya.config import load_approval_allow
     assert load_approval_allow(tmp_path / "missing.toml") == ()
+
+
+def _write(tmp_path, text):
+    p = tmp_path / "config.toml"
+    p.write_text(text)
+    return p
+
+
+def test_load_mcp_servers_absent_returns_empty(tmp_path):
+    assert load_mcp_servers(tmp_path / "missing.toml") == ()
+
+
+def test_load_mcp_servers_no_section_returns_empty(tmp_path):
+    p = _write(tmp_path, "[workspace]\nallowed_roots = []\n")
+    assert load_mcp_servers(p) == ()
+
+
+def test_load_mcp_servers_parses_entry_with_defaults(tmp_path):
+    p = _write(tmp_path, (
+        '[mcp.servers.demo]\n'
+        'transport = "stdio"\n'
+        'command = "npx"\n'
+        'args = ["-y", "demo-server"]\n'
+        'env_keys = ["DEMO_TOKEN"]\n'
+    ))
+    (server,) = load_mcp_servers(p)
+    assert server == MCPServerConfig(
+        name="demo", transport="stdio", command="npx",
+        args=("-y", "demo-server"), env_keys=("DEMO_TOKEN",),
+        enabled=True, tools=("*",),
+    )
+
+
+def test_load_mcp_servers_respects_enabled_and_tools(tmp_path):
+    p = _write(tmp_path, (
+        '[mcp.servers.demo]\n'
+        'command = "x"\n'
+        'enabled = false\n'
+        'tools = ["a", "b"]\n'
+    ))
+    (server,) = load_mcp_servers(p)
+    assert server.enabled is False
+    assert server.tools == ("a", "b")
+    assert server.transport == "stdio"  # default
+    assert server.args == () and server.env_keys == ()
+
+
+def test_load_mcp_servers_rejects_non_stdio_transport(tmp_path):
+    p = _write(tmp_path, '[mcp.servers.demo]\ncommand = "x"\ntransport = "http"\n')
+    with pytest.raises(ConfigError) as exc:
+        load_mcp_servers(p)
+    assert "http" in str(exc.value) and "7b-3" in str(exc.value)
+
+
+def test_load_mcp_servers_requires_command(tmp_path):
+    p = _write(tmp_path, '[mcp.servers.demo]\ntransport = "stdio"\n')
+    with pytest.raises(ConfigError):
+        load_mcp_servers(p)
+
+
+def test_load_mcp_servers_rejects_non_string_list_entries(tmp_path):
+    p = _write(tmp_path, '[mcp.servers.demo]\ncommand = "x"\nargs = [1, 2]\n')
+    with pytest.raises(ConfigError):
+        load_mcp_servers(p)
