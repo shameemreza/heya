@@ -550,7 +550,6 @@ def test_trigger_refresh_unknown_server_is_noop():
 # --- Task 2: auth headers and TLS client builders ---
 
 import os
-from pathlib import Path as _P
 from heya.mcp_runtime import _build_headers, _http_client_kwargs, _build_http_client
 
 
@@ -576,21 +575,39 @@ def test_build_headers_missing_env_raises(monkeypatch):
 
 def test_client_kwargs_default_verify_true():
     kw = _http_client_kwargs(_http_cfg())
-    assert kw["verify"] is True and kw["cert"] is None
+    assert kw["verify"] is True and "cert" not in kw
 
 
-def test_client_kwargs_ca_cert_path(monkeypatch):
-    kw = _http_client_kwargs(_http_cfg(tls_ca_cert="~/ca.pem"))
-    assert kw["verify"] == str(_P("~/ca.pem").expanduser())
+def test_client_kwargs_ca_cert_path(tmp_path):
+    import ssl
+    import trustme
+    ca = trustme.CA()
+    ca_file = tmp_path / "ca.pem"
+    ca.cert_pem.write_to_path(str(ca_file))
+    kw = _http_client_kwargs(_http_cfg(tls_ca_cert=str(ca_file)))
+    assert isinstance(kw["verify"], ssl.SSLContext) and "cert" not in kw
 
 
 def test_client_kwargs_verify_false():
-    assert _http_client_kwargs(_http_cfg(tls_verify=False))["verify"] is False
+    kw = _http_client_kwargs(_http_cfg(tls_verify=False))
+    assert kw["verify"] is False and "cert" not in kw
 
 
-def test_client_kwargs_mtls_cert_tuple():
-    kw = _http_client_kwargs(_http_cfg(tls_client_cert="~/c.pem", tls_client_key="~/c.key"))
-    assert kw["cert"] == (str(_P("~/c.pem").expanduser()), str(_P("~/c.key").expanduser()))
+def test_client_kwargs_mtls_folds_into_context(tmp_path):
+    # mTLS: the client cert+key are loaded INTO the SSLContext, never returned
+    # as a separate cert tuple (httpx deprecated cert=, dropping it breaks mTLS).
+    import ssl
+    import trustme
+    ca = trustme.CA()
+    client_cert = ca.issue_cert("client@canary")
+    cert_file = tmp_path / "client.pem"
+    key_file = tmp_path / "client.key"
+    client_cert.cert_chain_pems[0].write_to_path(str(cert_file))
+    client_cert.private_key_pem.write_to_path(str(key_file))
+    kw = _http_client_kwargs(_http_cfg(
+        tls_client_cert=str(cert_file), tls_client_key=str(key_file),
+    ))
+    assert isinstance(kw["verify"], ssl.SSLContext) and "cert" not in kw
 
 
 def test_build_http_client_warns_on_verify_false(capsys):

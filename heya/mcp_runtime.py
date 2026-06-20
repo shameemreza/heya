@@ -17,6 +17,7 @@ import asyncio
 import contextlib
 import json as _json
 import os
+import ssl
 import sys
 import threading
 from collections.abc import Sequence
@@ -334,15 +335,26 @@ def _build_headers(server) -> dict[str, str]:
 
 
 def _http_client_kwargs(server) -> dict:
-    """Pure: the kwargs for the httpx.AsyncClient used by http/sse transports."""
-    verify = str(Path(server.tls_ca_cert).expanduser()) if server.tls_ca_cert else server.tls_verify
-    cert = None
+    """Pure: the kwargs for the httpx.AsyncClient used by http/sse transports.
+
+    A custom CA and/or a client cert (mTLS) are folded into ONE ssl.SSLContext
+    passed as `verify`; no separate `cert=` is ever handed to httpx (httpx
+    deprecated that path, and dropping it would silently break mTLS).
+    """
+    headers = _build_headers(server)
+    if server.tls_verify is False:
+        return {"headers": headers, "verify": False}
+    needs_ctx = bool(server.tls_ca_cert) or bool(server.tls_client_cert and server.tls_client_key)
+    if not needs_ctx:
+        return {"headers": headers, "verify": True}
+    cafile = str(Path(server.tls_ca_cert).expanduser()) if server.tls_ca_cert else None
+    ctx = ssl.create_default_context(cafile=cafile)
     if server.tls_client_cert and server.tls_client_key:
-        cert = (
+        ctx.load_cert_chain(
             str(Path(server.tls_client_cert).expanduser()),
             str(Path(server.tls_client_key).expanduser()),
         )
-    return {"headers": _build_headers(server), "verify": verify, "cert": cert}
+    return {"headers": headers, "verify": ctx}
 
 
 def _build_http_client(server) -> httpx.AsyncClient:
