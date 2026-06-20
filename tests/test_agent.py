@@ -282,6 +282,12 @@ class FakeMCPRuntime:
     def list_tools(self):
         return [("demo", {"name": "ping", "description": "p", "inputSchema": {"type": "object"}})]
 
+    def has_resources(self):
+        return False
+
+    def has_prompts(self):
+        return False
+
     def call_tool(self, server, tool, arguments, *, timeout=120.0):
         self.calls.append((server, tool, arguments))
         return "PONG"

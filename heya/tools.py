@@ -18,6 +18,36 @@ from .tools_mcp import MCP_PREFIX, build_reverse_map, mcp_tool_name, parse_mcp_n
 from .tools_web import web_fetch, web_search
 from .tools_wp import read_log, run_wp_cli
 
+_MCP_RESOURCE_SCHEMAS = [
+    {"type": "function", "function": {
+        "name": "mcp_list_resources",
+        "description": "List data resources available from connected MCP servers (server, uri, name, description).",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "mcp_read_resource",
+        "description": "Read one MCP resource's contents into context.",
+        "parameters": {"type": "object",
+            "properties": {"server": {"type": "string"}, "uri": {"type": "string"}},
+            "required": ["server", "uri"]},
+    }},
+]
+_MCP_PROMPT_SCHEMAS = [
+    {"type": "function", "function": {
+        "name": "mcp_list_prompts",
+        "description": "List prompt templates available from connected MCP servers (server, name, description, arguments).",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "mcp_get_prompt",
+        "description": "Expand an MCP prompt template to its messages.",
+        "parameters": {"type": "object",
+            "properties": {"server": {"type": "string"}, "name": {"type": "string"},
+                "arguments": {"type": "object"}},
+            "required": ["server", "name"]},
+    }},
+]
+
 TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
@@ -178,6 +208,10 @@ def build_tool_schemas(mcp_runtime=None) -> list[dict]:
                 "parameters": tool.get("inputSchema") or {"type": "object", "properties": {}},
             },
         })
+    if mcp_runtime.has_resources():
+        extra += _MCP_RESOURCE_SCHEMAS
+    if mcp_runtime.has_prompts():
+        extra += _MCP_PROMPT_SCHEMAS
     return TOOL_SCHEMAS + extra
 
 
@@ -212,6 +246,31 @@ def dispatch_tool(
                 return f"Error: unknown tool {name!r}."
             server, tool = target
             return truncate_output(mcp_runtime.call_tool(server, tool, args))
+        if name == "mcp_list_resources":
+            if mcp_runtime is None:
+                return f"Error: unknown tool {name!r}."
+            rows = mcp_runtime.list_resources()
+            if not rows:
+                return "No connected MCP server provides resources."
+            return truncate_output("\n".join(
+                f"{srv}\t{r['uri']}\t{r.get('name','')}\t{r.get('description','')}" for srv, r in rows))
+        if name == "mcp_read_resource":
+            if mcp_runtime is None:
+                return f"Error: unknown tool {name!r}."
+            return truncate_output(mcp_runtime.read_resource(args["server"], args["uri"]))
+        if name == "mcp_list_prompts":
+            if mcp_runtime is None:
+                return f"Error: unknown tool {name!r}."
+            rows = mcp_runtime.list_prompts()
+            if not rows:
+                return "No connected MCP server provides prompts."
+            return truncate_output("\n".join(
+                f"{srv}\t{p['name']}\t{p.get('description','')}\targs={p.get('arguments',[])}" for srv, p in rows))
+        if name == "mcp_get_prompt":
+            if mcp_runtime is None:
+                return f"Error: unknown tool {name!r}."
+            return truncate_output(
+                mcp_runtime.get_prompt(args["server"], args["name"], args.get("arguments") or {}))
         if name == "read_file":
             return truncate_output(read_file(args["path"], allowed_roots=allowed_roots))
         if name == "write_file":
@@ -329,6 +388,12 @@ def describe_call(name: str, arguments: str) -> str:
         return f"read_log → {args.get('path') or '(default site)'}"
     if name == "run_wp_cli":
         return f"run_wp_cli → wp {args.get('args', '?')}"
+    if name == "mcp_read_resource":
+        return f"mcp_read_resource → read resource {args.get('uri','?')} from {args.get('server','?')}"
+    if name == "mcp_get_prompt":
+        return f"mcp_get_prompt → prompt {args.get('name','?')} from {args.get('server','?')}"
+    if name in ("mcp_list_resources", "mcp_list_prompts"):
+        return name
     if name.startswith(MCP_PREFIX):
         # name is mcp__<server>__<tool>; recover a readable server.tool(args)
         body = name[len(MCP_PREFIX):]

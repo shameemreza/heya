@@ -16,6 +16,12 @@ class FakeMCPRuntime:
     def list_tools(self):
         return self._tools
 
+    def has_resources(self):
+        return False
+
+    def has_prompts(self):
+        return False
+
     def call_tool(self, server, tool, arguments, *, timeout=120.0):
         self.calls.append((server, tool, arguments))
         return self._result
@@ -428,3 +434,85 @@ def test_dispatch_wp_playground_without_session_errors(tmp_path):
     out = dispatch_tool("wp_playground", json.dumps({"action": "start"}),
                         allowed_roots=[tmp_path], cwd=tmp_path, timeout=10)
     assert "Error" in out
+
+
+class FakeMCPRuntime2:
+    def __init__(self, *, resources=(), prompts=()):
+        self._resources = list(resources)   # list[(server, dict)]
+        self._prompts = list(prompts)
+        self.reads = []
+        self.gets = []
+
+    def list_tools(self):
+        return []
+
+    def has_resources(self):
+        return bool(self._resources)
+
+    def has_prompts(self):
+        return bool(self._prompts)
+
+    def list_resources(self):
+        return self._resources
+
+    def list_prompts(self):
+        return self._prompts
+
+    def read_resource(self, server, uri, *, timeout=120.0):
+        self.reads.append((server, uri))
+        return f"RES:{server}:{uri}"
+
+    def get_prompt(self, server, name, arguments, *, timeout=120.0):
+        self.gets.append((server, name, arguments))
+        return f"PROMPT:{server}:{name}:{arguments}"
+
+
+def _names(schemas):
+    return [s["function"]["name"] for s in schemas]
+
+
+def test_resource_tools_appear_only_with_resources():
+    rt = FakeMCPRuntime2(resources=[("linear", {"uri": "u", "name": "n", "description": "d", "mimeType": "text/plain"})])
+    names = _names(build_tool_schemas(rt))
+    assert "mcp_list_resources" in names and "mcp_read_resource" in names
+    assert "mcp_list_prompts" not in names and "mcp_get_prompt" not in names
+
+
+def test_prompt_tools_appear_only_with_prompts():
+    rt = FakeMCPRuntime2(prompts=[("linear", {"name": "p", "description": "d", "arguments": ["x"]})])
+    names = _names(build_tool_schemas(rt))
+    assert "mcp_list_prompts" in names and "mcp_get_prompt" in names
+    assert "mcp_list_resources" not in names
+
+
+def test_no_gateway_tools_when_neither():
+    rt = FakeMCPRuntime2()
+    names = _names(build_tool_schemas(rt))
+    for n in ("mcp_list_resources", "mcp_read_resource", "mcp_list_prompts", "mcp_get_prompt"):
+        assert n not in names
+
+
+def test_dispatch_read_resource():
+    rt = FakeMCPRuntime2(resources=[("s", {"uri": "file:///a", "name": "", "description": "", "mimeType": ""})])
+    out = dispatch_tool("mcp_read_resource", '{"server": "s", "uri": "file:///a"}',
+                        allowed_roots=[], cwd=Path("."), timeout=10, mcp_runtime=rt)
+    assert out == "RES:s:file:///a"
+    assert rt.reads == [("s", "file:///a")]
+
+
+def test_dispatch_get_prompt():
+    rt = FakeMCPRuntime2(prompts=[("s", {"name": "p", "description": "", "arguments": []})])
+    out = dispatch_tool("mcp_get_prompt", '{"server": "s", "name": "p", "arguments": {"n": 1}}',
+                        allowed_roots=[], cwd=Path("."), timeout=10, mcp_runtime=rt)
+    assert out == "PROMPT:s:p:{'n': 1}"
+
+
+def test_dispatch_list_resources_enumerates():
+    rt = FakeMCPRuntime2(resources=[("s", {"uri": "file:///a", "name": "Doc", "description": "x", "mimeType": "text/plain"})])
+    out = dispatch_tool("mcp_list_resources", "{}", allowed_roots=[], cwd=Path("."), timeout=10, mcp_runtime=rt)
+    assert "file:///a" in out and "s" in out
+
+
+def test_describe_call_gateway():
+    assert describe_call("mcp_read_resource", '{"server": "s", "uri": "file:///a"}') == "mcp_read_resource → read resource file:///a from s"
+    assert describe_call("mcp_get_prompt", '{"server": "s", "name": "p"}') == "mcp_get_prompt → prompt p from s"
