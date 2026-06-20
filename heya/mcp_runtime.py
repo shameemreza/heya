@@ -541,11 +541,53 @@ async def _default_open_session(server, env, roots_cb, on_list_changed):
             elif isinstance(root, PromptListChangedNotification):
                 on_list_changed("prompts")
 
-    params = StdioServerParameters(command=server.command, args=list(server.args), env=env)
-    async with stdio_client(params) as (read, write):
-        async with ClientSession(
+    def _wire(read, write):
+        return ClientSession(
             read, write,
             list_roots_callback=_list_roots,
             message_handler=_message_handler,
-        ) as session:
+        )
+
+    if server.transport in ("http", "sse"):
+        # mcp 1.28.0:
+        #   streamable_http_client: accepts http_client=<AsyncClient> directly.
+        #   sse_client: accepts httpx_client_factory(headers, timeout, auth) -> AsyncClient.
+        # For streamable-http we pass a pre-built client carrying auth+TLS kwargs.
+        # For SSE we use a factory that merges SDK-provided base headers onto ours.
+        if server.transport == "http":
+            from mcp.client.streamable_http import streamable_http_client
+            # streamable_http_client only manages the client lifecycle when it
+            # creates the client itself; we own ours and must close it.
+            http_client = _build_http_client(server)
+            try:
+                async with streamable_http_client(
+                    server.url, http_client=http_client
+                ) as (read, write, _get_session_id):
+                    async with _wire(read, write) as session:
+                        yield _SDKSession(session)
+            finally:
+                await http_client.aclose()
+        else:  # sse
+            from mcp.client.sse import sse_client
+
+            def _client_factory(headers=None, timeout=None, auth=None):
+                # Merge SDK-provided base headers under ours so auth wins.
+                kwargs = _http_client_kwargs(server)
+                kwargs["headers"] = {**(headers or {}), **kwargs["headers"]}
+                if timeout is not None:
+                    kwargs["timeout"] = timeout
+                if auth is not None:
+                    kwargs["auth"] = auth
+                return httpx.AsyncClient(**kwargs)
+
+            async with sse_client(
+                server.url, httpx_client_factory=_client_factory
+            ) as (read, write):
+                async with _wire(read, write) as session:
+                    yield _SDKSession(session)
+        return
+
+    params = StdioServerParameters(command=server.command, args=list(server.args), env=env)
+    async with stdio_client(params) as (read, write):
+        async with _wire(read, write) as session:
             yield _SDKSession(session)
