@@ -92,7 +92,7 @@ def make_opener(pages_by_server, *, fail=(), hang=()):
     import asyncio
 
     @contextlib.asynccontextmanager
-    async def opener(server, env, roots_cb, on_list_changed, *, oauth_storage=None):
+    async def opener(server, env, roots_cb, on_list_changed, **kwargs):
         if server.name in hang:
             await asyncio.Event().wait()  # never returns
         if server.name in fail:
@@ -257,7 +257,7 @@ class CallSession(FakeSession):
 def _call_opener(pages):
     import contextlib
     @contextlib.asynccontextmanager
-    async def opener(server, env, roots_cb, on_list_changed, *, oauth_storage=None):
+    async def opener(server, env, roots_cb, on_list_changed, **kwargs):
         yield CallSession(pages[server.name], roots_cb=roots_cb)
     return opener
 
@@ -310,7 +310,7 @@ def test_call_tool_unknown_server_raises():
 def _res_opener(pages, resource_pages=None, prompt_pages=None, **kw):
     import contextlib
     @contextlib.asynccontextmanager
-    async def opener(server, env, roots_cb, on_list_changed, *, oauth_storage=None):
+    async def opener(server, env, roots_cb, on_list_changed, **kwargs):
         yield FakeSession(pages, resource_pages=resource_pages, prompt_pages=prompt_pages,
                           roots_cb=roots_cb, **kw)
     return opener
@@ -432,7 +432,7 @@ class RWSession(FakeSession):
 def _rw_opener(pages, **kw):
     import contextlib
     @contextlib.asynccontextmanager
-    async def opener(server, env, roots_cb, on_list_changed, *, oauth_storage=None):
+    async def opener(server, env, roots_cb, on_list_changed, **kwargs):
         yield RWSession(pages, roots_cb=roots_cb, **kw)
     return opener
 
@@ -471,7 +471,7 @@ def test_trigger_refresh_tools_swaps_snapshot():
     session_box = {}
 
     @contextlib.asynccontextmanager
-    async def opener(server, env, roots_cb, on_list_changed, *, oauth_storage=None):
+    async def opener(server, env, roots_cb, on_list_changed, **kwargs):
         s = FakeSession(pages, roots_cb=roots_cb)
         session_box["s"] = s
         yield s
@@ -492,7 +492,7 @@ def test_trigger_refresh_resources_swaps_snapshot():
     box = {}
 
     @contextlib.asynccontextmanager
-    async def opener(server, env, roots_cb, on_list_changed, *, oauth_storage=None):
+    async def opener(server, env, roots_cb, on_list_changed, **kwargs):
         s = FakeSession([FakePage([FakeTool("t")])],
                         resource_pages=[FakeResourcePage([FakeResource("file:///a")])],
                         roots_cb=roots_cb)
@@ -514,7 +514,7 @@ def test_refresh_failure_keeps_old_snapshot(capsys):
     box = {}
 
     @contextlib.asynccontextmanager
-    async def opener(server, env, roots_cb, on_list_changed, *, oauth_storage=None):
+    async def opener(server, env, roots_cb, on_list_changed, **kwargs):
         s = FakeSession([FakePage([FakeTool("keep")])], roots_cb=roots_cb)
         box["s"] = s
         yield s
@@ -535,7 +535,7 @@ def test_refresh_failure_keeps_old_snapshot(capsys):
 
 def test_trigger_refresh_unknown_server_is_noop():
     @contextlib.asynccontextmanager
-    async def opener(server, env, roots_cb, on_list_changed, *, oauth_storage=None):
+    async def opener(server, env, roots_cb, on_list_changed, **kwargs):
         yield FakeSession([FakePage([FakeTool("t")])], roots_cb=roots_cb)
 
     rt = MCPRuntime([cfg("demo")], open_session=opener)
@@ -629,7 +629,7 @@ def test_oauth_server_skipped_when_prompt_declines():
     import contextlib
     opened = []
     @contextlib.asynccontextmanager
-    async def opener(server, env, roots_cb, on_list_changed, *, oauth_storage=None):
+    async def opener(server, env, roots_cb, on_list_changed, **kwargs):
         opened.append(server.name)
         yield FakeSession([FakePage([FakeTool("t")])], roots_cb=roots_cb)
     rt = MCPRuntime([_oauth_cfg("o")], open_session=opener, oauth_prompt=lambda name: False)
@@ -644,8 +644,8 @@ def test_oauth_server_skipped_when_prompt_declines():
 def test_oauth_server_connects_when_prompt_accepts():
     import contextlib
     @contextlib.asynccontextmanager
-    async def opener(server, env, roots_cb, on_list_changed, *, oauth_storage=None):
-        assert oauth_storage is not None   # runtime supplied the storage
+    async def opener(server, env, roots_cb, on_list_changed, **kwargs):
+        assert kwargs.get("oauth_storage") is not None   # runtime supplied the storage
         yield FakeSession([FakePage([FakeTool("o_tool")])], roots_cb=roots_cb)
     rt = MCPRuntime([_oauth_cfg("o")], open_session=opener, oauth_prompt=lambda name: True)
     rt.connect_all()
@@ -658,12 +658,53 @@ def test_oauth_server_connects_when_prompt_accepts():
 def test_oauth_does_not_disturb_parallel_batch():
     import contextlib
     @contextlib.asynccontextmanager
-    async def opener(server, env, roots_cb, on_list_changed, *, oauth_storage=None):
+    async def opener(server, env, roots_cb, on_list_changed, **kwargs):
         yield FakeSession([FakePage([FakeTool(server.name)])], roots_cb=roots_cb)
     rt = MCPRuntime([cfg("plain"), _oauth_cfg("o")], open_session=opener, oauth_prompt=lambda name: True)
     rt.connect_all()
     try:
         names = sorted(s["name"] for _, s in rt.list_tools())
         assert names == ["o", "plain"]
+    finally:
+        rt.close()
+
+
+# --- Task 7b-4: callback_deps wiring tests ---
+
+def test_runtime_passes_callback_deps_to_opener():
+    import contextlib
+    seen = {}
+    @contextlib.asynccontextmanager
+    async def opener(server, env, roots_cb, on_list_changed, **kwargs):
+        seen["deps"] = kwargs.get("callback_deps")
+        yield FakeSession([FakePage([FakeTool("t")])], roots_cb=roots_cb)
+
+    class _LLM:  # minimal stand-in
+        class profile: model = "m"
+        def chat(self, messages, tools=None): ...
+
+    rt = MCPRuntime([cfg("s")], open_session=opener, llm_client=_LLM())
+    rt.connect_all()
+    try:
+        deps = seen["deps"]
+        assert deps is not None
+        assert deps.llm_client is not None          # sampling available
+        assert deps.elicit_prompter is not None
+        assert deps.log_sink is not None
+    finally:
+        rt.close()
+
+
+def test_runtime_no_llm_means_no_sampling():
+    import contextlib
+    seen = {}
+    @contextlib.asynccontextmanager
+    async def opener(server, env, roots_cb, on_list_changed, **kwargs):
+        seen["deps"] = kwargs.get("callback_deps")
+        yield FakeSession([FakePage([FakeTool("t")])], roots_cb=roots_cb)
+    rt = MCPRuntime([cfg("s")], open_session=opener)  # no llm_client
+    rt.connect_all()
+    try:
+        assert seen["deps"].llm_client is None
     finally:
         rt.close()

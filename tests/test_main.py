@@ -83,3 +83,16 @@ def test_default_make_agent_wires_mcp_runtime(monkeypatch):
         assert agent.mcp_runtime is not None
     finally:
         agent.close()
+
+
+def test_default_make_agent_wires_llm_into_runtime(monkeypatch):
+    import heya.main as main_mod
+    monkeypatch.setattr(main_mod, "LLMClient", lambda profile: object())
+    monkeypatch.setattr(main_mod, "load_mcp_servers", lambda *a, **k: ())
+    args = main_mod.build_parser().parse_args([])
+    agent = main_mod._default_make_agent(args)
+    try:
+        # the runtime received the same client object the agent uses
+        assert agent.mcp_runtime._callback_deps.llm_client is agent.client
+    finally:
+        agent.close()

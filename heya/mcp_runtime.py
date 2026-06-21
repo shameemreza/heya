@@ -26,6 +26,10 @@ from pathlib import Path
 import httpx
 
 from .config import MCPServerConfig
+from .mcp_callbacks import (
+    CallbackDeps, StdinElicitPrompter, stdin_sampling_approver,
+    build_sampling_callback, build_elicitation_callback, build_logging_callback,
+)
 from .tools_files import ToolError
 
 OAUTH_CONNECT_TIMEOUT = 300.0
@@ -55,6 +59,10 @@ class MCPRuntime:
         connect_timeout: float = 10.0,
         open_session=None,
         oauth_prompt=None,
+        llm_client=None,
+        sampling_approver=None,
+        elicit_prompter=None,
+        log_sink=None,
     ) -> None:
         self._servers = list(servers)
         self._allowed_roots = [Path(p) for p in allowed_roots]
@@ -68,6 +76,12 @@ class MCPRuntime:
         self._closed = False
         # Keeps pending refresh tasks alive so they can't be GC'd mid-flight.
         self._pending_refreshes: set[asyncio.Task] = set()
+        self._callback_deps = CallbackDeps(
+            sampling_approver=sampling_approver or stdin_sampling_approver,
+            elicit_prompter=elicit_prompter or StdinElicitPrompter(),
+            log_sink=log_sink or (lambda line: print(line, file=sys.stderr)),
+            llm_client=llm_client,
+        )
 
     # ---- loop-thread plumbing -------------------------------------------------
 
@@ -160,7 +174,7 @@ class MCPRuntime:
     async def _serve(self, server, env, ready: asyncio.Future, stop: asyncio.Event):
         try:
             on_list_changed = lambda which: self._schedule_refresh(server.name, which)  # noqa: E731
-            open_kwargs = {}
+            open_kwargs = {"callback_deps": self._callback_deps}
             if server.auth == "oauth":
                 open_kwargs["oauth_storage"] = self._oauth_storage_for(server.name)
             async with self._open_session(server, env, self._roots_cb(), on_list_changed, **open_kwargs) as session:
@@ -554,7 +568,7 @@ class _SDKSession:
 
 
 @contextlib.asynccontextmanager
-async def _default_open_session(server, env, roots_cb, on_list_changed, *, oauth_storage=None):
+async def _default_open_session(server, env, roots_cb, on_list_changed, *, oauth_storage=None, callback_deps=None):
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
     from mcp.types import (
@@ -582,11 +596,22 @@ async def _default_open_session(server, env, roots_cb, on_list_changed, *, oauth
             elif isinstance(root, PromptListChangedNotification):
                 on_list_changed("prompts")
 
+    sampling_cb = elicit_cb = logging_cb = None
+    if callback_deps is not None:
+        if callback_deps.llm_client is not None:
+            sampling_cb = build_sampling_callback(
+                callback_deps.llm_client, callback_deps.sampling_approver, server.name)
+        elicit_cb = build_elicitation_callback(callback_deps.elicit_prompter, server.name)
+        logging_cb = build_logging_callback(server.name, callback_deps.log_sink)
+
     def _wire(read, write):
         return ClientSession(
             read, write,
             list_roots_callback=_list_roots,
             message_handler=_message_handler,
+            sampling_callback=sampling_cb,
+            elicitation_callback=elicit_cb,
+            logging_callback=logging_cb,
         )
 
     if server.transport in ("http", "sse") and server.auth == "oauth":

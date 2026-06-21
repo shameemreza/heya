@@ -43,13 +43,17 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
     browser_session = BrowserSession(headless=load_browser_headless())
     process_registry = ProcessRegistry()
     playground_session = PlaygroundSession(process_registry, cwd=Path.cwd(), allowed_roots=roots)
-    mcp_runtime = MCPRuntime(load_mcp_servers(), allowed_roots=roots)
-    mcp_runtime.connect_all()
     wp_default_root = load_wp_path()
     client = LLMClient(profile)
     approval = ApprovalPolicy(
         auto_approve=args.auto_approve, approver=prompt_stdin, allow=load_approval_allow()
     )
+    mcp_runtime = MCPRuntime(
+        load_mcp_servers(), allowed_roots=roots,
+        llm_client=client,
+        sampling_approver=lambda server, preview: approval.check_sampling(server, preview),
+    )
+    mcp_runtime.connect_all()
 
     def on_text(chunk: str) -> None:
         sys.stdout.write(chunk)
