@@ -132,3 +132,16 @@ def test_loopback_binds_loopback_only():
         assert cb.redirect_uri.startswith("http://127.0.0.1:")
     finally:
         cb.stop()
+
+
+def test_build_oauth_provider_uses_loopback_redirect():
+    from heya.mcp_oauth import build_oauth_provider
+    cb = LoopbackCallbackServer()
+    try:
+        server = MCPServerConfig(name="o", transport="http", url="https://o/mcp",
+                                 auth="oauth", scopes=("a", "b"), oauth_client_name="Heya")
+        provider = build_oauth_provider(server, storage=InMemoryTokenStorage(), loopback=cb)
+        # the provider was constructed with our redirect_uri in its client metadata
+        assert cb.redirect_uri in str(provider.context.client_metadata.redirect_uris)
+    finally:
+        cb.stop()

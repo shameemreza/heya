@@ -88,6 +88,28 @@ class KeyringTokenStorage:
         self._kr.set_password(self._SERVICE, f"{self._name}:client", client_info.model_dump_json())
 
 
+def build_oauth_provider(server, *, storage, loopback):
+    """Construct the SDK OAuth provider wired to our browser + loopback + storage."""
+    from mcp.client.auth import OAuthClientProvider
+    from mcp.shared.auth import OAuthClientMetadata
+
+    metadata = OAuthClientMetadata(
+        redirect_uris=[loopback.redirect_uri],
+        client_name=server.oauth_client_name or "Heya",
+        scope=(" ".join(server.scopes) or None),
+        grant_types=["authorization_code", "refresh_token"],
+        response_types=["code"],
+    )
+    return OAuthClientProvider(
+        server_url=server.url,
+        client_metadata=metadata,
+        storage=storage,
+        redirect_handler=open_browser_redirect,
+        callback_handler=loopback.wait_for_code,
+        timeout=300.0,
+    )
+
+
 def make_token_storage(server):
     """Pick the storage backend for a server per its oauth_token_store config."""
     if server.oauth_token_store == "keyring":
@@ -157,11 +179,17 @@ class LoopbackCallbackServer:
         self._loop.call_soon_threadsafe(self._future.set_result, (code, state))
 
     def stop(self) -> None:
+        if self._thread is None:
+            # start() was never called; just close the socket.
+            try:
+                self._server.server_close()
+            except Exception:
+                pass
+            return
         try:
             self._server.shutdown()
             self._server.server_close()
         except Exception:
             pass
-        if self._thread is not None:
-            self._thread.join(timeout=5.0)
-            self._thread = None
+        self._thread.join(timeout=5.0)
+        self._thread = None
