@@ -509,6 +509,136 @@ _OAUTH_SERVER = textwrap.dedent('''\
 ''')
 
 
+# ---------------------------------------------------------------------------
+# Callbacks canary: sampling + elicitation + logging, driven via MCPRuntime
+# ---------------------------------------------------------------------------
+
+# ctx.elicit() in mcp 1.28.0 requires a Pydantic model class (not a raw dict schema).
+# The elicitation result for an accepted call is AcceptedElicitation whose .data
+# is an instance of that model.  ctx.session.create_message() is on ServerSession.
+# ctx.log(level, message) sends a log notification to the client.
+_CALLBACK_SERVER = textwrap.dedent('''\
+    import sys
+    from pydantic import BaseModel
+    from mcp.server.fastmcp import FastMCP, Context
+    from mcp.types import SamplingMessage, TextContent
+
+    mcp = FastMCP("cb")
+
+    class _AnswerSchema(BaseModel):
+        answer: str
+
+    @mcp.tool()
+    async def do_things(ctx: Context) -> str:
+        # logging — ctx.log(level, message) in mcp 1.28.0
+        await ctx.log(level="info", message="cb tool ran")
+
+        # sampling — ctx.session is the underlying ServerSession
+        try:
+            res = await ctx.session.create_message(
+                messages=[SamplingMessage(role="user", content=TextContent(type="text", text="ping"))],
+                max_tokens=50,
+            )
+            sampled = res.content.text
+        except Exception as exc:
+            sampled = f"sampling-error: {exc}"
+
+        # elicitation — ctx.elicit takes a Pydantic model class in mcp 1.28.0
+        try:
+            elic = await ctx.elicit(message="answer?", schema=_AnswerSchema)
+            # elic is AcceptedElicitation | DeclinedElicitation | CancelledElicitation
+            # AcceptedElicitation has .data which is the _AnswerSchema instance
+            data = getattr(elic, "data", None)
+            answer = data.answer if data is not None else str(elic.action)
+        except Exception as exc:
+            answer = f"elicit-error: {exc}"
+
+        return f"sampled={sampled} answer={answer}"
+
+    if __name__ == "__main__":
+        mcp.run()
+''')
+
+
+@pytest.mark.integration
+def test_real_callbacks_end_to_end(tmp_path):
+    server_file = tmp_path / "cb_server.py"
+    server_file.write_text(_CALLBACK_SERVER)
+
+    class _Profile:
+        model = "fake"
+
+    class _LLM:
+        profile = _Profile()
+
+        def chat(self, messages, tools=None):
+            class R:
+                content = "SAMPLED:" + messages[-1]["content"]
+            return R()
+
+    class _Prompter:
+        def form(self, server, message, schema):
+            return {"answer": "42"}
+
+        def url(self, server, message, url):
+            return True
+
+    logs = []
+    rt = MCPRuntime(
+        [MCPServerConfig(name="cb", command=sys.executable, args=(str(server_file),))],
+        connect_timeout=20.0,
+        llm_client=_LLM(),
+        sampling_approver=lambda server, preview: True,
+        elicit_prompter=_Prompter(),
+        log_sink=logs.append,
+    )
+    rt.connect_all()
+    try:
+        out = rt.call_tool("cb", "do_things", {})
+        assert "SAMPLED:" in out, f"expected 'SAMPLED:' in output, got: {out!r}"
+        assert "42" in out, f"expected '42' in output, got: {out!r}"
+        assert any("cb" in line for line in logs), f"expected a log line from 'cb', got: {logs!r}"
+    finally:
+        rt.close()
+
+
+@pytest.mark.integration
+def test_real_sampling_declined(tmp_path):
+    server_file = tmp_path / "cb_server.py"
+    server_file.write_text(_CALLBACK_SERVER)
+
+    class _Profile:
+        model = "fake"
+
+    class _LLM:
+        profile = _Profile()
+
+        def chat(self, messages, tools=None):
+            class R:
+                content = "should-not-be-used"
+            return R()
+
+    rt = MCPRuntime(
+        [MCPServerConfig(name="cb", command=sys.executable, args=(str(server_file),))],
+        connect_timeout=20.0,
+        llm_client=_LLM(),
+        sampling_approver=lambda server, preview: False,  # decline
+        elicit_prompter=type(
+            "P", (),
+            {"form": lambda *a: {"answer": "x"}, "url": lambda *a: True},
+        )(),
+        log_sink=lambda l: None,
+    )
+    rt.connect_all()
+    try:
+        out = rt.call_tool("cb", "do_things", {})
+        assert "declined" in out.lower() or "error" in out.lower(), (
+            f"expected sampling decline/error reflected in output, got: {out!r}"
+        )
+    finally:
+        rt.close()
+
+
 def _spawn_oauth_server(tmp_path, port):
     f = tmp_path / "oauth_server.py"
     f.write_text(_OAUTH_SERVER)

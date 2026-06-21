@@ -87,3 +87,18 @@ def test_mcp_call_auto_approve():
 def test_non_mcp_unknown_tool_still_ungated():
     policy = ApprovalPolicy(approver=_deny)
     assert policy.check("read_file", "read_file → /tmp/x") is True
+
+
+def test_check_sampling_gated_declines():
+    policy = ApprovalPolicy(approver=lambda n, d: "no")
+    assert policy.check_sampling("srv", "preview text") is False
+
+
+def test_check_sampling_allowlist_auto_approves():
+    policy = ApprovalPolicy(approver=lambda n, d: "no", allow=("mcp_sample:srv",))
+    assert policy.check_sampling("srv", "preview text") is True
+
+
+def test_check_sampling_auto_approve():
+    policy = ApprovalPolicy(auto_approve=True, approver=lambda n, d: "no")
+    assert policy.check_sampling("srv", "preview text") is True
