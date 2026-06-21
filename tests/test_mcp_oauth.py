@@ -1,8 +1,9 @@
 import asyncio
 
+import httpx
 import pytest
 
-from heya.mcp_oauth import InMemoryTokenStorage, KeyringTokenStorage, make_token_storage
+from heya.mcp_oauth import InMemoryTokenStorage, KeyringTokenStorage, make_token_storage, open_browser_redirect, LoopbackCallbackServer
 from heya.config import MCPServerConfig
 from mcp.shared.auth import OAuthToken, OAuthClientInformationFull
 
@@ -67,3 +68,67 @@ def test_make_token_storage_selects_by_config():
     kc = make_token_storage(MCPServerConfig(name="k", transport="http", url="https://k",
                                             auth="oauth", oauth_token_store="keyring"))
     assert isinstance(kc, KeyringTokenStorage)
+
+
+def test_open_browser_redirect_prints_and_opens(monkeypatch, capsys):
+    calls = []
+    monkeypatch.setattr("webbrowser.open", lambda u: calls.append(u) or True)
+    asyncio.run(open_browser_redirect("https://auth.example/authorize?x=1"))
+    assert calls == ["https://auth.example/authorize?x=1"]
+    assert "authorize" in capsys.readouterr().out
+
+
+def test_open_browser_redirect_survives_no_browser(monkeypatch):
+    def boom(_u):
+        raise RuntimeError("no browser")
+    monkeypatch.setattr("webbrowser.open", boom)
+    asyncio.run(open_browser_redirect("https://auth.example/x"))  # must not raise
+
+
+def test_loopback_captures_code_and_state():
+    async def scenario():
+        cb = LoopbackCallbackServer()
+        cb.start()
+        try:
+            waiter = asyncio.ensure_future(cb.wait_for_code())
+            await asyncio.sleep(0)  # let the waiter create its future
+            async with httpx.AsyncClient() as c:
+                resp = await c.get(cb.redirect_uri, params={"code": "abc", "state": "xyz"})
+            assert resp.status_code == 200
+            code, state = await asyncio.wait_for(waiter, timeout=5)
+            assert code == "abc" and state == "xyz"
+        finally:
+            cb.stop()
+    asyncio.run(scenario())
+
+
+def test_loopback_surfaces_error():
+    async def scenario():
+        cb = LoopbackCallbackServer()
+        cb.start()
+        try:
+            waiter = asyncio.ensure_future(cb.wait_for_code())
+            await asyncio.sleep(0)
+            async with httpx.AsyncClient() as c:
+                await c.get(cb.redirect_uri, params={"error": "access_denied"})
+            with pytest.raises(RuntimeError):
+                await asyncio.wait_for(waiter, timeout=5)
+        finally:
+            cb.stop()
+    asyncio.run(scenario())
+
+
+def test_loopback_stop_idempotent():
+    cb = LoopbackCallbackServer()
+    cb.start()
+    cb.stop()
+    cb.stop()  # must not raise
+
+
+def test_loopback_binds_loopback_only():
+    cb = LoopbackCallbackServer()
+    cb.start()
+    try:
+        assert cb.redirect_uri.startswith("http://127.0.0.1:")
+    finally:
+        cb.stop()

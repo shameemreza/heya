@@ -8,7 +8,12 @@ runtime opener; the rest of Heya is OAuth-agnostic.
 """
 from __future__ import annotations
 
+import asyncio
 import sys
+import threading
+import webbrowser
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlparse, parse_qs
 
 from mcp.shared.auth import OAuthToken, OAuthClientInformationFull
 
@@ -88,3 +93,75 @@ def make_token_storage(server):
     if server.oauth_token_store == "keyring":
         return KeyringTokenStorage(server.name)
     return InMemoryTokenStorage()
+
+
+async def open_browser_redirect(url: str) -> None:
+    """Print the authorization URL, then best-effort open the browser."""
+    print(f"Opening browser to authorize: {url}")
+    try:
+        webbrowser.open(url)
+    except Exception:
+        pass  # headless / no browser: the printed URL is the fallback
+
+
+class _CallbackHandler(BaseHTTPRequestHandler):
+    def do_GET(self):  # noqa: N802 (stdlib name)
+        parsed = urlparse(self.path)
+        if parsed.path != "/callback":
+            self.send_response(404)
+            self.end_headers()
+            return
+        params = parse_qs(parsed.query)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.end_headers()
+        self.wfile.write(b"<html><body>Authorization complete. You can close this tab.</body></html>")
+        self.server.loopback._resolve(params)  # type: ignore[attr-defined]
+
+    def log_message(self, *args):  # silence the default stderr access log
+        pass
+
+
+class LoopbackCallbackServer:
+    """One-shot loopback HTTP server that captures the OAuth redirect."""
+
+    def __init__(self) -> None:
+        self._server = HTTPServer(("127.0.0.1", 0), _CallbackHandler)
+        self._server.loopback = self  # type: ignore[attr-defined]
+        self.port = self._server.server_address[1]
+        self.redirect_uri = f"http://127.0.0.1:{self.port}/callback"
+        self._thread: threading.Thread | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._future: asyncio.Future | None = None
+
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread.start()
+
+    async def wait_for_code(self) -> tuple[str, str | None]:
+        self._loop = asyncio.get_running_loop()
+        self._future = self._loop.create_future()
+        return await self._future
+
+    def _resolve(self, params: dict) -> None:
+        # Runs on the server thread; hand the result to the asyncio waiter.
+        if self._loop is None or self._future is None or self._future.done():
+            return
+        if "error" in params:
+            self._loop.call_soon_threadsafe(
+                self._future.set_exception, RuntimeError(params["error"][0])
+            )
+            return
+        code = params.get("code", [""])[0]
+        state = params.get("state", [None])[0]
+        self._loop.call_soon_threadsafe(self._future.set_result, (code, state))
+
+    def stop(self) -> None:
+        try:
+            self._server.shutdown()
+            self._server.server_close()
+        except Exception:
+            pass
+        if self._thread is not None:
+            self._thread.join(timeout=5.0)
+            self._thread = None
