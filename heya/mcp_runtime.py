@@ -28,6 +28,13 @@ import httpx
 from .config import MCPServerConfig
 from .tools_files import ToolError
 
+OAUTH_CONNECT_TIMEOUT = 300.0
+
+
+def _stdin_oauth_prompt(name: str) -> bool:
+    answer = input(f"MCP server {name!r} needs a browser login. Authorize now? [y/N]: ").strip().lower()
+    return answer in ("y", "yes")
+
 
 class _Connected:
     def __init__(self, server: MCPServerConfig, session, tools: list, resources: list, prompts: list, stop: asyncio.Event):
@@ -47,14 +54,17 @@ class MCPRuntime:
         allowed_roots: Sequence[Path] = (),
         connect_timeout: float = 10.0,
         open_session=None,
+        oauth_prompt=None,
     ) -> None:
         self._servers = list(servers)
         self._allowed_roots = [Path(p) for p in allowed_roots]
         self._connect_timeout = connect_timeout
         self._open_session = open_session or _default_open_session
+        self._oauth_prompt = oauth_prompt or _stdin_oauth_prompt
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
         self._connected: dict[str, _Connected] = {}
+        self._oauth_storage: dict[str, object] = {}
         self._closed = False
         # Keeps pending refresh tasks alive so they can't be GC'd mid-flight.
         self._pending_refreshes: set[asyncio.Task] = set()
@@ -90,17 +100,32 @@ class MCPRuntime:
 
     # ---- connect --------------------------------------------------------------
 
+    def _oauth_storage_for(self, name):
+        if name not in self._oauth_storage:
+            from .mcp_oauth import make_token_storage
+            server = next(s for s in self._servers if s.name == name)
+            self._oauth_storage[name] = make_token_storage(server)
+        return self._oauth_storage[name]
+
+    def _record(self, server, outcome):
+        if isinstance(outcome, _Connected):
+            self._connected[server.name] = outcome
+        else:
+            print(f"MCP server {server.name!r} unavailable: {outcome}", file=sys.stderr)
+
     def connect_all(self) -> None:
         self._ensure_loop()
         enabled = [s for s in self._servers if s.enabled]
-        if not enabled:
-            return
-        results = self._run(self._connect_many(enabled))
-        for server, outcome in zip(enabled, results):
-            if isinstance(outcome, _Connected):
-                self._connected[server.name] = outcome
-            else:
-                print(f"MCP server {server.name!r} unavailable: {outcome}", file=sys.stderr)
+        parallel = [s for s in enabled if s.auth != "oauth"]
+        oauth = [s for s in enabled if s.auth == "oauth"]
+        if parallel:
+            for server, outcome in zip(parallel, self._run(self._connect_many(parallel))):
+                self._record(server, outcome)
+        for server in oauth:
+            if not self._oauth_prompt(server.name):
+                print(f"MCP server {server.name!r}: skipped (login declined)", file=sys.stderr)
+                continue
+            self._record(server, self._run(self._connect_one(server)))
 
     async def _connect_many(self, servers):
         return await asyncio.gather(*(self._connect_one(s) for s in servers))
@@ -115,8 +140,9 @@ class MCPRuntime:
         # The session task owns the connection's whole lifecycle (open -> wait -> close)
         # in ONE task, so anyio cancel scopes inside the SDK stay valid.
         task = asyncio.ensure_future(self._serve(server, env, ready, stop))
+        timeout = OAUTH_CONNECT_TIMEOUT if server.auth == "oauth" else self._connect_timeout
         try:
-            connected = await asyncio.wait_for(asyncio.shield(ready), self._connect_timeout)
+            connected = await asyncio.wait_for(asyncio.shield(ready), timeout)
         except asyncio.TimeoutError:
             stop.set()
             task.cancel()
@@ -134,7 +160,10 @@ class MCPRuntime:
     async def _serve(self, server, env, ready: asyncio.Future, stop: asyncio.Event):
         try:
             on_list_changed = lambda which: self._schedule_refresh(server.name, which)  # noqa: E731
-            async with self._open_session(server, env, self._roots_cb(), on_list_changed) as session:
+            open_kwargs = {}
+            if server.auth == "oauth":
+                open_kwargs["oauth_storage"] = self._oauth_storage_for(server.name)
+            async with self._open_session(server, env, self._roots_cb(), on_list_changed, **open_kwargs) as session:
                 await session.initialize()
                 tools = await self._list_all(session.list_tools, "tools", tolerant=False)
                 resources = await self._list_all(session.list_resources, "resources", tolerant=True)
@@ -525,7 +554,7 @@ class _SDKSession:
 
 
 @contextlib.asynccontextmanager
-async def _default_open_session(server, env, roots_cb, on_list_changed):
+async def _default_open_session(server, env, roots_cb, on_list_changed, *, oauth_storage=None):
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
     from mcp.types import (
@@ -559,6 +588,28 @@ async def _default_open_session(server, env, roots_cb, on_list_changed):
             list_roots_callback=_list_roots,
             message_handler=_message_handler,
         )
+
+    if server.transport in ("http", "sse") and server.auth == "oauth":
+        from .mcp_oauth import LoopbackCallbackServer, build_oauth_provider
+        loopback = LoopbackCallbackServer()
+        loopback.start()
+        try:
+            provider = build_oauth_provider(server, storage=oauth_storage, loopback=loopback)
+            kwargs = _http_client_kwargs(server)
+            async with httpx.AsyncClient(auth=provider, **kwargs) as http_client:
+                if server.transport == "http":
+                    from mcp.client.streamable_http import streamable_http_client
+                    async with streamable_http_client(server.url, http_client=http_client) as (read, write, _):
+                        async with _wire(read, write) as session:
+                            yield _SDKSession(session)
+                else:
+                    from mcp.client.sse import sse_client
+                    async with sse_client(server.url, httpx_client_factory=lambda **kw: http_client) as (read, write):
+                        async with _wire(read, write) as session:
+                            yield _SDKSession(session)
+        finally:
+            loopback.stop()
+        return
 
     if server.transport in ("http", "sse"):
         # mcp 1.28.0:

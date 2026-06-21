@@ -5,6 +5,7 @@ import sys
 import textwrap
 import time
 
+import httpx
 import pytest
 
 from heya.config import MCPServerConfig
@@ -364,6 +365,222 @@ def test_real_http_ca_and_mtls(tmp_path):
         try:
             assert "echo" in [s["name"] for _, s in rt.list_tools()]
             assert "echo: hi" in rt.call_tool("m", "echo", {"text": "hi"})
+        finally:
+            rt.close()
+    finally:
+        proc.terminate()
+        proc.wait(timeout=10)
+
+
+# ---------------------------------------------------------------------------
+# OAuth end-to-end canary
+# ---------------------------------------------------------------------------
+
+# Combined OAuth AS + FastMCP resource server.
+#
+# Endpoints served:
+#   /.well-known/oauth-protected-resource      RFC 9728 PRM metadata
+#   /.well-known/oauth-protected-resource/mcp  (path-based fallback)
+#   /.well-known/oauth-authorization-server    RFC 8414 OASM metadata
+#   POST /register                              RFC 7591 DCR
+#   GET  /authorize                             authorization endpoint (302 to loopback)
+#   POST /token                                 token endpoint
+#   /mcp                                        FastMCP streamable-http (bearer-guarded)
+#
+# The Bearer guard returns 401 with WWW-Authenticate: Bearer on the /mcp
+# route for any request that does not carry the valid access token; this
+# triggers the SDK's OAuthClientProvider flow.
+_OAUTH_SERVER = textwrap.dedent('''\
+    import sys
+    import secrets
+    import uvicorn
+    from urllib.parse import urlencode
+    from starlette.routing import Route
+    from starlette.requests import Request
+    from starlette.responses import JSONResponse, RedirectResponse
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from mcp.server.fastmcp import FastMCP
+
+    PORT = int(sys.argv[1])
+    BASE = f"http://127.0.0.1:{PORT}"
+    ACCESS_TOKEN = "canary-oauth-" + secrets.token_hex(8)
+
+    mcp = FastMCP("oauth-canary", host="127.0.0.1", port=PORT)
+
+    @mcp.tool()
+    def echo(text: str) -> str:
+        "Echo the text back."
+        return f"echo: {text}"
+
+    mcp_app = mcp.streamable_http_app()
+
+    _clients: dict = {}
+    _codes: dict = {}
+
+    # Paths that bypass the bearer guard (OAuth negotiation traffic)
+    _OPEN_PATHS = frozenset({
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-protected-resource/mcp",
+        "/.well-known/oauth-authorization-server",
+        "/register",
+        "/authorize",
+        "/token",
+    })
+
+    class _BearerGuard(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next):
+            if request.url.path in _OPEN_PATHS:
+                return await call_next(request)
+            if request.headers.get("authorization") == f"Bearer {ACCESS_TOKEN}":
+                return await call_next(request)
+            return JSONResponse(
+                {"error": "unauthorized"},
+                status_code=401,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    mcp_app.add_middleware(_BearerGuard)
+
+    async def _prm(request: Request):
+        return JSONResponse({
+            "resource": f"{BASE}/mcp",
+            "authorization_servers": [BASE],
+        })
+
+    async def _oasm(request: Request):
+        return JSONResponse({
+            "issuer": BASE,
+            "authorization_endpoint": f"{BASE}/authorize",
+            "token_endpoint": f"{BASE}/token",
+            "registration_endpoint": f"{BASE}/register",
+            "response_types_supported": ["code"],
+            "grant_types_supported": ["authorization_code"],
+            "code_challenge_methods_supported": ["S256"],
+        })
+
+    async def _register(request: Request):
+        body = await request.json()
+        client_id = "client-" + secrets.token_hex(8)
+        info = {
+            "client_id": client_id,
+            "redirect_uris": body.get("redirect_uris", []),
+            "token_endpoint_auth_method": "none",
+            "grant_types": body.get("grant_types", ["authorization_code"]),
+            "response_types": body.get("response_types", ["code"]),
+        }
+        _clients[client_id] = info
+        return JSONResponse(info, status_code=201)
+
+    async def _authorize(request: Request):
+        params = dict(request.query_params)
+        redirect_uri = params.get("redirect_uri", "")
+        state = params.get("state")
+        code = "code-" + secrets.token_hex(8)
+        _codes[code] = {"client_id": params.get("client_id"), "redirect_uri": redirect_uri}
+        qs_parts = {"code": code}
+        if state:
+            qs_parts["state"] = state
+        return RedirectResponse(f"{redirect_uri}?{urlencode(qs_parts)}", status_code=302)
+
+    async def _token(request: Request):
+        form = await request.form()
+        grant_type = form.get("grant_type")
+        code = form.get("code")
+        if grant_type == "authorization_code" and code and code in _codes:
+            del _codes[code]
+            return JSONResponse({
+                "access_token": ACCESS_TOKEN,
+                "token_type": "Bearer",
+                "expires_in": 3600,
+            })
+        return JSONResponse({"error": "invalid_grant"}, status_code=400)
+
+    mcp_app.router.routes.extend([
+        Route("/.well-known/oauth-protected-resource", _prm),
+        Route("/.well-known/oauth-protected-resource/mcp", _prm),
+        Route("/.well-known/oauth-authorization-server", _oasm),
+        Route("/register", _register, methods=["POST"]),
+        Route("/authorize", _authorize),
+        Route("/token", _token, methods=["POST"]),
+    ])
+
+    if __name__ == "__main__":
+        uvicorn.run(mcp_app, host="127.0.0.1", port=PORT, log_level="error")
+''')
+
+
+def _spawn_oauth_server(tmp_path, port):
+    f = tmp_path / "oauth_server.py"
+    f.write_text(_OAUTH_SERVER)
+    proc = subprocess.Popen([sys.executable, str(f), str(port)])
+    for _ in range(100):
+        try:
+            socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
+            break
+        except OSError:
+            time.sleep(0.1)
+    return proc
+
+
+@pytest.mark.integration
+def test_real_oauth_end_to_end(tmp_path, monkeypatch):
+    """Prove the full OAuth flow: discover → DCR → PKCE authorize → token → connect."""
+    port = _free_port()
+    proc = _spawn_oauth_server(tmp_path, port)
+    try:
+        import heya.mcp_oauth as oauth_mod
+
+        browser_calls = []
+
+        async def _do_redirect(url: str) -> None:
+            async with httpx.AsyncClient(follow_redirects=True) as c:
+                await c.get(url)
+
+        async def auto_browser(url: str) -> None:
+            # Schedule the redirect follow-through as a background task so
+            # the SDK can call wait_for_code() and suspend on its future
+            # before the loopback callback arrives.  If we await the GET
+            # directly here the loopback fires before the future exists and
+            # the code is lost.
+            browser_calls.append(url)
+            import asyncio as _asyncio
+            _asyncio.ensure_future(_do_redirect(url))
+
+        monkeypatch.setattr(oauth_mod, "open_browser_redirect", auto_browser)
+
+        rt = MCPRuntime(
+            [MCPServerConfig(
+                name="o",
+                transport="http",
+                url=f"http://127.0.0.1:{port}/mcp",
+                auth="oauth",
+                oauth_token_store="memory",
+            )],
+            oauth_prompt=lambda name: True,
+            connect_timeout=60.0,
+        )
+        rt.connect_all()
+        try:
+            # First connect: full OAuth round-trip runs, browser invoked once.
+            assert "echo" in [s["name"] for _, s in rt.list_tools()]
+            assert "echo: hi" in rt.call_tool("o", "echo", {"text": "hi"})
+            assert len(browser_calls) == 1, (
+                f"first connect should authorize once; got {len(browser_calls)}"
+            )
+
+            # Token-reuse proof: a SECOND connect on the same runtime reuses the
+            # cached per-server InMemoryTokenStorage. The provider reads the stored
+            # token, the first /mcp request carries it, no 401 is returned, and the
+            # authorize/browser step is skipped entirely. If the token were not
+            # cached, run 2 would hit 401 -> discovery -> /authorize -> a second
+            # browser call, and this assertion would fail with len == 2.
+            rt.connect_all()
+            assert "echo" in [s["name"] for _, s in rt.list_tools()]
+            assert "echo: hi" in rt.call_tool("o", "echo", {"text": "hi"})
+            assert len(browser_calls) == 1, (
+                "second connect must reuse the cached token and skip authorize; "
+                f"browser was called {len(browser_calls)} times"
+            )
         finally:
             rt.close()
     finally:
