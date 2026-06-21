@@ -53,9 +53,22 @@ class ApprovalPolicy:
             return True
         command = self._command_of(detail)
         candidates = (command, name) if is_mcp else (command,)
-        if any(c.startswith(prefix) for c in candidates for prefix in self._allow):
+        if any(c.startswith(prefix) for c in candidates for prefix in self._allow if prefix):
             return True
         decision = self._approver(name, detail)
+        if decision == "always":
+            self._always.add(name)
+            return True
+        return decision == "yes"
+
+    def check_sampling(self, server: str, preview: str) -> bool:
+        """Gate a server-initiated sampling request, reusing the allow list."""
+        name = f"mcp_sample:{server}"
+        if self.auto_approve or name in self._always:
+            return True
+        if any(name.startswith(prefix) for prefix in self._allow if prefix):
+            return True
+        decision = self._approver(name, f"sampling for {server}: {preview}")
         if decision == "always":
             self._always.add(name)
             return True
