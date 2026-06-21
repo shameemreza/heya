@@ -246,9 +246,15 @@ class MCPServerConfig:
     tls_ca_cert: str | None = None
     tls_client_cert: str | None = None
     tls_client_key: str | None = None
+    auth: str = "none"
+    scopes: tuple[str, ...] = ()
+    oauth_client_name: str | None = None
+    oauth_token_store: str = "keyring"
 
 
 _VALID_TRANSPORTS = ("stdio", "http", "sse")
+_VALID_AUTH = ("none", "bearer", "oauth")
+_VALID_TOKEN_STORE = ("keyring", "memory")
 
 
 def _headers_pairs(value, *, field: str) -> tuple[tuple[str, str], ...]:
@@ -330,6 +336,20 @@ def load_mcp_servers(config_path: Path | None = None) -> tuple[MCPServerConfig, 
         tls_client_key = _opt_str(raw.get("tls_client_key"), field=f"{name}.tls_client_key")
         if tls_client_cert and not tls_client_key:
             raise ConfigError(f"mcp.servers.{name}.tls_client_cert requires tls_client_key (mTLS needs both).")
+        auth_token_env = _opt_str(raw.get("auth_token_env"), field=f"{name}.auth_token_env")
+        auth = raw.get("auth")
+        if auth is None:
+            auth = "bearer" if auth_token_env else "none"
+        if auth not in _VALID_AUTH:
+            raise ConfigError(f"mcp.servers.{name}.auth {auth!r} is invalid; allowed: {', '.join(_VALID_AUTH)}.")
+        if auth == "oauth":
+            if transport not in ("http", "sse"):
+                raise ConfigError(f"mcp.servers.{name}.auth = \"oauth\" requires an http or sse transport.")
+            if auth_token_env:
+                raise ConfigError(f"mcp.servers.{name}: auth = \"oauth\" and auth_token_env are mutually exclusive.")
+        token_store = raw.get("oauth_token_store", "keyring")
+        if token_store not in _VALID_TOKEN_STORE:
+            raise ConfigError(f"mcp.servers.{name}.oauth_token_store {token_store!r} is invalid; allowed: {', '.join(_VALID_TOKEN_STORE)}.")
         tools_raw = raw.get("tools")
         tools = _str_tuple(tools_raw, field=f"{name}.tools") if tools_raw is not None else ("*",)
         servers.append(MCPServerConfig(
@@ -338,11 +358,15 @@ def load_mcp_servers(config_path: Path | None = None) -> tuple[MCPServerConfig, 
             env_keys=_str_tuple(raw.get("env_keys"), field=f"{name}.env_keys"),
             enabled=enabled, tools=tools,
             url=url,
-            auth_token_env=_opt_str(raw.get("auth_token_env"), field=f"{name}.auth_token_env"),
+            auth_token_env=auth_token_env,
             headers=_headers_pairs(raw.get("headers"), field=f"{name}.headers"),
             tls_verify=tls_verify,
             tls_ca_cert=_opt_str(raw.get("tls_ca_cert"), field=f"{name}.tls_ca_cert"),
             tls_client_cert=tls_client_cert, tls_client_key=tls_client_key,
+            auth=auth,
+            scopes=_str_tuple(raw.get("scopes"), field=f"{name}.scopes"),
+            oauth_client_name=_opt_str(raw.get("oauth_client_name"), field=f"{name}.oauth_client_name"),
+            oauth_token_store=token_store,
         ))
     return tuple(servers)
 

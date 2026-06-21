@@ -365,3 +365,63 @@ def test_load_mcp_headers_must_be_string_table(tmp_path):
     p = _write(tmp_path, '[mcp.servers.h]\ntransport = "http"\nurl = "https://h"\nheaders = { X = 1 }\n')
     with pytest.raises(ConfigError):
         load_mcp_servers(p)
+
+
+def test_load_mcp_oauth_server_parses(tmp_path):
+    p = _write(tmp_path, (
+        '[mcp.servers.o]\n'
+        'transport = "http"\n'
+        'url = "https://o/mcp"\n'
+        'auth = "oauth"\n'
+        'scopes = ["mcp:read", "mcp:write"]\n'
+        'oauth_client_name = "Heya"\n'
+    ))
+    (s,) = load_mcp_servers(p)
+    assert s.auth == "oauth"
+    assert s.scopes == ("mcp:read", "mcp:write")
+    assert s.oauth_client_name == "Heya"
+    assert s.oauth_token_store == "keyring"  # default
+
+
+def test_load_mcp_auth_inferred_bearer_from_token_env(tmp_path):
+    p = _write(tmp_path, '[mcp.servers.b]\ntransport = "http"\nurl = "https://b"\nauth_token_env = "T"\n')
+    (s,) = load_mcp_servers(p)
+    assert s.auth == "bearer"  # inferred
+
+
+def test_load_mcp_auth_defaults_none(tmp_path):
+    p = _write(tmp_path, '[mcp.servers.n]\ntransport = "http"\nurl = "https://n"\n')
+    (s,) = load_mcp_servers(p)
+    assert s.auth == "none"
+
+
+def test_load_mcp_oauth_on_stdio_rejected(tmp_path):
+    p = _write(tmp_path, '[mcp.servers.x]\ncommand = "y"\nauth = "oauth"\n')
+    with pytest.raises(ConfigError) as exc:
+        load_mcp_servers(p)
+    assert "oauth" in str(exc.value).lower()
+
+
+def test_load_mcp_oauth_with_token_env_rejected(tmp_path):
+    p = _write(tmp_path, (
+        '[mcp.servers.x]\ntransport = "http"\nurl = "https://x"\n'
+        'auth = "oauth"\nauth_token_env = "T"\n'
+    ))
+    with pytest.raises(ConfigError) as exc:
+        load_mcp_servers(p)
+    assert "mutually exclusive" in str(exc.value).lower() or "auth_token_env" in str(exc.value)
+
+
+def test_load_mcp_bad_auth_enum_rejected(tmp_path):
+    p = _write(tmp_path, '[mcp.servers.x]\ntransport = "http"\nurl = "https://x"\nauth = "magic"\n')
+    with pytest.raises(ConfigError):
+        load_mcp_servers(p)
+
+
+def test_load_mcp_bad_token_store_rejected(tmp_path):
+    p = _write(tmp_path, (
+        '[mcp.servers.x]\ntransport = "http"\nurl = "https://x"\n'
+        'auth = "oauth"\noauth_token_store = "disk"\n'
+    ))
+    with pytest.raises(ConfigError):
+        load_mcp_servers(p)
