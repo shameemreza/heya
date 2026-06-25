@@ -420,7 +420,7 @@ def dispatch_tool(
     *,
     allowed_roots: Sequence[Path],
     cwd: Path,
-    timeout: float = 120.0,
+    timeout: float,
     guidance_sources: Sequence[Path] = (),
     search_provider=None,
     browser_session=None,

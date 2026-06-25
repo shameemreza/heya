@@ -784,7 +784,7 @@ def test_dispatch_start_reproduction_blocks_thin_report():
 
     out = dispatch_tool(
         "start_reproduction", '{"steps": ["x"]}',
-        allowed_roots=[], cwd=Path("."), start_repro_fn=start_fn,
+        allowed_roots=[], cwd=Path("."), timeout=10, start_repro_fn=start_fn,
     )
     assert "blocked" in out
     assert seen["steps"] == ["x"]
@@ -801,7 +801,7 @@ def test_dispatch_record_repro_verdict_routes():
     out = dispatch_tool(
         "record_repro_verdict",
         '{"slug": "WOO-1", "verdict": "reproduced", "evidence": ["e/x.png"]}',
-        allowed_roots=[], cwd=Path("."), repro_verdict_fn=verdict_fn,
+        allowed_roots=[], cwd=Path("."), timeout=10, repro_verdict_fn=verdict_fn,
     )
     assert "wrote report" in out
     assert seen["verdict"] == "reproduced"
