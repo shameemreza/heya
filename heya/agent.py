@@ -87,6 +87,7 @@ class Agent:
         self.max_children = max_children
         self.tool_filter = tool_filter
         self._root_on_text = on_text
+        self._labeled_stream = None
         self._children_spawned = 0
         self.messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt}
@@ -106,15 +107,22 @@ class Agent:
 
     def close(self) -> None:
         """Release external resources: browser session, background processes,
-        the WordPress Playground session, and the MCP runtime."""
-        if self.browser_session is not None:
-            self.browser_session.close()
-        if self.process_registry is not None:
-            self.process_registry.close()
-        if self.playground_session is not None:
-            self.playground_session.close()
-        if self.mcp_runtime is not None:
-            self.mcp_runtime.close()
+        the WordPress Playground session, and the MCP runtime.
+
+        For sub-agents (spawn_depth > 0), only close local output streams;
+        shared resources are the parent's responsibility."""
+        if self._labeled_stream is not None:
+            self._labeled_stream.close()
+        if self.spawn_depth == 0:
+            # Only the root agent closes shared resources
+            if self.browser_session is not None:
+                self.browser_session.close()
+            if self.process_registry is not None:
+                self.process_registry.close()
+            if self.playground_session is not None:
+                self.playground_session.close()
+            if self.mcp_runtime is not None:
+                self.mcp_runtime.close()
 
     def _loop(self) -> str:
         can_spawn = self.spawn_depth < self.max_spawn_depth
@@ -175,12 +183,13 @@ class Agent:
     def _make_child(self, role, instructions) -> "Agent":
         """Build a fresh child Agent: isolated context, shared resources."""
         label = role.name if role is not None else "agent"
+        stream = None
         if self._root_on_text is not None:
             stream = LabeledStream(self._root_on_text, label)
             child_on_text = stream.write
         else:
             child_on_text = None
-        return Agent(
+        child = Agent(
             self.client,
             allowed_roots=self.allowed_roots,
             cwd=self.cwd,
@@ -203,6 +212,8 @@ class Agent:
             tool_filter=role.tools if role is not None else None,
             system_prompt=build_child_system_prompt(SYSTEM_PROMPT, role, instructions),
         )
+        child._labeled_stream = stream
+        return child
 
     def _spawn_agent(self, task, role=None, instructions=None) -> str:
         """Run a child agent to completion and return its final report."""
@@ -214,6 +225,9 @@ class Agent:
         resolved = resolve_role(role)
         child = self._make_child(resolved, instructions)
         try:
-            return child.run(task)
+            result = child.run(task)
+            if hasattr(child, 'close'):
+                child.close()
+            return result
         except Exception as exc:  # never raise into dispatch
             return f"Error: sub-agent failed: {exc}"
