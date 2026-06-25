@@ -10,10 +10,11 @@ from .agent import Agent, DEFAULT_MAX_ITERS
 from .approval import ApprovalPolicy, prompt_stdin
 from .config import (
     load_allowed_roots, load_approval_allow, load_browser_headless, load_guidance_paths,
-    load_mcp_servers, load_profiles, load_search_config, load_wp_path, resolve_profile,
+    load_mcp_servers, load_memory_path, load_profiles, load_search_config, load_wp_path, resolve_profile,
 )
 from .llm_client import LLMClient
 from .mcp_runtime import MCPRuntime
+from .memory import MemoryStore
 from .process import ProcessRegistry
 from .tools_browser import BrowserSession
 from .tools_wp import PlaygroundSession
@@ -59,6 +60,12 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
         sys.stdout.write(chunk)
         sys.stdout.flush()
 
+    def memory_notify(line: str) -> None:
+        sys.stdout.write(line + "\n")
+        sys.stdout.flush()
+
+    memory_store = MemoryStore(load_memory_path(), notify=memory_notify)
+
     return Agent(
         client,
         allowed_roots=roots,
@@ -74,6 +81,7 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
         playground_session=playground_session,
         wp_default_root=wp_default_root,
         mcp_runtime=mcp_runtime,
+        memory_store=memory_store,
     )
 
 

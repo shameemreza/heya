@@ -699,3 +699,45 @@ def test_spawn_agents_isolates_make_child_failure(tmp_path):
     out = agent._spawn_agents([{"task": "t1"}, {"task": "t2"}, {"task": "t3"}])
     assert "ok1" in out and "ok3" in out   # siblings survived
     assert "(failed)" in out               # the construction-failed child is marked failed
+
+
+class _FakeMemory:
+    def __init__(self, index=""):
+        self._index = index
+    def load_index(self):
+        return self._index
+
+
+def test_root_system_prompt_includes_memory_block(tmp_path):
+    store = _FakeMemory(index="# Memory index\n- wp-prefs (user): likes sentence case\n")
+    agent = Agent(FakeClient([ChatResult(content="ok")]), allowed_roots=[tmp_path],
+                  cwd=tmp_path, approval=_AllowAll(), self_review=False, memory_store=store)
+    sys_content = agent.messages[0]["content"]
+    assert "What you remember" in sys_content
+    assert "wp-prefs (user): likes sentence case" in sys_content
+
+
+def test_memory_tools_present_only_with_store(tmp_path):
+    store = _FakeMemory()
+    agent, client = make_agent(tmp_path, [ChatResult(content="ok")], memory_store=store)
+    agent.run("hi")
+    names = {t["function"]["name"] for t in client.last_tools}
+    assert "remember" in names and "read_memory" in names
+
+
+def test_no_memory_tools_without_store(tmp_path):
+    agent, client = make_agent(tmp_path, [ChatResult(content="ok")])
+    agent.run("hi")
+    names = {t["function"]["name"] for t in client.last_tools}
+    assert "remember" not in names
+    assert "What you remember" not in agent.messages[0]["content"]
+
+
+def test_child_has_no_memory_store(tmp_path):
+    store = _FakeMemory(index="# Memory index\n- x (user): y\n")
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False, memory_store=store,
+                  on_text=lambda s: None)
+    child = agent._make_child(None, None)
+    assert child.memory_store is None
+    assert "What you remember" not in child.messages[0]["content"]

@@ -100,6 +100,63 @@ def test_dispatch_read_file_returns_content(tmp_path):
     assert out == "hi"
 
 
+class _FakeStore:
+    def __init__(self):
+        self.calls = []
+    def save(self, name, description, type, content):
+        self.calls.append(("save", name, description, type, content)); return "saved"
+    def update(self, name, *, description=None, content=None):
+        self.calls.append(("update", name, description, content)); return "updated"
+    def delete(self, name):
+        self.calls.append(("delete", name)); return "forgotten"
+    def read(self, name):
+        self.calls.append(("read", name)); return "the body"
+
+
+def test_schemas_include_memory_when_with_memory():
+    names = {s["function"]["name"] for s in build_tool_schemas(with_memory=True)}
+    assert {"remember", "update_memory", "forget", "read_memory"} <= names
+
+
+def test_schemas_omit_memory_by_default():
+    names = {s["function"]["name"] for s in build_tool_schemas()}
+    assert "remember" not in names and "read_memory" not in names
+
+
+def test_dispatch_remember_calls_store(tmp_path):
+    store = _FakeStore()
+    out = dispatch_tool("remember",
+        '{"name":"p","description":"d","type":"user","content":"c"}',
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=1.0, memory_store=store)
+    assert out == "saved"
+    assert store.calls == [("save", "p", "d", "user", "c")]
+
+
+def test_dispatch_read_memory_calls_store(tmp_path):
+    store = _FakeStore()
+    out = dispatch_tool("read_memory", '{"name":"p"}',
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=1.0, memory_store=store)
+    assert out == "the body"
+    assert store.calls == [("read", "p")]
+
+
+def test_dispatch_memory_without_store_is_unknown_tool(tmp_path):
+    out = dispatch_tool("remember", '{"name":"p","description":"d","type":"user","content":"c"}',
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=1.0)
+    assert "unknown tool" in out.lower()
+
+
+def test_dispatch_remember_missing_arg_is_clean_error(tmp_path):
+    out = dispatch_tool("remember", '{"name":"p"}',
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=1.0, memory_store=_FakeStore())
+    assert out.startswith("Error: missing required argument")
+
+
+def test_describe_call_memory():
+    assert "remember" in describe_call("remember", '{"name":"p","type":"user"}')
+    assert "read_memory" in describe_call("read_memory", '{"name":"p"}')
+
+
 def test_dispatch_write_file_creates_and_reports(tmp_path):
     out = dispatch_tool(
         "write_file",

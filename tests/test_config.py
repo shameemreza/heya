@@ -425,3 +425,32 @@ def test_load_mcp_bad_token_store_rejected(tmp_path):
     ))
     with pytest.raises(ConfigError):
         load_mcp_servers(p)
+
+
+from heya.config import load_memory_path
+
+
+def test_load_memory_path_default_when_unset(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[workspace]\nallowed_roots = []\n")
+    assert load_memory_path(cfg) == Path.home() / ".config" / "heya" / "memory"
+
+
+def test_load_memory_path_default_when_no_config(tmp_path):
+    assert load_memory_path(tmp_path / "missing.toml") == Path.home() / ".config" / "heya" / "memory"
+
+
+def test_load_memory_path_override(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('[memory]\npath = "~/custom-mem"\n')
+    assert load_memory_path(cfg) == (Path.home() / "custom-mem").resolve()
+
+
+def test_load_memory_path_bad_type(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[memory]\npath = 5\n")
+    try:
+        load_memory_path(cfg)
+        assert False, "expected ConfigError"
+    except ConfigError:
+        pass

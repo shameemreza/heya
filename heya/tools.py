@@ -11,6 +11,7 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
+from .memory import MEMORY_TYPES
 from .subagents import ROLES as _ROLES
 from .text import truncate_output
 from .tools_files import ToolError, read_file, resolve_in_allowlist, run_command, write_file
@@ -112,6 +113,41 @@ _SPAWN_AGENTS_SCHEMA = {
         },
     },
 }
+
+_MEMORY_SCHEMAS = [
+    {"type": "function", "function": {
+        "name": "remember",
+        "description": (
+            "Save a durable fact worth remembering across sessions: the user's stable "
+            "preferences, a project fact, feedback/correction about how to work, or a "
+            "reference pointer. Check what you already remember first and use "
+            "update_memory instead of duplicating. Do not store secrets, credentials, "
+            "or anything already in the repo."),
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string", "description": "Short kebab-case identifier."},
+            "description": {"type": "string", "description": "One-line summary (shown in the index)."},
+            "type": {"type": "string", "enum": list(MEMORY_TYPES)},
+            "content": {"type": "string", "description": "The fact itself."},
+        }, "required": ["name", "description", "type", "content"]}}},
+    {"type": "function", "function": {
+        "name": "update_memory",
+        "description": "Revise an existing memory when a fact changes or to correct it.",
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string"},
+            "description": {"type": "string"},
+            "content": {"type": "string"},
+        }, "required": ["name"]}}},
+    {"type": "function", "function": {
+        "name": "forget",
+        "description": "Delete a memory that is no longer true or useful.",
+        "parameters": {"type": "object",
+            "properties": {"name": {"type": "string"}}, "required": ["name"]}}},
+    {"type": "function", "function": {
+        "name": "read_memory",
+        "description": "Read the full text of one remembered note by name.",
+        "parameters": {"type": "object",
+            "properties": {"name": {"type": "string"}}, "required": ["name"]}}},
+]
 
 TOOL_SCHEMAS: list[dict] = [
     {
@@ -258,15 +294,18 @@ TOOL_SCHEMAS: list[dict] = [
 ]
 
 
-def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False) -> list[dict]:
+def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False, with_memory: bool = False) -> list[dict]:
     """Native tools plus, when a runtime is connected, one schema per MCP tool.
 
-    Includes the spawn_agent tool only when `can_spawn` (depth-0 agents only).
+    Includes the spawn tools only when `can_spawn` (depth-0 agents) and the memory
+    tools only when `with_memory` (the root agent, which holds the store).
     """
-    base = (
-        TOOL_SCHEMAS + [_SPAWN_AGENT_SCHEMA, _SPAWN_AGENTS_SCHEMA]
-        if can_spawn else TOOL_SCHEMAS
-    )
+    extras: list[dict] = []
+    if can_spawn:
+        extras += [_SPAWN_AGENT_SCHEMA, _SPAWN_AGENTS_SCHEMA]
+    if with_memory:
+        extras += _MEMORY_SCHEMAS
+    base = TOOL_SCHEMAS + extras if extras else TOOL_SCHEMAS
     if mcp_runtime is None:
         return base
     extra: list[dict] = []
@@ -303,6 +342,7 @@ def dispatch_tool(
     mcp_runtime=None,
     spawn_fn=None,
     spawn_agents_fn=None,
+    memory_store=None,
 ) -> str:
     """Run one model tool-call. Returns a string result (errors included)."""
     try:
@@ -429,6 +469,17 @@ def dispatch_tool(
             if spawn_agents_fn is None:
                 return f"Error: unknown tool {name!r}."
             return spawn_agents_fn(args["tasks"])  # method truncates per report itself
+        if name in ("remember", "update_memory", "forget", "read_memory"):
+            if memory_store is None:
+                return f"Error: unknown tool {name!r}."
+            if name == "remember":
+                return memory_store.save(args["name"], args["description"], args["type"], args["content"])
+            if name == "update_memory":
+                return memory_store.update(
+                    args["name"], description=args.get("description"), content=args.get("content"))
+            if name == "forget":
+                return memory_store.delete(args["name"])
+            return memory_store.read(args["name"])  # read_memory
         return f"Error: unknown tool {name!r}."
     except ToolError as exc:
         return f"Error: {exc}"
@@ -492,6 +543,14 @@ def describe_call(name: str, arguments: str) -> str:
         )
         extra = "" if len(tasks) <= 3 else f" (+{len(tasks) - 3} more)"
         return f"spawn_agents → {len(tasks)} agents: {summary}{extra}"
+    if name == "remember":
+        return f"remember → {args.get('name', '?')} ({args.get('type', '?')})"
+    if name == "update_memory":
+        return f"update_memory → {args.get('name', '?')}"
+    if name == "forget":
+        return f"forget → {args.get('name', '?')}"
+    if name == "read_memory":
+        return f"read_memory → {args.get('name', '?')}"
     if name.startswith(MCP_PREFIX):
         # name is mcp__<server>__<tool>; recover a readable server.tool(args)
         body = name[len(MCP_PREFIX):]

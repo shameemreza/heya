@@ -208,6 +208,28 @@ def load_wp_path(config_path: Path | None = None) -> Path | None:
     return Path(raw).expanduser().resolve()
 
 
+def load_memory_path(config_path: Path | None = None) -> Path:
+    """Folder for Heya's long-term memory files.
+
+    User file shape:
+        [memory]
+        path = "~/somewhere/heya-memory"   # optional
+
+    Defaults to ~/.config/heya/memory.
+    """
+    default = Path.home() / ".config" / "heya" / "memory"
+    path = config_path or default_config_path()
+    if not path.exists():
+        return default
+    data = tomllib.loads(path.read_text())
+    raw = data.get("memory", {}).get("path")
+    if not raw:
+        return default
+    if not isinstance(raw, str):
+        raise ConfigError(f"memory.path must be a string, got {type(raw).__name__}")
+    return Path(raw).expanduser().resolve()
+
+
 def load_approval_allow(config_path: Path | None = None) -> tuple[str, ...]:
     """Command prefixes that auto-approve, skipping the gate (fail-closed).
 
