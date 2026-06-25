@@ -225,9 +225,8 @@ class Agent:
         resolved = resolve_role(role)
         child = self._make_child(resolved, instructions)
         try:
-            result = child.run(task)
-            if hasattr(child, 'close'):
-                child.close()
-            return result
+            return child.run(task)
         except Exception as exc:  # never raise into dispatch
             return f"Error: sub-agent failed: {exc}"
+        finally:
+            child.close()

@@ -394,6 +394,8 @@ def test_spawn_agent_fan_out_cap(tmp_path):
     class _StubChild:
         def run(self, task):
             return "ok"
+        def close(self):
+            pass
     agent._make_child = lambda role, instructions: _StubChild()
     assert agent._spawn_agent("t1") == "ok"
     assert agent._spawn_agent("t2") == "ok"
@@ -454,6 +456,27 @@ def test_spawned_child_shares_resources_and_is_not_closed(tmp_path):
                   approval=_AllowAll(), self_review=False, browser_session=session)
     agent.run("delegate")
     assert session.closed is False  # child must never close a shared session
+
+
+def test_spawn_agent_flushes_child_on_exception(tmp_path):
+    # If the child's run() raises, _spawn_agent must still (a) return a clean
+    # error string (never-raise) and (b) call child.close() to flush its stream.
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False)
+
+    class _BoomChild:
+        def __init__(self):
+            self.closed = False
+        def run(self, task):
+            raise RuntimeError("boom")
+        def close(self):
+            self.closed = True
+
+    boom = _BoomChild()
+    agent._make_child = lambda role, instructions: boom
+    out = agent._spawn_agent("do it")
+    assert out == "Error: sub-agent failed: boom"
+    assert boom.closed is True  # flushed via finally even though run() raised
 
 
 def test_tool_filter_refuses_disallowed_tool(tmp_path):
