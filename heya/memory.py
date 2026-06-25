@@ -40,7 +40,14 @@ def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
 
 
 def serialize_memory(name: str, description: str, type: str, content: str) -> str:
-    return f"---\nname: {name}\ndescription: {description}\ntype: {type}\n---\n{content.rstrip()}\n"
+    # frontmatter scalars must stay single-line so a newline in a value can't
+    # inject a spurious key; the body (content) may be multi-line.
+    def _oneline(s: str) -> str:
+        return " ".join(str(s).splitlines()).strip()
+    return (
+        f"---\nname: {_oneline(name)}\ndescription: {_oneline(description)}\n"
+        f"type: {_oneline(type)}\n---\n{content.rstrip()}\n"
+    )
 
 
 @dataclass(frozen=True)

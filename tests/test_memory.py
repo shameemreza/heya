@@ -55,7 +55,7 @@ def test_save_confines_to_folder(tmp_path):
     store = MemoryStore(tmp_path)
     store.save("../../etc/passwd", "d", "reference", "c")
     # slugified into the folder; nothing written outside root
-    assert not Path("/etc/passwd-heya-test").exists()
+    assert not Path("/etc/passwd-heya").exists()  # the traversal target was never written
     written = list(tmp_path.glob("*.md"))
     for f in written:
         assert f.parent == tmp_path  # every file is directly inside root
@@ -71,3 +71,12 @@ def test_notify_called_on_save(tmp_path):
 def test_load_index_empty_is_blank(tmp_path):
     store = MemoryStore(tmp_path)
     assert store.load_index() == ""
+
+
+def test_serialize_single_lines_frontmatter_values():
+    # A newline in description must not create a spurious frontmatter key.
+    text = serialize_memory("n", "line one\ntype: injected", "user", "body")
+    fm, body = parse_frontmatter(text)
+    assert fm["type"] == "user"            # not overridden by the injected line
+    assert "\n" not in fm["description"]   # description collapsed to one line
+    assert body.strip() == "body"
