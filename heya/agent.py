@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .approval import ApprovalPolicy
+from .memory import build_memory_block
 from .subagents import (
     LabeledStream, LockedSink, PARALLEL_SAFE_TOOLS, build_child_system_prompt,
     format_parallel_report, parallel_label, resolve_role, ROLES,
@@ -73,6 +74,7 @@ class Agent:
         system_prompt: str = SYSTEM_PROMPT,
         max_concurrent: int = 4,
         root_on_text: Callable[[str], None] | None = None,
+        memory_store=None,
     ) -> None:
         self.client = client
         self.allowed_roots = list(allowed_roots)
@@ -98,9 +100,11 @@ class Agent:
         self._root_on_text = root_on_text if root_on_text is not None else on_text
         self._labeled_stream = None
         self._children_spawned = 0
-        self.messages: list[dict[str, Any]] = [
-            {"role": "system", "content": system_prompt}
-        ]
+        self.memory_store = memory_store
+        system_content = system_prompt
+        if memory_store is not None:
+            system_content = system_content + "\n\n" + build_memory_block(memory_store.load_index())
+        self.messages: list[dict[str, Any]] = [{"role": "system", "content": system_content}]
         self._mutated = False
 
     def run(self, user_message: str) -> str:
@@ -136,7 +140,8 @@ class Agent:
 
     def _loop(self) -> str:
         can_spawn = self.spawn_depth < self.max_spawn_depth
-        tools = build_tool_schemas(self.mcp_runtime, can_spawn=can_spawn)
+        with_memory = self.memory_store is not None
+        tools = build_tool_schemas(self.mcp_runtime, can_spawn=can_spawn, with_memory=with_memory)
         if self.tool_filter is not None:
             tools = [t for t in tools if t["function"]["name"] in self.tool_filter]
         for _ in range(self.max_iters):
@@ -185,6 +190,7 @@ class Agent:
             mcp_runtime=self.mcp_runtime,
             spawn_fn=self._spawn_agent,
             spawn_agents_fn=self._spawn_agents,
+            memory_store=self.memory_store,
         )
         mutating = call.name in ("write_file", "run_command", "run_wp_cli")
         if mutating and not output.startswith(("Error", "Started background process", "Declined")):
