@@ -275,7 +275,7 @@ class Agent:
             self._mutated = True
         return output
 
-    def _make_child(self, role, instructions, *, parallel=False, index=0, sink=None) -> "Agent":
+    def _make_child(self, role, instructions, *, parallel=False, index=0, sink=None, weak=False) -> "Agent":
         """Build a fresh child Agent: isolated context, shared resources.
 
         parallel=True builds a READ-ONLY child for concurrent fan-out: the single
@@ -289,6 +289,8 @@ class Agent:
             browser = process = playground = None
         else:
             label = role.name if role is not None else "agent"
+            if weak:
+                label = f"{label}·weak"
             base_sink = self._root_on_text
             tool_filter = role.tools if role is not None else None
             browser = self.browser_session
@@ -300,8 +302,9 @@ class Agent:
             child_on_text = stream.write
         else:
             child_on_text = None
+        child_client = self.weak_client if weak else self.client
         child = Agent(
-            self.client,
+            child_client,
             allowed_roots=self.allowed_roots,
             cwd=self.cwd,
             approval=self.approval,
@@ -334,7 +337,7 @@ class Agent:
         child._labeled_stream = stream
         return child
 
-    def _spawn_agent(self, task, role=None, instructions=None) -> str:
+    def _spawn_agent(self, task, role=None, instructions=None, weak=False) -> str:
         """Run a child agent to completion and return its final report."""
         if self._children_spawned >= self.max_children:
             return "Error: sub-agent limit reached for this task."
@@ -342,7 +345,7 @@ class Agent:
             return f"Error: unknown role {role!r}. Available: {sorted(ROLES)}."
         self._children_spawned += 1
         resolved = resolve_role(role)
-        child = self._make_child(resolved, instructions)
+        child = self._make_child(resolved, instructions, weak=weak)
         try:
             return child.run(task)
         except Exception as exc:  # never raise into dispatch

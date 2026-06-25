@@ -396,7 +396,7 @@ def test_spawn_agent_fan_out_cap(tmp_path):
             return "ok"
         def close(self):
             pass
-    agent._make_child = lambda role, instructions: _StubChild()
+    agent._make_child = lambda role, instructions, **kw: _StubChild()
     assert agent._spawn_agent("t1") == "ok"
     assert agent._spawn_agent("t2") == "ok"
     third = agent._spawn_agent("t3")
@@ -473,7 +473,7 @@ def test_spawn_agent_flushes_child_on_exception(tmp_path):
             self.closed = True
 
     boom = _BoomChild()
-    agent._make_child = lambda role, instructions: boom
+    agent._make_child = lambda role, instructions, **kw: boom
     out = agent._spawn_agent("do it")
     assert out == "Error: sub-agent failed: boom"
     assert boom.closed is True  # flushed via finally even though run() raised
@@ -971,3 +971,20 @@ def test_agent_compacts_when_over_window(tmp_path):
     # the big tool output was microcompacted (stubbed) before the third call
     third_call_msgs = client.calls[2]
     assert any("omitted to save context" in (m.get("content") or "") for m in third_call_msgs)
+
+
+def test_make_child_weak_uses_weak_client(tmp_path):
+    weak = FakeChatClient(ChatResult(content="x"))
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")], weak_client=weak)
+    child = agent._make_child(None, None, weak=True)
+    assert child.client is weak               # child's primary client is the weak one
+    assert child.weak_client is weak          # and its weak slot too
+    assert "weak" in child.label
+
+
+def test_make_child_default_uses_main_client(tmp_path):
+    weak = FakeChatClient(ChatResult(content="x"))
+    agent, client = make_agent(tmp_path, [ChatResult(content="x")], weak_client=weak)
+    child = agent._make_child(None, None)
+    assert child.client is client             # main by default
+    assert child.weak_client is weak          # weak reference still threaded

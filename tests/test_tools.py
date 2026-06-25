@@ -589,10 +589,11 @@ def test_schemas_include_spawn_agent_when_can_spawn():
 
 def test_dispatch_spawn_agent_calls_spawn_fn(tmp_path):
     seen = {}
-    def spawn_fn(task, role, instructions):
+    def spawn_fn(task, role, instructions, weak):
         seen["task"] = task
         seen["role"] = role
         seen["instructions"] = instructions
+        seen["weak"] = weak
         return "child report"
     out = dispatch_tool(
         "spawn_agent",
@@ -600,7 +601,7 @@ def test_dispatch_spawn_agent_calls_spawn_fn(tmp_path):
         allowed_roots=[tmp_path], cwd=tmp_path, timeout=1.0, spawn_fn=spawn_fn,
     )
     assert out == "child report"
-    assert seen == {"task": "look at X", "role": "researcher", "instructions": None}
+    assert seen == {"task": "look at X", "role": "researcher", "instructions": None, "weak": False}
 
 
 def test_dispatch_spawn_agent_without_spawn_fn_is_unknown_tool(tmp_path):
@@ -724,3 +725,33 @@ def test_dispatch_review_changes_without_fn(tmp_path):
 
 def test_describe_call_review_changes():
     assert "review_changes" in describe_call("review_changes", '{"target": "branch"}')
+
+
+def test_spawn_agent_dispatch_threads_weak():
+    seen = {}
+
+    def spawn_fn(task, role, instructions, weak):
+        seen["weak"] = weak
+        return "report"
+
+    out = dispatch_tool(
+        "spawn_agent",
+        '{"task": "do x", "weak": true}',
+        allowed_roots=[], cwd=Path("."), timeout=10, spawn_fn=spawn_fn,
+    )
+    assert "report" in out
+    assert seen["weak"] is True
+
+
+def test_spawn_agent_dispatch_weak_defaults_false():
+    seen = {}
+
+    def spawn_fn(task, role, instructions, weak):
+        seen["weak"] = weak
+        return "report"
+
+    dispatch_tool(
+        "spawn_agent", '{"task": "do x"}',
+        allowed_roots=[], cwd=Path("."), timeout=10, spawn_fn=spawn_fn,
+    )
+    assert seen["weak"] is False
