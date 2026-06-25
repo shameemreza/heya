@@ -1003,7 +1003,7 @@ def test_review_children_use_main_client_not_weak(tmp_path):
 
     agent._make_child = spy
     agent._run_children([
-        {"prompt": "review this", "role": "reviewer"},
+        {"prompt": "review this"},
     ])
     assert captured, "expected at least one review child"
     assert all(ch.client is client for ch in captured)
