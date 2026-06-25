@@ -14,7 +14,7 @@ from pathlib import Path
 from .memory import MEMORY_TYPES
 from .subagents import ROLES as _ROLES
 from .text import truncate_output
-from .tools_files import ToolError, read_file, resolve_in_allowlist, run_command, write_file
+from .tools_files import ToolError, read_file, resolve_in_allowlist, run_command, search_files, write_file
 from .tools_guidance import read_guidance as _read_guidance
 from .tools_mcp import MCP_PREFIX, build_reverse_map, mcp_tool_name, parse_mcp_name, _MAX_DESC
 from .tools_web import web_fetch, web_search
@@ -177,6 +177,13 @@ TOOL_SCHEMAS: list[dict] = [
             },
         },
     },
+    {"type": "function", "function": {
+        "name": "search_files",
+        "description": "Read-only literal-substring search across files in the allowed folders (returns file:line: matches). Use it to find callers, definitions, or related code beyond a diff.",
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string", "description": "Literal substring to find."},
+            "path": {"type": "string", "description": "Optional folder to search under (default: working dir)."},
+        }, "required": ["query"]}}},
     {
         "type": "function",
         "function": {
@@ -387,6 +394,9 @@ def dispatch_tool(
                 mcp_runtime.get_prompt(args["server"], args["name"], args.get("arguments") or {}))
         if name == "read_file":
             return truncate_output(read_file(args["path"], allowed_roots=allowed_roots))
+        if name == "search_files":
+            return truncate_output(search_files(
+                args["query"], allowed_roots=allowed_roots, cwd=cwd, path=args.get("path")))
         if name == "write_file":
             n = write_file(args["path"], args["content"], allowed_roots=allowed_roots)
             return f"Wrote {n} bytes to {args['path']}."
@@ -504,6 +514,8 @@ def describe_call(name: str, arguments: str) -> str:
         return f"kill_command → {args.get('id', '?')}"
     if name == "read_file":
         return f"read_file → {args.get('path', '?')}"
+    if name == "search_files":
+        return f"search_files → {args.get('query', '?')}"
     if name == "read_guidance":
         return f"read_guidance → {args.get('name') or '(list)'}"
     if name == "web_search":
