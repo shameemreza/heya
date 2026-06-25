@@ -694,8 +694,26 @@ def test_review_changes_schema_gated():
 def test_dispatch_review_changes(tmp_path):
     out = dispatch_tool("review_changes", '{"target": "staged"}',
                         allowed_roots=[tmp_path], cwd=tmp_path, timeout=5.0,
-                        review_fn=lambda target: f"reviewed {target}")
+                        review_fn=lambda target, focus="all": f"reviewed {target}")
     assert out == "reviewed staged"
+
+
+def test_review_schema_has_focus():
+    sch = next(s for s in build_tool_schemas(with_review=True)
+               if s["function"]["name"] == "review_changes")
+    assert "focus" in sch["function"]["parameters"]["properties"]
+
+
+def test_dispatch_review_changes_forwards_focus(tmp_path):
+    seen = {}
+    def fn(target, focus="all"):
+        seen["target"] = target
+        seen["focus"] = focus
+        return "ok"
+    out = dispatch_tool("review_changes", '{"target": "branch", "focus": "security"}',
+                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=5.0, review_fn=fn)
+    assert out == "ok"
+    assert seen == {"target": "branch", "focus": "security"}
 
 
 def test_dispatch_review_changes_without_fn(tmp_path):

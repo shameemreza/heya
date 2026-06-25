@@ -1,5 +1,8 @@
-from heya.review import Finding, parse_findings, synthesize, normalize_severity, SEVERITIES, git_diff
-from heya.review import run_review, verifier_confirms, REVIEWER_PROMPT, VERIFIER_PROMPT
+from heya.review import (
+    Finding, parse_findings, synthesize, normalize_severity, SEVERITIES, git_diff,
+    run_review, verifier_confirms, REVIEWER_PROMPT, VERIFIER_PROMPT,
+    WP_SECURITY_METHODOLOGY, WP_STANDARDS_METHODOLOGY,
+)
 
 
 def test_normalize_severity():
@@ -114,7 +117,11 @@ def test_git_diff_empty_is_clean_message(tmp_path):
 
 
 def test_git_diff_not_a_repo(tmp_path):
-    runner = _fake_runner([(128, "", "fatal: not a git repository")])
+    runner = _fake_runner([
+        (128, "", "fatal: not a git repository"),
+        (128, "", "fatal: not a git repository"),
+        (128, "", "fatal: not a git repository"),
+    ])
     out = git_diff("branch", allowed_roots=[tmp_path], cwd=tmp_path, runner=runner)
     assert "not a git repository" in out.lower()
 
@@ -243,3 +250,69 @@ def test_run_review_caps_verification_by_severity():
     assert all("blocker" in p.lower() for p in verified)
     assert "blocker 0" in out
     assert "nit 0" not in out  # beyond the cap → never verified, never in verdict
+
+
+def test_security_methodology_has_taint_markers():
+    m = WP_SECURITY_METHODOLOGY
+    for marker in ("prepare", "esc_", "wp_verify_nonce", "current_user_can", "source", "sink"):
+        assert marker in m, marker
+    assert "theoretical" in m.lower()        # the noise-exclusion rule
+    assert "do not report" in m.lower()
+
+
+def test_standards_methodology_markers():
+    m = WP_STANDARDS_METHODOLOGY.lower()
+    assert "text domain" in m or "internationali" in m or "i18n" in m
+    assert "capabilit" in m
+
+
+def test_reviewer_prompt_includes_methodology():
+    p = REVIEWER_PROMPT("DIFFBODY", "security", "wp-security", "", WP_SECURITY_METHODOLOGY)
+    assert "wp_verify_nonce" in p and "prepare" in p
+    assert "DIFFBODY" in p
+    assert "read_guidance('wp-security')" in p
+
+
+def test_reviewer_prompt_empty_methodology_is_clean():
+    # methodology="" must not inject any security text (10a correctness prompt unchanged)
+    p = REVIEWER_PROMPT("DIFFBODY", "correctness and quality", "code-review", "")
+    assert "wp_verify_nonce" not in p
+    assert "taint" not in p.lower()
+    # and an explicit "" matches the default
+    assert p == REVIEWER_PROMPT("DIFFBODY", "correctness and quality", "code-review", "", "")
+
+
+def test_run_review_accepts_3_and_4_tuples():
+    captured = []
+    def fake_run_children(specs):
+        captured.append(specs)
+        return [(s["label"], "NO FINDINGS") for s in specs]
+    # 3-tuple (10a shape) still works
+    run_review("branch", run_children=fake_run_children,
+               git_diff_fn=lambda t: "diff --git a/x b/x\n+x\n",
+               reviewers=[("code-reviewer", "correctness", "code-review")])
+    # 4-tuple (10b shape): the methodology reaches the prompt
+    run_review("branch", run_children=fake_run_children,
+               git_diff_fn=lambda t: "diff --git a/x b/x\n+x\n",
+               reviewers=[("security-reviewer", "security", "wp-security", "TAINT_MARKER")])
+    assert "TAINT_MARKER" in captured[1][0]["prompt"]
+
+
+def test_git_diff_falls_back_to_master(tmp_path):
+    runner = _fake_runner([
+        (1, "", "fatal: no main"),          # merge-base HEAD main fails
+        (0, "deadbeef\n", ""),              # merge-base HEAD master succeeds
+        (0, "diff --git a/x b/x\n+x\n", ""),  # diff
+    ])
+    out = git_diff("branch", allowed_roots=[tmp_path], cwd=tmp_path, runner=runner)
+    assert "diff --git" in out
+    assert any("master" in argv for argv in runner.calls)
+    assert any("deadbeef" in argv for argv in runner.calls)  # diff used master's base
+
+
+def test_git_diff_all_base_refs_fail(tmp_path):
+    runner = _fake_runner([
+        (1, "", "no main"), (1, "", "no master"), (1, "", "no origin"),
+    ])
+    out = git_diff("branch", allowed_roots=[tmp_path], cwd=tmp_path, runner=runner)
+    assert "could not get a diff" in out.lower()

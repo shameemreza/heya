@@ -90,3 +90,51 @@ def test_review_clean_diff_end_to_end(tmp_path, monkeypatch):
     agent.run("review the branch")
     tool_msg = next(m for m in client.calls[-1] if m["role"] == "tool")
     assert "nothing blocks" in tool_msg["content"].lower()
+
+
+def test_security_review_flags_real_sqli_drops_guarded(tmp_path, monkeypatch):
+    # Diff has a real SQLi (source $_GET into $wpdb->query, no prepare) and a guarded
+    # query. The security reviewer flags both; the verifier confirms the SQLi and
+    # refutes the guarded one. Only the SQLi survives.
+    monkeypatch.setattr(review_mod, "git_diff", lambda target, **kw: (
+        "diff --git a/p.php b/p.php\n"
+        "+$wpdb->query(\"DELETE FROM t WHERE id = \" . $_GET['id']);\n"
+        "+$wpdb->query($wpdb->prepare(\"DELETE FROM t WHERE id = %d\", $safe));\n"))
+
+    class SecClient:
+        def __init__(self):
+            self._lock = __import__("threading").Lock()
+            self.calls = []
+        def chat_stream(self, messages, tools=None, on_text=None):
+            with self._lock:
+                self.calls.append([dict(m) for m in messages])
+            system = messages[0]["content"]
+            last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+            has_tool_result = any(m["role"] == "tool" for m in messages)
+            if SUBAGENT_FRAMING[:24] in system:
+                if "adversarial verifier" in last_user:
+                    if "unprepared sqli" in last_user:
+                        return ChatResult(content="VERDICT: real\ngrounding: $_GET into query, no prepare")
+                    return ChatResult(content="VERDICT: false-positive\ngrounding: uses $wpdb->prepare")
+                # security reviewer: report one real + one spurious
+                return ChatResult(content=(
+                    "### FINDING\nfile: p.php\nline: 1\nseverity: Blocker\ncategory: sqli\n"
+                    "title: unprepared sqli\nevidence: $_GET['id'] into $wpdb->query, no prepare\n"
+                    "suggestion: use prepare\n### END\n"
+                    "### FINDING\nfile: p.php\nline: 2\nseverity: Blocker\ncategory: sqli\n"
+                    "title: guarded query flagged\nevidence: second query\nsuggestion: n/a\n### END\n"))
+            if not has_tool_result:
+                return ChatResult(content=None, tool_calls=[ToolCall(
+                    id="1", name="review_changes",
+                    arguments='{"target": "branch", "focus": "security"}')])
+            return ChatResult(content="security review done")
+
+    client = SecClient()
+    agent = Agent(client, allowed_roots=[tmp_path], cwd=tmp_path, approval=_AllowAll(),
+                  self_review=False)
+    agent.run("security-check this")
+    tool_msg = next(m for m in client.calls[-1] if m["role"] == "tool")
+    verdict = tool_msg["content"]
+    assert "unprepared sqli" in verdict        # real SQLi confirmed → kept
+    assert "guarded query flagged" not in verdict  # guarded one refuted → dropped
+    assert "Blocker" in verdict

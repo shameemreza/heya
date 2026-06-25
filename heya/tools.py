@@ -125,6 +125,9 @@ _REVIEW_SCHEMA = {
         "parameters": {"type": "object", "properties": {
             "target": {"type": "string",
                        "description": "'branch' (default), 'staged', or a file/dir path."},
+            "focus": {"type": "string",
+                      "enum": ["all", "security", "correctness", "standards"],
+                      "description": "Which reviewers to run (default: all)."},
         }},
     },
 }
@@ -512,7 +515,7 @@ def dispatch_tool(
         if name == "review_changes":
             if review_fn is None:
                 return f"Error: unknown tool {name!r}."
-            return review_fn(args.get("target") or "branch")
+            return review_fn(args.get("target") or "branch", args.get("focus") or "all")
         return f"Error: unknown tool {name!r}."
     except ToolError as exc:
         return f"Error: {exc}"
@@ -587,7 +590,7 @@ def describe_call(name: str, arguments: str) -> str:
     if name == "read_memory":
         return f"read_memory → {args.get('name', '?')}"
     if name == "review_changes":
-        return f"review_changes → {args.get('target') or 'branch'}"
+        return f"review_changes → {args.get('target') or 'branch'} ({args.get('focus') or 'all'})"
     if name.startswith(MCP_PREFIX):
         # name is mcp__<server>__<tool>; recover a readable server.tool(args)
         body = name[len(MCP_PREFIX):]

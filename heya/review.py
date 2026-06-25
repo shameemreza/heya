@@ -111,10 +111,16 @@ def git_diff(target, *, allowed_roots: Sequence[Path], cwd, runner) -> str:
     if target == "staged":
         code, out, err = run(["git", "diff", "--cached"])
     elif target == "branch":
-        base_code, base_out, base_err = run(["git", "merge-base", "HEAD", "main"])
-        if base_code != 0:
-            return _git_error(base_err)
-        base = base_out.strip()
+        base = None
+        last_err = ""
+        for ref in ("main", "master", "origin/HEAD"):
+            base_code, base_out, base_err = run(["git", "merge-base", "HEAD", ref])
+            if base_code == 0:
+                base = base_out.strip()
+                break
+            last_err = base_err
+        if base is None:
+            return _git_error(last_err)
         code, out, err = run(["git", "diff", base, "HEAD"])
     else:
         # treat target as a path to diff (working tree changes for that path)
@@ -146,14 +152,52 @@ REVIEW_OUTPUT_CONTRACT = (
     "findings."
 )
 
+WP_SECURITY_METHODOLOGY = (
+    "SECURITY REVIEW — apply the taint frame. Report a vulnerability ONLY when "
+    "untrusted input reaches a dangerous sink with NO intervening guard.\n"
+    "Untrusted sources: $_GET, $_POST, $_REQUEST, $_COOKIE, $_SERVER, and REST/AJAX "
+    "request parameters — anything the client controls.\n"
+    "Sink -> required guard (a finding requires the guard to be ABSENT on the path):\n"
+    "- SQL ($wpdb->query/get_results/get_var/get_col) -> $wpdb->prepare() with %s/%d/%i placeholders.\n"
+    "- HTML/attribute/URL/JS output (echo/print) -> esc_html / esc_attr / esc_url / esc_js / wp_kses[_post] at the sink.\n"
+    "- A state-changing action (a form/AJAX/admin-post handler that writes or deletes) -> BOTH "
+    "wp_verify_nonce/check_admin_referer AND current_user_can. A nonce proves intent, not permission; both are required.\n"
+    "- unserialize() on user data -> PHP object injection.\n"
+    "- include/require/fopen/file_get_contents with a user-controlled path and '../' -> path traversal / LFI.\n"
+    "- An outbound request to a user-controlled URL -> SSRF.\n"
+    "- Hardcoded credentials, API keys, or tokens -> secret exposure (report the location and class; do NOT echo the secret value).\n"
+    "Severity: a reachable, exploitable SQLi / object-injection / auth-bypass is Blocker; reflected or "
+    "stored XSS, or a missing-nonce-and-capability state change, is High; a defense-in-depth gap with no "
+    "concrete exploit is at most Medium and usually not worth reporting.\n"
+    "Put the concrete source->sink path in `evidence`; set `category` to the vuln class "
+    "(sqli, xss, csrf, authz, object-injection, traversal, ssrf, secret). Use read_file and search_files "
+    "to confirm no guard exists on the path before reporting.\n"
+    "Do NOT report: theoretical issues, defense-in-depth where the input is already validated/escaped, "
+    "rate-limiting or DoS concerns, or generic 'could be unsafe' speculation. Only flag what is concretely "
+    "exploitable and would block."
+)
 
-def REVIEWER_PROMPT(diff: str, dimension: str, guidance_name: str, standards: str) -> str:
+WP_STANDARDS_METHODOLOGY = (
+    "STANDARDS REVIEW — WordPress/WooCommerce coding standards and plugin-directory guidelines. Check: "
+    "internationalization (translatable strings via __()/esc_html__() with the correct text domain, escaped "
+    "on output); proper hook usage; unique prefixing of functions/classes/options to avoid collisions; input "
+    "sanitization (sanitize_text_field, absint, etc.) even where it is not a security bug; preferring WP APIs "
+    "over direct database calls; no disallowed/discouraged functions; capability checks on admin actions; "
+    "enqueuing scripts/styles rather than inlining. These are mostly Medium or Nit severity unless they cause "
+    "a real bug. Report concrete violations naming the standard they break; do not invent style nits."
+)
+
+
+def REVIEWER_PROMPT(diff: str, dimension: str, guidance_name: str, standards: str,
+                    methodology: str = "") -> str:
     parts = [
         f"You are a meticulous {dimension} code reviewer. Review ONLY the change below.",
         f"First call read_guidance('{guidance_name}') and follow it as the standard. "
         "Use read_file and search_files to expand context (the enclosing function, "
         "callers, related code) before judging — a hunk in isolation hides bugs.",
     ]
+    if methodology.strip():
+        parts.append(methodology.strip())
     if standards.strip():
         parts.append("The user's saved standards/preferences (honor these):\n" + standards.strip())
     parts.append(REVIEW_OUTPUT_CONTRACT)
@@ -197,11 +241,14 @@ def run_review(target, *, run_children, git_diff_fn, reviewers, standards="", ve
         return diff if diff.strip() else "Nothing to review — the diff is empty."
 
     # Stage 1: fan out reviewers (read-only parallel children).
-    reviewer_specs = [
-        {"prompt": REVIEWER_PROMPT(diff, dimension, guidance, standards),
-         "role": None, "instructions": None, "label": label}
-        for (label, dimension, guidance) in reviewers
-    ]
+    reviewer_specs = []
+    for r in reviewers:
+        label, dimension, guidance = r[0], r[1], r[2]
+        methodology = r[3] if len(r) > 3 else ""
+        reviewer_specs.append({
+            "prompt": REVIEWER_PROMPT(diff, dimension, guidance, standards, methodology),
+            "role": None, "instructions": None, "label": label,
+        })
     reviewer_reports = run_children(reviewer_specs)
     findings: list[Finding] = []
     for _label, report in reviewer_reports:
