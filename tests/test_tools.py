@@ -764,3 +764,44 @@ def test_read_guidance_reproduction_present():
     assert "no evidence, no verdict" in out.lower()
     # verdict enum present
     assert "fixed-since-report" in out
+
+
+def test_repro_tools_root_only():
+    from heya.tools import build_tool_schemas
+    root = {t["function"]["name"] for t in build_tool_schemas(with_repro=True)}
+    child = {t["function"]["name"] for t in build_tool_schemas(with_repro=False)}
+    assert "start_reproduction" in root and "record_repro_verdict" in root
+    assert "start_reproduction" not in child and "record_repro_verdict" not in child
+
+
+def test_dispatch_start_reproduction_blocks_thin_report():
+    from heya.tools import dispatch_tool
+    seen = {}
+
+    def start_fn(**fields):
+        seen.update(fields)
+        return "blocked: needs-info"
+
+    out = dispatch_tool(
+        "start_reproduction", '{"steps": ["x"]}',
+        allowed_roots=[], cwd=Path("."), start_repro_fn=start_fn,
+    )
+    assert "blocked" in out
+    assert seen["steps"] == ["x"]
+
+
+def test_dispatch_record_repro_verdict_routes():
+    from heya.tools import dispatch_tool
+    seen = {}
+
+    def verdict_fn(**fields):
+        seen.update(fields)
+        return "wrote report"
+
+    out = dispatch_tool(
+        "record_repro_verdict",
+        '{"slug": "WOO-1", "verdict": "reproduced", "evidence": ["e/x.png"]}',
+        allowed_roots=[], cwd=Path("."), repro_verdict_fn=verdict_fn,
+    )
+    assert "wrote report" in out
+    assert seen["verdict"] == "reproduced"

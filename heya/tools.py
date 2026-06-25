@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .memory import MEMORY_TYPES
+from .reproduction import VERDICTS
 from .subagents import ROLES as _ROLES
 from .text import truncate_output
 from .tools_files import ToolError, read_file, resolve_in_allowlist, run_command, search_files, write_file
@@ -138,6 +139,55 @@ _REVIEW_SCHEMA = {
         }},
     },
 }
+
+_START_REPRODUCTION_SCHEMA = {
+    "type": "function", "function": {
+        "name": "start_reproduction",
+        "description": (
+            "Begin reproducing a reported issue. First read read_guidance('reproduction'). "
+            "Extract the report into structured fields and pass them here. If steps, "
+            "expected, actual, or a version (wp/wc/php) are missing, this returns a 'blocked' "
+            "needs-info result and builds NO environment. Otherwise it creates a working "
+            "folder repro/<slug>/ with the spec and returns the funnel checklist. Then drive "
+            "the funnel yourself with wp_playground, run_wp_cli, the browser tools, and "
+            "read_log, code-level before browser, saving artifacts under repro/<slug>/evidence/."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "slug": {"type": "string", "description": "Short id for the working folder, e.g. the ticket key."},
+            "source": {"type": "string", "description": "Where the report came from (ticket id/url or 'pasted')."},
+            "steps": {"type": "array", "items": {"type": "string"}, "description": "Reproduction steps."},
+            "expected": {"type": "string"},
+            "actual": {"type": "string"},
+            "wp_version": {"type": "string"},
+            "wc_version": {"type": "string"},
+            "php_version": {"type": "string"},
+            "plugins": {"type": "array", "items": {"type": "string"}},
+            "theme": {"type": "string"},
+            "settings": {"type": "array", "items": {"type": "string"}},
+            "seed_data": {"type": "array", "items": {"type": "string"}},
+        }, "required": ["steps", "expected", "actual"]}}}
+
+_RECORD_REPRO_VERDICT_SCHEMA = {
+    "type": "function", "function": {
+        "name": "record_repro_verdict",
+        "description": (
+            "End a reproduction in exactly one verdict and write report.md + comment.md into "
+            "repro/<slug>/. Verdict is one of: reproduced, fixed-since-report, cannot-reproduce, "
+            "blocked. A non-blocked verdict REQUIRES evidence (screenshot paths, log excerpts, "
+            "assertion output); with no evidence it is downgraded to 'blocked'. This never posts "
+            "anywhere; tell the user where the files are."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "slug": {"type": "string"},
+            "verdict": {"type": "string", "enum": list(VERDICTS)},
+            "evidence": {"type": "array", "items": {"type": "string"},
+                         "description": "Artifact references captured under evidence/."},
+            "what_happens": {"type": "string", "description": "One or two plain-language sentences."},
+            "summary": {"type": "string"},
+            "version_results": {"type": "array", "items": {"type": "array", "items": {"type": "string"}},
+                                "description": "Pairs of [environment, result]."},
+            "suggested_next_step": {"type": "string"},
+        }, "required": ["slug", "verdict"]}}}
 
 _MEMORY_SCHEMAS = [
     {"type": "function", "function": {
@@ -326,7 +376,7 @@ TOOL_SCHEMAS: list[dict] = [
 ]
 
 
-def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False, with_memory: bool = False, with_review: bool = False) -> list[dict]:
+def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False, with_memory: bool = False, with_review: bool = False, with_repro: bool = False) -> list[dict]:
     """Native tools plus, when a runtime is connected, one schema per MCP tool.
 
     Includes the spawn tools only when `can_spawn` (depth-0 agents), the memory
@@ -340,6 +390,9 @@ def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False, with_memory
         extras += _MEMORY_SCHEMAS
     if with_review:
         extras.append(_REVIEW_SCHEMA)
+    if with_repro:
+        extras.append(_START_REPRODUCTION_SCHEMA)
+        extras.append(_RECORD_REPRO_VERDICT_SCHEMA)
     base = TOOL_SCHEMAS + extras if extras else TOOL_SCHEMAS
     if mcp_runtime is None:
         return base
@@ -367,7 +420,7 @@ def dispatch_tool(
     *,
     allowed_roots: Sequence[Path],
     cwd: Path,
-    timeout: float,
+    timeout: float = 120.0,
     guidance_sources: Sequence[Path] = (),
     search_provider=None,
     browser_session=None,
@@ -379,6 +432,8 @@ def dispatch_tool(
     spawn_agents_fn=None,
     memory_store=None,
     review_fn=None,
+    start_repro_fn=None,
+    repro_verdict_fn=None,
 ) -> str:
     """Run one model tool-call. Returns a string result (errors included)."""
     try:
@@ -523,6 +578,14 @@ def dispatch_tool(
             if review_fn is None:
                 return f"Error: unknown tool {name!r}."
             return review_fn(args.get("target") or "branch", args.get("focus") or "all")
+        if name == "start_reproduction":
+            if start_repro_fn is None:
+                return f"Error: unknown tool {name!r}."
+            return start_repro_fn(**args)
+        if name == "record_repro_verdict":
+            if repro_verdict_fn is None:
+                return f"Error: unknown tool {name!r}."
+            return repro_verdict_fn(**args)
         return f"Error: unknown tool {name!r}."
     except ToolError as exc:
         return f"Error: {exc}"
@@ -598,6 +661,10 @@ def describe_call(name: str, arguments: str) -> str:
         return f"read_memory → {args.get('name', '?')}"
     if name == "review_changes":
         return f"review_changes → {args.get('target') or 'branch'} ({args.get('focus') or 'all'})"
+    if name == "start_reproduction":
+        return f"start_reproduction → {args.get('slug') or args.get('source') or 'issue'}"
+    if name == "record_repro_verdict":
+        return f"record_repro_verdict → {args.get('slug', '')}: {args.get('verdict', '')}"
     if name.startswith(MCP_PREFIX):
         # name is mcp__<server>__<tool>; recover a readable server.tool(args)
         body = name[len(MCP_PREFIX):]

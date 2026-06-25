@@ -1008,3 +1008,31 @@ def test_review_children_use_main_client_not_weak(tmp_path):
     assert captured, "expected at least one review child"
     assert all(ch.client is client for ch in captured)
     assert all(ch.client is not weak for ch in captured)
+
+
+def test_agent_record_verdict_gate_downgrades_without_evidence(tmp_path):
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")])
+    # No evidence -> a "reproduced" verdict must be written as "blocked".
+    out = agent._record_repro_verdict(
+        slug="WOO-1", verdict="reproduced", evidence=[],
+        what_happens="w", summary="s", version_results=[], suggested_next_step="n",
+    )
+    assert "blocked" in out
+    report = (tmp_path / "repro" / "WOO-1" / "report.md").read_text()
+    assert "**Verdict:** blocked" in report
+
+
+def test_agent_start_reproduction_thin_report_builds_nothing(tmp_path):
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")])
+    out = agent._start_reproduction(steps=[], expected="", actual="")
+    assert "blocked" in out.lower()
+    assert not (tmp_path / "repro").exists()
+
+
+def test_agent_start_reproduction_full_writes_spec(tmp_path):
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")])
+    out = agent._start_reproduction(
+        slug="WOO-2", steps=["a"], expected="b", actual="c", wp_version="6.5",
+    )
+    assert "WOO-2" in out
+    assert (tmp_path / "repro" / "WOO-2" / "repro-spec.json").is_file()
