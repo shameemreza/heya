@@ -741,3 +741,45 @@ def test_child_has_no_memory_store(tmp_path):
     child = agent._make_child(None, None)
     assert child.memory_store is None
     assert "What you remember" not in child.messages[0]["content"]
+
+
+def test_run_children_returns_reports_in_order(tmp_path):
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False, on_text=lambda s: None)
+
+    class _C:
+        def __init__(self, r): self._r = r
+        def run(self, task): return self._r
+        def close(self): pass
+
+    seq = iter([_C("first"), _C("second")])
+    agent._make_child = lambda role, instructions, **kw: next(seq)
+    out = agent._run_children([
+        {"prompt": "a", "label": "x"}, {"prompt": "b", "label": "y"}])
+    assert out == [("x", "first"), ("y", "second")]
+
+
+def test_run_children_default_label(tmp_path):
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False, on_text=lambda s: None)
+
+    class _C:
+        def run(self, task): return "r"
+        def close(self): pass
+    agent._make_child = lambda role, instructions, **kw: _C()
+    out = agent._run_children([{"prompt": "a"}])  # no label → parallel_label
+    assert out[0][0] == "agent#1"
+
+
+def test_review_changes_delegates(tmp_path, monkeypatch):
+    import heya.review as review_mod
+    captured = {}
+    def fake_run_review(target, *, run_children, git_diff_fn, reviewers, standards="", **kw):
+        captured["target"] = target
+        captured["standards"] = standards
+        return "VERDICT TEXT"
+    monkeypatch.setattr(review_mod, "run_review", fake_run_review)
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False)
+    assert agent._review_changes("branch") == "VERDICT TEXT"
+    assert captured["target"] == "branch"
