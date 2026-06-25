@@ -1,3 +1,6 @@
+import threading
+import time
+
 from heya.approval import ApprovalPolicy
 
 
@@ -132,3 +135,44 @@ def test_check_label_does_not_affect_allow_list_match():
         raise AssertionError("approver should not be called when allow-listed")
     policy = ApprovalPolicy(approver=approver, allow=("out.txt",))
     assert policy.check("write_file", "write_file → out.txt", label="researcher") is True
+
+
+def test_check_serializes_concurrent_prompts():
+    # The policy lock must ensure only one approver call runs at a time.
+    active = 0
+    max_active = 0
+    guard = threading.Lock()
+
+    def approver(name, detail):
+        nonlocal active, max_active
+        with guard:
+            active += 1
+            max_active = max(max_active, active)
+        time.sleep(0.005)
+        with guard:
+            active -= 1
+        return "yes"
+
+    policy = ApprovalPolicy(approver=approver)
+    threads = [
+        threading.Thread(target=policy.check, args=("write_file", f"write_file → f{i}"))
+        for i in range(8)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert max_active == 1  # serialized by the policy lock
+
+
+def test_check_always_is_double_checked():
+    calls = []
+
+    def approver(name, detail):
+        calls.append(name)
+        return "always"
+
+    policy = ApprovalPolicy(approver=approver)
+    assert policy.check("write_file", "write_file → a") is True
+    assert policy.check("write_file", "write_file → b") is True
+    assert len(calls) == 1  # second call short-circuits on _always
