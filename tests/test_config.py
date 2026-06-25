@@ -484,3 +484,47 @@ def test_load_context_config_overrides(tmp_path):
 def test_load_context_config_no_file(tmp_path):
     c = load_context_config(tmp_path / "missing.toml")
     assert c == ContextConfig(0.85, 2048, 4096, 200000)
+
+
+from heya.config import (
+    RoutingConfig, load_routing_config, resolve_weak_profile,
+)
+
+
+def _profiles():
+    return {
+        "main": Profile(name="main", base_url="http://x/v1", model="big"),
+        "small": Profile(name="small", base_url="http://x/v1", model="tiny"),
+    }
+
+
+def test_load_routing_config_absent_file(tmp_path):
+    cfg = load_routing_config(tmp_path / "nope.toml")
+    assert cfg == RoutingConfig(weak_profile=None)
+
+
+def test_load_routing_config_reads_block(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('[routing]\nweak_profile = "small"\n')
+    assert load_routing_config(p) == RoutingConfig(weak_profile="small")
+
+
+def test_load_routing_config_no_block(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('[workspace]\nallowed_roots = ["/tmp"]\n')
+    assert load_routing_config(p) == RoutingConfig(weak_profile=None)
+
+
+def test_resolve_weak_profile_unset_returns_none():
+    assert resolve_weak_profile(RoutingConfig(None), _profiles()) is None
+
+
+def test_resolve_weak_profile_named_returns_profile():
+    prof = resolve_weak_profile(RoutingConfig("small"), _profiles())
+    assert prof is not None and prof.name == "small" and prof.model == "tiny"
+
+
+def test_resolve_weak_profile_unknown_raises():
+    with pytest.raises(ConfigError) as exc:
+        resolve_weak_profile(RoutingConfig("ghost"), _profiles())
+    assert "ghost" in str(exc.value)

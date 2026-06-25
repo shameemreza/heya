@@ -205,6 +205,49 @@ def load_context_config(config_path: Path | None = None) -> ContextConfig:
     )
 
 
+@dataclass(frozen=True)
+class RoutingConfig:
+    weak_profile: str | None = None
+
+
+def load_routing_config(config_path: Path | None = None) -> RoutingConfig:
+    """Model-routing settings.
+
+    User file shape:
+        [routing]
+        weak_profile = "local-small"   # names an existing profile; optional
+
+    The weak profile is an optional cheaper/smaller secondary model used for
+    compaction summaries and explicitly-marked trivial sub-agent tasks. Unset
+    means the feature is off (weak == main).
+    """
+    path = config_path or default_config_path()
+    if not path.exists():
+        return RoutingConfig()
+    data = tomllib.loads(path.read_text()).get("routing", {})
+    weak = data.get("weak_profile")
+    return RoutingConfig(weak_profile=weak if weak else None)
+
+
+def resolve_weak_profile(
+    routing: RoutingConfig, profiles: dict[str, Profile]
+) -> Profile | None:
+    """Resolve the configured weak profile to a Profile, or None when unset.
+
+    Raises ConfigError (fail fast, like resolve_profile) if a name is given but
+    no profile matches it.
+    """
+    name = routing.weak_profile
+    if name is None:
+        return None
+    if name not in profiles:
+        available = ", ".join(sorted(profiles))
+        raise ConfigError(
+            f"Unknown weak_profile {name!r}. Available: {available}"
+        )
+    return profiles[name]
+
+
 def load_browser_headless(config_path: Path | None = None) -> bool:
     """Whether the browser runs headless (default) or visibly.
 
