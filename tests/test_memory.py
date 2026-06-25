@@ -132,3 +132,16 @@ def test_build_memory_block_empty_index_omits_list():
     block = build_memory_block("")
     assert MEMORY_FRAMING.split("\n", 1)[0] in block
     assert "You currently remember" not in block
+
+
+def test_reserved_index_name_is_rejected(tmp_path):
+    # A name that slugifies to the index file ("MEMORY.md") must be rejected so it
+    # cannot overwrite the index (case-insensitive FS collision = silent data loss).
+    store = MemoryStore(tmp_path)
+    store.save("real-note", "a real note", "user", "real body")  # seed the index
+    index_before = (tmp_path / "MEMORY.md").read_text()
+    for nm in ("MEMORY", "Memory", "memory"):
+        out = store.save(nm, "d", "user", "WOULD CLOBBER")
+        assert out.startswith("Error")  # reserved → not written
+    assert (tmp_path / "MEMORY.md").read_text() == index_before  # index intact
+    assert store.read("MEMORY").startswith("Error")  # reserved on read too

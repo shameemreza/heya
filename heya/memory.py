@@ -96,6 +96,8 @@ class MemoryStore:
         slug = _slug(name)
         if not slug:
             raise ValueError("memory name must contain letters or digits")
+        if f"{slug}.md".lower() == _INDEX_FILE.lower():
+            raise ValueError("that name is reserved for the memory index")
         path = (self.root / f"{slug}.md").resolve()
         if path.parent != self.root.resolve():
             raise ValueError("memory name must be a single path segment")
