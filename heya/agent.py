@@ -98,6 +98,7 @@ class Agent:
         """Run one task to a final answer, with optional scoped self-review."""
         self.messages.append({"role": "user", "content": user_message})
         self._mutated = False
+        self._children_spawned = 0  # per-task fan-out budget (spec: max_children per task)
         answer = self._loop()
         if self.self_review and self._mutated:
             self.messages.append({"role": "user", "content": SELF_REVIEW_NUDGE})

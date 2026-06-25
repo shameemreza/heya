@@ -479,6 +479,32 @@ def test_spawn_agent_flushes_child_on_exception(tmp_path):
     assert boom.closed is True  # flushed via finally even though run() raised
 
 
+def test_children_budget_resets_each_task(tmp_path):
+    # max_children is per-task: two successive run() calls that each spawn one
+    # child must BOTH see the child's report (not a limit error), proving the
+    # per-task budget resets. With max_children=1, no reset would block task two.
+    turns = []
+    for _ in range(2):
+        turns += [
+            ChatResult(content=None, tool_calls=[ToolCall(id="1", name="spawn_agent",
+                arguments='{"task": "t"}')]),
+            ChatResult(content="child done"),    # the child's turn
+            ChatResult(content="parent done"),   # the parent's final turn
+        ]
+    client = FakeClient(turns)
+    agent = Agent(client, allowed_roots=[tmp_path], cwd=tmp_path, approval=_AllowAll(),
+                  self_review=False, max_children=1)
+    agent.run("task one")
+    agent.run("task two")
+    # client.calls = [t1-parent, t1-child, t1-parent-final,
+    #                 t2-parent, t2-child, t2-parent-final]
+    second_task_parent_final = client.calls[5]
+    assert any(m["role"] == "tool" and "child done" in m["content"]
+               for m in second_task_parent_final)
+    assert not any(m["role"] == "tool" and "limit reached" in m["content"]
+                   for m in second_task_parent_final)
+
+
 def test_tool_filter_refuses_disallowed_tool(tmp_path):
     # A restricted agent that names a tool outside its filter gets a clean refusal
     # and the tool never runs.
