@@ -184,7 +184,7 @@ def verifier_confirms(text: str) -> bool:
     for line in (text or "").splitlines():
         stripped = line.strip().lower()
         if stripped.startswith("verdict:"):
-            return stripped.split(":", 1)[1].strip().startswith("real")
+            return stripped.split(":", 1)[1].strip() == "real"
     return False
 
 

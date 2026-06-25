@@ -135,6 +135,13 @@ def test_verifier_confirms():
     assert verifier_confirms("unclear waffle") is False  # fail-closed → drop
 
 
+def test_verifier_confirms_requires_exact_real():
+    assert verifier_confirms("VERDICT: real\ngrounding: ok") is True
+    assert verifier_confirms("VERDICT: realistic but guarded") is False
+    assert verifier_confirms("VERDICT: really a false positive") is False
+    assert verifier_confirms("VERDICT: false-positive") is False
+
+
 def test_reviewer_prompt_includes_diff_and_standards():
     p = REVIEWER_PROMPT("DIFFTEXT", "correctness", "code-review", "- prefer early return")
     assert "DIFFTEXT" in p

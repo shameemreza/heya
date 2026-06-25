@@ -6,6 +6,7 @@ from heya.tools_files import (
     read_file,
     resolve_in_allowlist,
     run_command,
+    search_files,
     write_file,
 )
 
@@ -179,8 +180,23 @@ def test_search_files_confined_to_allowlist(tmp_path):
 
 
 def test_search_files_caps_results(tmp_path):
-    from heya.tools_files import search_files
     (tmp_path / "big.txt").write_text("hit\n" * 500)
     out = search_files("hit", allowed_roots=[tmp_path], cwd=tmp_path, max_results=10)
     assert out.count("big.txt:") <= 10
     assert "truncated" in out.lower()
+
+
+def test_search_files_skips_symlink_escaping_allowlist(tmp_path):
+    import os
+    root = tmp_path / "root"
+    root.mkdir()
+    secret = tmp_path / "secret.txt"   # OUTSIDE root
+    secret.write_text("TOPSECRET\n")
+    link = root / "leak.txt"
+    try:
+        os.symlink(secret, link)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not supported on this platform")
+    out = search_files("TOPSECRET", allowed_roots=[root], cwd=root)
+    assert "leak.txt" not in out       # escaping symlink target not read
+    assert "1:" not in out             # no line results (only "No matches" echo is allowed)

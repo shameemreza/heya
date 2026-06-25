@@ -65,6 +65,10 @@ def search_files(
         if any(part in {".git", "node_modules", "vendor", ".venv"} for part in entry.parts):
             continue
         try:
+            resolve_in_allowlist(entry, allowed_roots)  # re-resolve: follows symlinks, rejects escapes
+        except ToolError:
+            continue  # a symlink (or path) whose target escapes the allow-list
+        try:
             text = entry.read_text(encoding="utf-8", errors="strict")
         except (UnicodeDecodeError, OSError):
             continue  # skip binary / unreadable
