@@ -12,7 +12,10 @@ from pathlib import Path
 from typing import Any
 
 from .approval import ApprovalPolicy
-from .subagents import LabeledStream, build_child_system_prompt, resolve_role, ROLES
+from .subagents import (
+    LabeledStream, LockedSink, PARALLEL_SAFE_TOOLS, build_child_system_prompt,
+    format_parallel_report, parallel_label, resolve_role, ROLES,
+)
 from .tools import build_tool_schemas, describe_call, dispatch_tool
 
 SYSTEM_PROMPT = (
@@ -65,6 +68,8 @@ class Agent:
         max_children: int = 4,
         tool_filter: frozenset[str] | None = None,
         system_prompt: str = SYSTEM_PROMPT,
+        max_concurrent: int = 4,
+        root_on_text: Callable[[str], None] | None = None,
     ) -> None:
         self.client = client
         self.allowed_roots = list(allowed_roots)
@@ -86,7 +91,8 @@ class Agent:
         self.max_spawn_depth = max_spawn_depth
         self.max_children = max_children
         self.tool_filter = tool_filter
-        self._root_on_text = on_text
+        self.max_concurrent = max_concurrent
+        self._root_on_text = root_on_text if root_on_text is not None else on_text
         self._labeled_stream = None
         self._children_spawned = 0
         self.messages: list[dict[str, Any]] = [
@@ -181,12 +187,28 @@ class Agent:
             self._mutated = True
         return output
 
-    def _make_child(self, role, instructions) -> "Agent":
-        """Build a fresh child Agent: isolated context, shared resources."""
-        label = role.name if role is not None else "agent"
+    def _make_child(self, role, instructions, *, parallel=False, index=0, sink=None) -> "Agent":
+        """Build a fresh child Agent: isolated context, shared resources.
+
+        parallel=True builds a READ-ONLY child for concurrent fan-out: the single
+        stateful sessions are withheld, tools are the read-only surface, the label
+        is indexed, and output routes through the shared locked `sink`."""
+        if parallel:
+            label = parallel_label(role.name if role is not None else None, index)
+            base_sink = sink if sink is not None else self._root_on_text
+            role_tools = role.tools if role is not None else None
+            tool_filter = PARALLEL_SAFE_TOOLS if role_tools is None else (role_tools & PARALLEL_SAFE_TOOLS)
+            browser = process = playground = None
+        else:
+            label = role.name if role is not None else "agent"
+            base_sink = self._root_on_text
+            tool_filter = role.tools if role is not None else None
+            browser = self.browser_session
+            process = self.process_registry
+            playground = self.playground_session
         stream = None
-        if self._root_on_text is not None:
-            stream = LabeledStream(self._root_on_text, label)
+        if base_sink is not None:
+            stream = LabeledStream(base_sink, label)
             child_on_text = stream.write
         else:
             child_on_text = None
@@ -201,17 +223,19 @@ class Agent:
             command_timeout=self.command_timeout,
             guidance_sources=self.guidance_sources,
             search_provider=self.search_provider,
-            browser_session=self.browser_session,
-            process_registry=self.process_registry,
+            browser_session=browser,
+            process_registry=process,
             wp_default_root=self.wp_default_root,
-            playground_session=self.playground_session,
+            playground_session=playground,
             mcp_runtime=self.mcp_runtime,
             label=label,
             spawn_depth=self.spawn_depth + 1,
             max_spawn_depth=self.max_spawn_depth,
             max_children=self.max_children,
-            tool_filter=role.tools if role is not None else None,
+            tool_filter=tool_filter,
             system_prompt=build_child_system_prompt(SYSTEM_PROMPT, role, instructions),
+            max_concurrent=self.max_concurrent,
+            root_on_text=self._root_on_text,
         )
         child._labeled_stream = stream
         return child

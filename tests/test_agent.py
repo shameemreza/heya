@@ -505,6 +505,55 @@ def test_children_budget_resets_each_task(tmp_path):
                    for m in second_task_parent_final)
 
 
+from heya.subagents import PARALLEL_SAFE_TOOLS
+
+
+def test_make_child_parallel_is_read_only_and_sessions_withheld(tmp_path):
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False,
+                  browser_session="BROWSER", process_registry="REG",
+                  playground_session="PG", on_text=lambda s: None)
+    captured = []
+    child = agent._make_child(None, None, parallel=True, index=1,
+                              sink=captured.append)
+    assert child.tool_filter == PARALLEL_SAFE_TOOLS
+    assert child.browser_session is None
+    assert child.process_registry is None
+    assert child.playground_session is None
+    assert child.label == "agent#1"
+
+
+def test_make_child_parallel_role_intersects_filter(tmp_path):
+    from heya.subagents import ROLES
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False, on_text=lambda s: None)
+    child = agent._make_child(ROLES["reviewer"], None, parallel=True, index=2,
+                              sink=lambda s: None)
+    # reviewer's tools intersected with the parallel-safe surface
+    assert child.tool_filter == (ROLES["reviewer"].tools & PARALLEL_SAFE_TOOLS)
+    assert child.label == "reviewer#2"
+
+
+def test_make_child_threads_original_root_on_text(tmp_path):
+    # A child's _root_on_text must be the ORIGINAL root sink, not its own wrapped
+    # LabeledStream — so a hypothetical grandchild wraps root, not the child.
+    root_sink = lambda s: None
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False, on_text=root_sink)
+    child = agent._make_child(None, None)  # non-parallel path
+    assert child._root_on_text is root_sink
+
+
+def test_make_child_nonparallel_still_shares_sessions(tmp_path):
+    # 8a behavior preserved: a normal (non-parallel) child shares the sessions.
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False,
+                  browser_session="BROWSER", process_registry="REG")
+    child = agent._make_child(None, None)
+    assert child.browser_session == "BROWSER"
+    assert child.process_registry == "REG"
+
+
 def test_tool_filter_refuses_disallowed_tool(tmp_path):
     # A restricted agent that names a tool outside its filter gets a clean refusal
     # and the tool never runs.
