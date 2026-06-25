@@ -554,6 +554,114 @@ def test_make_child_nonparallel_still_shares_sessions(tmp_path):
     assert child.process_registry == "REG"
 
 
+import time
+
+
+class _FakeChild:
+    def __init__(self, result=None, exc=None, delay=0.0):
+        self._result, self._exc, self._delay = result, exc, delay
+        self.closed = False
+
+    def run(self, task):
+        if self._delay:
+            time.sleep(self._delay)
+        if self._exc:
+            raise self._exc
+        return self._result if self._result is not None else f"report-{task}"
+
+    def close(self):
+        self.closed = True
+
+
+def test_spawn_agents_returns_submission_order(tmp_path):
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False, max_children=5,
+                  max_concurrent=5, on_text=lambda s: None)
+    # children finish in reverse order; result must still be submission order
+    seq = iter([
+        _FakeChild(result="A", delay=0.03),
+        _FakeChild(result="B", delay=0.01),
+        _FakeChild(result="C", delay=0.0),
+    ])
+    agent._make_child = lambda role, instructions, **kw: next(seq)
+    out = agent._spawn_agents([{"task": "t1"}, {"task": "t2"}, {"task": "t3"}])
+    assert out.index("t1") < out.index("t2") < out.index("t3")
+    assert "A" in out and "B" in out and "C" in out
+
+
+def test_spawn_agents_isolates_failure(tmp_path):
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False, max_children=3,
+                  max_concurrent=3, on_text=lambda s: None)
+    seq = iter([
+        _FakeChild(result="ok1"),
+        _FakeChild(exc=RuntimeError("boom")),
+        _FakeChild(result="ok3"),
+    ])
+    agent._make_child = lambda role, instructions, **kw: next(seq)
+    out = agent._spawn_agents([{"task": "t1"}, {"task": "t2"}, {"task": "t3"}])
+    assert "ok1" in out and "ok3" in out
+    assert "(failed)" in out  # the middle child is a failed report, batch survived
+
+
+def test_spawn_agents_times_out_slow_child(tmp_path):
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False, command_timeout=0.05,
+                  max_children=2, max_concurrent=2, on_text=lambda s: None)
+    agent._make_child = lambda role, instructions, **kw: _FakeChild(result="late", delay=0.5)
+    out = agent._spawn_agents([{"task": "t1"}])
+    assert "timed out" in out.lower()
+
+
+def test_spawn_agents_respects_shared_budget(tmp_path):
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False, max_children=2,
+                  max_concurrent=2, on_text=lambda s: None)
+    agent._make_child = lambda role, instructions, **kw: _FakeChild()
+    out = agent._spawn_agents([{"task": "t1"}, {"task": "t2"}, {"task": "t3"}])
+    assert "t1" in out and "t2" in out
+    assert "report-t3" not in out
+    assert "not run" in out.lower()  # explicit dropped note
+    assert agent._children_spawned == 2  # budget consumed
+
+
+def test_spawn_agents_unknown_role_errors_without_spawning(tmp_path):
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False, on_text=lambda s: None)
+    made = {"n": 0}
+    def mk(*a, **k):
+        made["n"] += 1
+    agent._make_child = mk
+    out = agent._spawn_agents([{"task": "t", "role": "bogus"}])
+    assert "unknown role" in out.lower()
+    assert made["n"] == 0
+
+
+def test_spawn_agents_empty_errors(tmp_path):
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False)
+    assert "non-empty" in agent._spawn_agents([]).lower()
+
+
+def test_loop_passes_spawn_agents_fn(tmp_path, monkeypatch):
+    import heya.agent as agent_mod
+    captured = {}
+    def fake_dispatch(name, arguments, **kwargs):
+        captured.update(kwargs)
+        return "ok"
+    monkeypatch.setattr(agent_mod, "dispatch_tool", fake_dispatch)
+    agent = Agent(
+        FakeClient([
+            ChatResult(content=None, tool_calls=[ToolCall(id="1", name="spawn_agents",
+                arguments='{"tasks": [{"task": "t"}]}')]),
+            ChatResult(content="done"),
+        ]),
+        allowed_roots=[tmp_path], cwd=tmp_path, approval=_AllowAll(), self_review=False,
+    )
+    agent.run("go")
+    assert captured.get("spawn_agents_fn") == agent._spawn_agents
+
+
 def test_tool_filter_refuses_disallowed_tool(tmp_path):
     # A restricted agent that names a tool outside its filter gets a clean refusal
     # and the tool never runs.
