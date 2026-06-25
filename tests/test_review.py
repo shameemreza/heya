@@ -60,3 +60,20 @@ def test_synthesize_dedupes():
     f = Finding("a.py", 5, "High", "bug", "same bug", "", "")
     out = synthesize([f, f])
     assert out.count("same bug") == 1
+
+
+def test_parse_non_integer_line_degrades_to_none():
+    # A non-integer line must degrade to None, not raise.
+    text = (
+        "### FINDING\n"
+        "file: a.py\n"
+        "line: not-a-number\n"
+        "severity: High\n"
+        "title: bad line value\n"
+        "### END\n"
+    )
+    fs = parse_findings(text)
+    assert len(fs) == 1
+    assert fs[0].line is None       # degraded, did not raise
+    assert fs[0].file == "a.py"
+    assert fs[0].title == "bad line value"
