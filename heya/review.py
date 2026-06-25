@@ -219,6 +219,9 @@ def run_review(target, *, run_children, git_diff_fn, reviewers, standards="", ve
         for f in to_verify
     ]
     verdicts = run_children(verify_specs)
+    # verdicts are positional (run_children returns submission order); a finding
+    # is kept only if its verifier confirmed it. Do NOT use zip_longest — a short
+    # verdicts list must drop the unmatched (fail-closed), not pad with None.
     kept = [
         f for f, (_label, verdict) in zip(to_verify, verdicts)
         if isinstance(verdict, str) and verifier_confirms(verdict)

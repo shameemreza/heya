@@ -198,3 +198,41 @@ def test_run_review_empty_diff_short_circuits():
         reviewers=[("code-reviewer", "correctness and quality", "code-review")],
     )
     assert "nothing to review" in out.lower()
+
+
+def test_run_review_caps_verification_by_severity():
+    # With more findings than verify_cap, only the top-severity ones are verified;
+    # lower-severity findings beyond the cap never reach the verdict.
+    blocks = []
+    # 3 Blocker findings + 3 Nit findings
+    for i in range(3):
+        blocks.append(
+            f"### FINDING\nfile: b{i}.py\nline: {i}\nseverity: Blocker\n"
+            f"category: bug\ntitle: blocker {i}\nevidence: e\nsuggestion: s\n### END\n")
+    for i in range(3):
+        blocks.append(
+            f"### FINDING\nfile: n{i}.py\nline: {i}\nseverity: Nit\n"
+            f"category: style\ntitle: nit {i}\nevidence: e\nsuggestion: s\n### END\n")
+    reviewer_report = "".join(blocks)
+
+    verified = []
+    def fake_run_children(specs):
+        if any("adversarial verifier" not in s["prompt"] for s in specs):
+            return [("code-reviewer", reviewer_report)]  # reviewer fan-out
+        # verifier fan-out: record which findings were verified, confirm all
+        for s in specs:
+            verified.append(s["prompt"])
+        return [("verify", "VERDICT: real\ngrounding: ok") for _ in specs]
+
+    out = run_review(
+        "branch",
+        run_children=fake_run_children,
+        git_diff_fn=lambda t: "diff --git a/b0.py b/b0.py\n+x\n",
+        reviewers=[("code-reviewer", "correctness", "code-review")],
+        verify_cap=3,
+    )
+    # only 3 findings (the Blockers, top severity) were sent to verification
+    assert len(verified) == 3
+    assert all("blocker" in p.lower() for p in verified)
+    assert "blocker 0" in out
+    assert "nit 0" not in out  # beyond the cap → never verified, never in verdict
