@@ -290,16 +290,18 @@ class Agent:
 
         def work(i, spec):
             task, role, instructions = spec
-            child = self._make_child(
-                role, instructions, parallel=True, index=i + 1,
-                sink=locked.write if locked is not None else None,
-            )
+            child = None
             try:
+                child = self._make_child(
+                    role, instructions, parallel=True, index=i + 1,
+                    sink=locked.write if locked is not None else None,
+                )
                 return child.run(task)
             except Exception as exc:  # isolate: a failure becomes this child's report
                 return f"Error: sub-agent failed: {exc}"
             finally:
-                child.close()
+                if child is not None:
+                    child.close()
 
         deadline = self.command_timeout * 1.5  # batch wall-clock; children run concurrently
         executor = ThreadPoolExecutor(max_workers=min(len(run), self.max_concurrent))

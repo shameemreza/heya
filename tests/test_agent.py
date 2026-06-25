@@ -681,3 +681,21 @@ def test_tool_filter_refuses_disallowed_tool(tmp_path):
     assert any(
         m["role"] == "tool" and "not available" in m["content"] for m in client.calls[1]
     )
+
+
+def test_spawn_agents_isolates_make_child_failure(tmp_path):
+    # A child whose CONSTRUCTION raises must be isolated to its own failed report;
+    # siblings still complete (the batch is not aborted).
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False, max_children=3,
+                  max_concurrent=3, on_text=lambda s: None)
+
+    def mk(role, instructions, *, index=0, **kw):
+        if index == 2:  # the second submitted child fails to build
+            raise RuntimeError("construct boom")
+        return _FakeChild(result=f"ok{index}")
+
+    agent._make_child = mk
+    out = agent._spawn_agents([{"task": "t1"}, {"task": "t2"}, {"task": "t3"}])
+    assert "ok1" in out and "ok3" in out   # siblings survived
+    assert "(failed)" in out               # the construction-failed child is marked failed
