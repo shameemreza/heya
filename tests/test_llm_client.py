@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from heya.config import Profile, load_profiles, resolve_profile
-from heya.llm_client import LLMClient
+from heya.llm_client import LLMClient, Usage
 
 
 def _client(handler):
@@ -224,3 +224,41 @@ def test_local_model_streams_a_tool_call():
     assert result.tool_calls[0].name == "run_command"
     # Arguments reassembled into valid JSON across deltas.
     json.loads(result.tool_calls[0].arguments)
+
+
+def test_chat_stream_captures_real_usage():
+    chunks = [
+        {"choices": [{"delta": {"content": "hi"}}]},
+        {"choices": [], "usage": {"prompt_tokens": 12, "completion_tokens": 5}},  # empty choices!
+    ]
+    transport = httpx.MockTransport(lambda req: httpx.Response(200, content=_sse(*chunks)))
+    profile = Profile(name="t", base_url="http://test/v1", model="m")
+    client = LLMClient(profile, client=httpx.Client(transport=transport))
+    result = client.chat_stream([{"role": "user", "content": "hi"}])
+    assert result.content == "hi"
+    assert result.usage == Usage(prompt_tokens=12, completion_tokens=5, estimated=False)
+    assert result.usage.total_tokens == 17
+
+
+def test_chat_stream_estimates_usage_when_absent():
+    chunks = [{"choices": [{"delta": {"content": "reply"}}]}]  # no usage chunk
+    transport = httpx.MockTransport(lambda req: httpx.Response(200, content=_sse(*chunks)))
+    profile = Profile(name="t", base_url="http://test/v1", model="m")
+    client = LLMClient(profile, client=httpx.Client(transport=transport))
+    result = client.chat_stream([{"role": "user", "content": "x" * 40}])
+    assert result.usage is not None
+    assert result.usage.estimated is True
+    assert result.usage.prompt_tokens > 0      # estimated from the messages
+    assert result.usage.completion_tokens > 0  # estimated from "reply"
+
+
+def test_chat_stream_sends_include_usage():
+    captured = {}
+    def handler(req):
+        import json as _json
+        captured["body"] = _json.loads(req.content)
+        return httpx.Response(200, content=_sse({"choices": [{"delta": {"content": "ok"}}]}))
+    profile = Profile(name="t", base_url="http://test/v1", model="m")
+    LLMClient(profile, client=httpx.Client(transport=httpx.MockTransport(handler))).chat_stream(
+        [{"role": "user", "content": "hi"}])
+    assert captured["body"]["stream_options"] == {"include_usage": True}
