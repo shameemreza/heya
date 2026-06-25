@@ -341,6 +341,121 @@ def test_handle_call_passes_label_to_approval(tmp_path):
     assert seen["label"] == "reviewer"
 
 
+def test_spawn_agent_runs_child_and_returns_report(tmp_path):
+    # Parent turn: emit spawn_agent. Then parent turn: final answer.
+    # The CHILD agent uses the SAME client instance (shared), so script the
+    # child's reply after the parent's spawn call and before the parent's finish.
+    scripted = [
+        # parent: call spawn_agent
+        ChatResult(content=None, tool_calls=[ToolCall(id="1", name="spawn_agent",
+            arguments='{"task": "investigate", "role": "researcher"}')]),
+        # child: its single final answer (no tools)
+        ChatResult(content="child found the bug in auth.py"),
+        # parent: final answer, now holding the child's report
+        ChatResult(content="parent summary: bug is in auth.py"),
+    ]
+    client = FakeClient(scripted)
+    agent = Agent(client, allowed_roots=[tmp_path], cwd=tmp_path, approval=_AllowAll(),
+                  self_review=False)
+    answer = agent.run("delegate the investigation")
+    assert answer == "parent summary: bug is in auth.py"
+    # The parent's second turn carries the child's report as the tool result.
+    assert any(
+        m["role"] == "tool" and "child found the bug" in m["content"]
+        for m in client.calls[-1]
+    )
+
+
+def test_child_context_is_isolated(tmp_path):
+    scripted = [
+        ChatResult(content=None, tool_calls=[ToolCall(id="1", name="spawn_agent",
+            arguments='{"task": "do a thing"}')]),
+        ChatResult(content="child done"),
+        ChatResult(content="parent done"),
+    ]
+    client = FakeClient(scripted)
+    agent = Agent(client, allowed_roots=[tmp_path], cwd=tmp_path, approval=_AllowAll(),
+                  self_review=False)
+    agent.run("the parent's original instruction")
+    # client.calls[1] is the child's first turn; it must NOT contain the parent's
+    # user message, only the child's own system prompt + task.
+    child_turn = client.calls[1]
+    assert not any(
+        m.get("content") == "the parent's original instruction" for m in child_turn
+    )
+    assert any(m["role"] == "user" and m["content"] == "do a thing" for m in child_turn)
+
+
+def test_spawn_agent_fan_out_cap(tmp_path):
+    # Directly exercise the cap via _spawn_agent with a stubbed _make_child.
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False, max_children=2)
+
+    class _StubChild:
+        def run(self, task):
+            return "ok"
+    agent._make_child = lambda role, instructions: _StubChild()
+    assert agent._spawn_agent("t1") == "ok"
+    assert agent._spawn_agent("t2") == "ok"
+    third = agent._spawn_agent("t3")
+    assert "limit" in third.lower()
+
+
+def test_spawn_agent_unknown_role_errors_without_spawning(tmp_path):
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False)
+    called = {"made": False}
+    def _make(role, instructions):
+        called["made"] = True
+    agent._make_child = _make
+    out = agent._spawn_agent("task", role="bogus")
+    assert "unknown role" in out.lower()
+    assert called["made"] is False
+
+
+def test_child_cannot_spawn_again_depth_cap(tmp_path):
+    # A depth-1 child must not receive spawn_agent in its tool list.
+    scripted = [
+        ChatResult(content=None, tool_calls=[ToolCall(id="1", name="spawn_agent",
+            arguments='{"task": "child task"}')]),
+        ChatResult(content="child done"),   # child turn: capture its tools
+        ChatResult(content="parent done"),
+    ]
+    client = FakeClient(scripted)
+    agent = Agent(client, allowed_roots=[tmp_path], cwd=tmp_path, approval=_AllowAll(),
+                  self_review=False)
+    agent.run("go")
+    # last_tools reflects the most recent chat_stream call (parent's final turn).
+    # Instead, assert via a child built directly:
+    child = agent._make_child(None, None)
+    assert child.spawn_depth == 1
+    # Build the child's schema set the way its _loop would.
+    from heya.tools import build_tool_schemas
+    can_spawn = child.spawn_depth < child.max_spawn_depth
+    names = {s["function"]["name"] for s in build_tool_schemas(can_spawn=can_spawn)}
+    assert "spawn_agent" not in names
+
+
+def test_spawned_child_shares_resources_and_is_not_closed(tmp_path):
+    class Session:
+        closed = False
+        def navigate(self, url):
+            return "ok"
+        def close(self):
+            self.closed = True
+    session = Session()
+    scripted = [
+        ChatResult(content=None, tool_calls=[ToolCall(id="1", name="spawn_agent",
+            arguments='{"task": "child task"}')]),
+        ChatResult(content="child done"),
+        ChatResult(content="parent done"),
+    ]
+    agent = Agent(FakeClient(scripted), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False, browser_session=session)
+    agent.run("delegate")
+    assert session.closed is False  # child must never close a shared session
+
+
 def test_tool_filter_refuses_disallowed_tool(tmp_path):
     # A restricted agent that names a tool outside its filter gets a clean refusal
     # and the tool never runs.

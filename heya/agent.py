@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .approval import ApprovalPolicy
+from .subagents import LabeledStream, build_child_system_prompt, resolve_role, ROLES
 from .tools import build_tool_schemas, describe_call, dispatch_tool
 
 SYSTEM_PROMPT = (
@@ -116,7 +117,10 @@ class Agent:
             self.mcp_runtime.close()
 
     def _loop(self) -> str:
-        tools = build_tool_schemas(self.mcp_runtime)
+        can_spawn = self.spawn_depth < self.max_spawn_depth
+        tools = build_tool_schemas(self.mcp_runtime, can_spawn=can_spawn)
+        if self.tool_filter is not None:
+            tools = [t for t in tools if t["function"]["name"] in self.tool_filter]
         for _ in range(self.max_iters):
             result = self.client.chat_stream(self.messages, tools=tools, on_text=self.on_text)
             self.messages.append(self._assistant_message(result))
@@ -161,8 +165,55 @@ class Agent:
             wp_default_root=self.wp_default_root,
             playground_session=self.playground_session,
             mcp_runtime=self.mcp_runtime,
+            spawn_fn=self._spawn_agent,
         )
         mutating = call.name in ("write_file", "run_command", "run_wp_cli")
         if mutating and not output.startswith(("Error", "Started background process", "Declined")):
             self._mutated = True
         return output
+
+    def _make_child(self, role, instructions) -> "Agent":
+        """Build a fresh child Agent: isolated context, shared resources."""
+        label = role.name if role is not None else "agent"
+        if self._root_on_text is not None:
+            stream = LabeledStream(self._root_on_text, label)
+            child_on_text = stream.write
+        else:
+            child_on_text = None
+        return Agent(
+            self.client,
+            allowed_roots=self.allowed_roots,
+            cwd=self.cwd,
+            approval=self.approval,
+            on_text=child_on_text,
+            self_review=False,
+            max_iters=self.max_iters,
+            command_timeout=self.command_timeout,
+            guidance_sources=self.guidance_sources,
+            search_provider=self.search_provider,
+            browser_session=self.browser_session,
+            process_registry=self.process_registry,
+            wp_default_root=self.wp_default_root,
+            playground_session=self.playground_session,
+            mcp_runtime=self.mcp_runtime,
+            label=label,
+            spawn_depth=self.spawn_depth + 1,
+            max_spawn_depth=self.max_spawn_depth,
+            max_children=self.max_children,
+            tool_filter=role.tools if role is not None else None,
+            system_prompt=build_child_system_prompt(SYSTEM_PROMPT, role, instructions),
+        )
+
+    def _spawn_agent(self, task, role=None, instructions=None) -> str:
+        """Run a child agent to completion and return its final report."""
+        if self._children_spawned >= self.max_children:
+            return "Error: sub-agent limit reached for this task."
+        if role is not None and resolve_role(role) is None:
+            return f"Error: unknown role {role!r}. Available: {sorted(ROLES)}."
+        self._children_spawned += 1
+        resolved = resolve_role(role)
+        child = self._make_child(resolved, instructions)
+        try:
+            return child.run(task)
+        except Exception as exc:  # never raise into dispatch
+            return f"Error: sub-agent failed: {exc}"
