@@ -74,7 +74,8 @@ def test_compact_summary_failure_degrades_to_microcompaction():
     msgs = [
         {"role": "system", "content": "s"},
         {"role": "user", "content": "task"},
-        {"role": "user", "content": "M" * 4000},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "1"}]},
+        {"role": "tool", "tool_call_id": "1", "content": "M" * 4000},
         {"role": "user", "content": "recent"},
         {"role": "assistant", "content": "now"},
     ]
@@ -84,6 +85,8 @@ def test_compact_summary_failure_degrades_to_microcompaction():
                   keep_recent_tokens=40, summarize_fn=boom)
     assert out is not None                # no exception
     assert any(m.get("content") == "now" for m in out)
+    assert out[0]["content"] == "s"       # system kept
+    _no_orphans(out)                      # degraded path is still tool-pair-safe
 
 
 def test_build_summarizer_calls_chat():
