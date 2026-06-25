@@ -783,3 +783,10 @@ def test_review_changes_delegates(tmp_path, monkeypatch):
                   approval=_AllowAll(), self_review=False)
     assert agent._review_changes("branch") == "VERDICT TEXT"
     assert captured["target"] == "branch"
+
+
+def test_loop_exposes_review_changes(tmp_path):
+    agent, client = make_agent(tmp_path, [ChatResult(content="ok")])
+    agent.run("hi")
+    names = {t["function"]["name"] for t in client.last_tools}
+    assert "review_changes" in names  # root agent gets the review tool

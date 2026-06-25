@@ -144,7 +144,7 @@ class Agent:
     def _loop(self) -> str:
         can_spawn = self.spawn_depth < self.max_spawn_depth
         with_memory = self.memory_store is not None
-        tools = build_tool_schemas(self.mcp_runtime, can_spawn=can_spawn, with_memory=with_memory)
+        tools = build_tool_schemas(self.mcp_runtime, can_spawn=can_spawn, with_memory=with_memory, with_review=can_spawn)
         if self.tool_filter is not None:
             tools = [t for t in tools if t["function"]["name"] in self.tool_filter]
         for _ in range(self.max_iters):
@@ -194,6 +194,7 @@ class Agent:
             spawn_fn=self._spawn_agent,
             spawn_agents_fn=self._spawn_agents,
             memory_store=self.memory_store,
+            review_fn=self._review_changes,
         )
         mutating = call.name in ("write_file", "run_command", "run_wp_cli")
         if mutating and not output.startswith(("Error", "Started background process", "Declined")):

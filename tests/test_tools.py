@@ -684,3 +684,25 @@ def test_search_files_is_parallel_safe():
 
 def test_describe_call_search_files():
     assert "search_files" in describe_call("search_files", '{"query": "x"}')
+
+
+def test_review_changes_schema_gated():
+    assert "review_changes" in {s["function"]["name"] for s in build_tool_schemas(with_review=True)}
+    assert "review_changes" not in {s["function"]["name"] for s in build_tool_schemas()}
+
+
+def test_dispatch_review_changes(tmp_path):
+    out = dispatch_tool("review_changes", '{"target": "staged"}',
+                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=5.0,
+                        review_fn=lambda target: f"reviewed {target}")
+    assert out == "reviewed staged"
+
+
+def test_dispatch_review_changes_without_fn(tmp_path):
+    out = dispatch_tool("review_changes", '{"target": "branch"}',
+                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=5.0)
+    assert "unknown tool" in out.lower()
+
+
+def test_describe_call_review_changes():
+    assert "review_changes" in describe_call("review_changes", '{"target": "branch"}')
