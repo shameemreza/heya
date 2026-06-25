@@ -362,9 +362,23 @@ class Agent:
                     f"budget is {self.max_children}.)")
         return out
 
-    REVIEW_REVIEWERS = [("code-reviewer", "correctness and quality", "code-review")]
+    REVIEW_REVIEWERS = [
+        ("code-reviewer", "correctness and quality", "code-review", ""),
+        ("security-reviewer", "security", "wp-security", review.WP_SECURITY_METHODOLOGY),
+        ("standards-reviewer", "standards", "woocommerce-code-review", review.WP_STANDARDS_METHODOLOGY),
+    ]
 
-    def _review_changes(self, target="branch") -> str:
+    def _review_panel(self, focus):
+        """The reviewer subset for a focus: 'all' → the whole panel; a dimension
+        keyword → just that reviewer; an unknown focus → the whole panel."""
+        focus = (focus or "all").strip().lower()
+        if focus == "all":
+            return self.REVIEW_REVIEWERS
+        matched = [r for r in self.REVIEW_REVIEWERS
+                   if focus in r[1].lower() or focus in r[0].lower()]
+        return matched or self.REVIEW_REVIEWERS
+
+    def _review_changes(self, target="branch", focus="all") -> str:
         """Run the deterministic review pipeline; never raises into dispatch."""
         def runner(argv, cwd):
             # Run git as an arg LIST (no shell) so a path with metacharacters can't
@@ -382,7 +396,7 @@ class Agent:
                 run_children=self._run_children,
                 git_diff_fn=lambda t: review.git_diff(
                     t, allowed_roots=self.allowed_roots, cwd=self.cwd, runner=runner),
-                reviewers=self.REVIEW_REVIEWERS,
+                reviewers=self._review_panel(focus),
                 standards=(self.memory_store.load_index() if self.memory_store else ""),
             )
         except Exception as exc:  # never raise into dispatch

@@ -790,3 +790,39 @@ def test_loop_exposes_review_changes(tmp_path):
     agent.run("hi")
     names = {t["function"]["name"] for t in client.last_tools}
     assert "review_changes" in names  # root agent gets the review tool
+
+
+def test_review_panel_focus(tmp_path):
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False)
+    full = agent._review_panel("all")
+    assert len(full) == 3
+    sec = agent._review_panel("security")
+    assert len(sec) == 1 and sec[0][0] == "security-reviewer"
+    corr = agent._review_panel("correctness")
+    assert len(corr) == 1 and corr[0][0] == "code-reviewer"
+    assert agent._review_panel("bogus") == full  # unknown focus → full panel
+
+
+def test_review_changes_filters_by_focus(tmp_path, monkeypatch):
+    import heya.review as review_mod
+    captured = {}
+    def fake_run_review(target, *, run_children, git_diff_fn, reviewers, standards="", **kw):
+        captured["reviewers"] = reviewers
+        return "ok"
+    monkeypatch.setattr(review_mod, "run_review", fake_run_review)
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False)
+    agent._review_changes("branch", "security")
+    assert len(captured["reviewers"]) == 1
+    assert captured["reviewers"][0][0] == "security-reviewer"
+
+
+def test_review_reviewers_panel_has_three(tmp_path):
+    agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False)
+    labels = [r[0] for r in agent.REVIEW_REVIEWERS]
+    assert labels == ["code-reviewer", "security-reviewer", "standards-reviewer"]
+    # the security reviewer carries the taint methodology (4-tuple)
+    sec = next(r for r in agent.REVIEW_REVIEWERS if r[0] == "security-reviewer")
+    assert "wp_verify_nonce" in sec[3]
