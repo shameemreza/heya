@@ -85,8 +85,10 @@ class Agent:
         reserve_tokens: int = 2048,
         keep_recent_tokens: int = 4096,
         task_token_budget: int = 200000,
+        weak_client: Any = None,
     ) -> None:
         self.client = client
+        self.weak_client = weak_client if weak_client is not None else client
         self.allowed_roots = list(allowed_roots)
         self.cwd = Path(cwd)
         self.approval = approval or ApprovalPolicy()
@@ -117,11 +119,12 @@ class Agent:
         self.task_token_budget = task_token_budget
         self.session_tokens = 0
         self._task_tokens = 0
+        self.weak_tokens = 0
         self._compaction_warned = False
-        # Lazy: access self.client.chat only when a summary actually fires, so an
-        # Agent built with a client that has no chat() (e.g. test fakes, or a
-        # streaming-only client) never crashes at construction.
-        self._summarize = build_summarizer(lambda m: self.client.chat(m))
+        # Compaction summaries route through the weak model (with one-hop
+        # fallback to main); see _weak_chat. Lazy so a client without chat()
+        # never crashes at construction.
+        self._summarize = build_summarizer(self._weak_chat)
         self.memory_store = memory_store
         system_content = system_prompt
         if memory_store is not None:
@@ -204,6 +207,31 @@ class Agent:
         tokens = result.usage.total_tokens if getattr(result, "usage", None) else 0
         self._task_tokens += tokens
         self.session_tokens += tokens
+
+    def _weak_chat(self, messages):
+        """Run one chat() call on the weak model, falling back once to the main
+        model on any failure. Weak tokens bucket into self.weak_tokens; tokens
+        that actually ran on the main client bucket into self.session_tokens.
+        Neither path touches self._task_tokens — the per-task budget stays in
+        main-model tokens."""
+        if self.weak_client is self.client:
+            result = self.client.chat(messages)
+            self.session_tokens += self._usage_tokens(result)
+            return result
+        try:
+            result = self.weak_client.chat(messages)
+        except Exception:
+            if self._root_on_text is not None:
+                self._root_on_text("\n[weak model unavailable; using main model]\n")
+            result = self.client.chat(messages)  # may raise; compact() handles
+            self.session_tokens += self._usage_tokens(result)
+            return result
+        self.weak_tokens += self._usage_tokens(result)
+        return result
+
+    @staticmethod
+    def _usage_tokens(result) -> int:
+        return result.usage.total_tokens if getattr(result, "usage", None) else 0
 
     def _assistant_message(self, result) -> dict[str, Any]:
         message: dict[str, Any] = {"role": "assistant", "content": result.content or ""}
@@ -301,6 +329,7 @@ class Agent:
             reserve_tokens=self.reserve_tokens,
             keep_recent_tokens=self.keep_recent_tokens,
             task_token_budget=self.task_token_budget,
+            weak_client=self.weak_client,
         )
         child._labeled_stream = stream
         return child

@@ -832,6 +832,77 @@ from heya.llm_client import Usage
 from heya.context import SUMMARY_MARKER
 
 
+class FakeChatClient:
+    """Records .chat() calls; returns a scripted ChatResult or raises."""
+
+    def __init__(self, result=None, raises=False):
+        self.result = result
+        self.raises = raises
+        self.calls = []
+
+    def chat(self, messages):
+        self.calls.append([dict(m) for m in messages])
+        if self.raises:
+            raise RuntimeError("weak down")
+        return self.result
+
+
+def test_weak_client_defaults_to_main(tmp_path):
+    agent, client = make_agent(tmp_path, [ChatResult(content="x")])
+    assert agent.weak_client is agent.client
+    assert agent.weak_tokens == 0
+
+
+def test_weak_chat_routes_to_weak_and_buckets_tokens(tmp_path):
+    weak = FakeChatClient(ChatResult(content="summary", usage=Usage(10, 5)))
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")], weak_client=weak)
+    out = agent._weak_chat([{"role": "user", "content": "hi"}])
+    assert out.content == "summary"
+    assert len(weak.calls) == 1
+    assert agent.weak_tokens == 15      # 10 + 5
+    assert agent.session_tokens == 0    # weak tokens never hit the main counters
+    assert agent._task_tokens == 0
+
+
+def test_weak_chat_falls_back_to_main_on_failure(tmp_path):
+    weak = FakeChatClient(raises=True)
+    warnings = []
+    agent, _ = make_agent(
+        tmp_path, [ChatResult(content="x")],
+        weak_client=weak, on_text=warnings.append,
+    )
+    # Patch the main client with a chat() that succeeds.
+    agent.client = FakeChatClient(ChatResult(content="main-summary", usage=Usage(7, 3)))
+    out = agent._weak_chat([{"role": "user", "content": "hi"}])
+    assert out.content == "main-summary"
+    assert agent.session_tokens == 10   # fallback tokens billed to main
+    assert agent.weak_tokens == 0
+    assert any("weak model unavailable" in w for w in warnings)
+
+
+def test_weak_chat_main_equals_weak_buckets_to_session(tmp_path):
+    # No weak profile: weak_client is the main client; summary tokens are main's.
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")])
+    agent.client = FakeChatClient(ChatResult(content="s", usage=Usage(4, 1)))
+    agent.weak_client = agent.client
+    out = agent._weak_chat([{"role": "user", "content": "hi"}])
+    assert out.content == "s"
+    assert agent.session_tokens == 5
+    assert agent.weak_tokens == 0
+
+
+def test_summarizer_uses_weak_client(tmp_path):
+    weak = FakeChatClient(ChatResult(content="THE SUMMARY", usage=Usage(2, 2)))
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")], weak_client=weak)
+    middle = [
+        {"role": "user", "content": "do a thing"},
+        {"role": "assistant", "content": "did the thing"},
+    ]
+    note = agent._summarize(middle)
+    assert "THE SUMMARY" in note
+    assert len(weak.calls) == 1
+
+
 def test_agent_accumulates_usage(tmp_path):
     scripted = [ChatResult(content="done", usage=Usage(10, 5))]
     agent, _ = make_agent(tmp_path, scripted)
