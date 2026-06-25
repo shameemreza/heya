@@ -826,3 +826,67 @@ def test_review_reviewers_panel_has_three(tmp_path):
     # the security reviewer carries the taint methodology (4-tuple)
     sec = next(r for r in agent.REVIEW_REVIEWERS if r[0] == "security-reviewer")
     assert "wp_verify_nonce" in sec[3]
+
+
+from heya.llm_client import Usage
+from heya.context import SUMMARY_MARKER
+
+
+def test_agent_accumulates_usage(tmp_path):
+    scripted = [ChatResult(content="done", usage=Usage(10, 5))]
+    agent, _ = make_agent(tmp_path, scripted)
+    agent.run("hi")
+    assert agent._task_tokens == 15
+    assert agent.session_tokens == 15
+
+
+def test_agent_stops_at_token_budget(tmp_path):
+    # budget tiny; first call spends over it → the loop stops before a second call.
+    scripted = [
+        ChatResult(content=None, tool_calls=[ToolCall(id="1", name="read_file",
+            arguments='{"path": "x"}')], usage=Usage(100, 100)),
+        ChatResult(content="should not be reached"),
+    ]
+    (tmp_path / "x").write_text("data")
+    client = FakeClient(scripted)
+    agent = Agent(client, allowed_roots=[tmp_path], cwd=tmp_path, approval=_AllowAll(),
+                  self_review=False, task_token_budget=50)
+    answer = agent.run("go")
+    assert "token budget" in answer.lower()
+    assert len(client.calls) == 1            # stopped before the second call
+
+
+def test_agent_budget_zero_is_unlimited(tmp_path):
+    scripted = [ChatResult(content="a", usage=Usage(10_000, 10_000)),
+                ChatResult(content="b", usage=Usage(10_000, 10_000))]
+    # two turns, huge usage, budget 0 → never stops on budget
+    agent, _ = make_agent(tmp_path, scripted, task_token_budget=0)
+    assert agent.run("one") == "a"
+    assert agent.run("two") == "b"
+
+
+def test_agent_compacts_when_over_window(tmp_path):
+    # tiny window forces compaction; the assistant's final turn answers after compaction.
+    # Two tool-call rounds: the first (big) result ends up in middle and gets microcompacted;
+    # the second (small) result ends up in the recent tail (kept verbatim).
+    big = "Z" * 8000
+    x_path = str(tmp_path / "x")
+    y_path = str(tmp_path / "y")
+    scripted = [
+        ChatResult(content=None, tool_calls=[ToolCall(id="1", name="read_file",
+            arguments=f'{{"path": "{x_path}"}}')], usage=Usage(5, 5)),
+        ChatResult(content=None, tool_calls=[ToolCall(id="2", name="read_file",
+            arguments=f'{{"path": "{y_path}"}}')], usage=Usage(5, 5)),
+        ChatResult(content="final answer", usage=Usage(5, 5)),
+    ]
+    (tmp_path / "x").write_text(big)   # big result → over window, ends up in middle
+    (tmp_path / "y").write_text("tiny")  # small result → stays in tail
+    client = FakeClient(scripted)
+    agent = Agent(client, allowed_roots=[tmp_path], cwd=tmp_path, approval=_AllowAll(),
+                  self_review=False, context_window=200, compaction_threshold=1.0,
+                  reserve_tokens=0, keep_recent_tokens=40)
+    answer = agent.run("read x then y")
+    assert answer == "final answer"
+    # the big tool output was microcompacted (stubbed) before the third call
+    third_call_msgs = client.calls[2]
+    assert any("omitted to save context" in (m.get("content") or "") for m in third_call_msgs)

@@ -454,3 +454,33 @@ def test_load_memory_path_bad_type(tmp_path):
         assert False, "expected ConfigError"
     except ConfigError:
         pass
+
+
+from heya.config import ContextConfig, load_context_config
+
+
+def test_profile_has_context_window_default():
+    p = Profile(name="t", base_url="u", model="m")
+    assert p.context_window == 32768
+
+
+def test_load_context_config_defaults(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[workspace]\nallowed_roots = []\n")
+    c = load_context_config(cfg)
+    assert c == ContextConfig(threshold=0.85, reserve_tokens=2048,
+                              keep_recent_tokens=4096, task_token_budget=200000)
+
+
+def test_load_context_config_overrides(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[context]\nthreshold = 0.7\ntask_token_budget = 0\n")
+    c = load_context_config(cfg)
+    assert c.threshold == 0.7
+    assert c.task_token_budget == 0           # unlimited
+    assert c.reserve_tokens == 2048           # unset → default
+
+
+def test_load_context_config_no_file(tmp_path):
+    c = load_context_config(tmp_path / "missing.toml")
+    assert c == ContextConfig(0.85, 2048, 4096, 200000)

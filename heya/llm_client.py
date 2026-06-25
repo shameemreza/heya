@@ -15,6 +15,7 @@ from typing import Any, Callable
 import httpx
 
 from .config import Profile
+from .text import estimate_messages_tokens, estimate_tokens
 
 
 @dataclass
@@ -25,9 +26,21 @@ class ToolCall:
 
 
 @dataclass
+class Usage:
+    prompt_tokens: int
+    completion_tokens: int
+    estimated: bool = False
+
+    @property
+    def total_tokens(self) -> int:
+        return self.prompt_tokens + self.completion_tokens
+
+
+@dataclass
 class ChatResult:
     content: str | None
     tool_calls: list[ToolCall] = field(default_factory=list)
+    usage: "Usage | None" = None
 
     @property
     def wants_tool(self) -> bool:
@@ -63,8 +76,14 @@ class LLMClient:
             headers=self._headers(),
         )
         resp.raise_for_status()
-        message = resp.json()["choices"][0]["message"]
-        return _parse_message(message)
+        body = resp.json()
+        message = body["choices"][0]["message"]
+        result = _parse_message(message)
+        u = body.get("usage")
+        if u:
+            result.usage = Usage(int(u.get("prompt_tokens") or 0),
+                                 int(u.get("completion_tokens") or 0), estimated=False)
+        return result
 
     def chat_stream(
         self,
@@ -76,11 +95,13 @@ class LLMClient:
             "model": self.profile.model,
             "messages": messages,
             "stream": True,
+            "stream_options": {"include_usage": True},
         }
         if tools:
             payload["tools"] = tools
         content_parts: list[str] = []
         acc: dict[int, dict[str, str]] = {}
+        usage_raw = None
         with self._client.stream(
             "POST",
             f"{self.profile.base_url}/chat/completions",
@@ -95,6 +116,8 @@ class LLMClient:
                 if data == "[DONE]":
                     break
                 chunk = json.loads(data)
+                if chunk.get("usage"):
+                    usage_raw = chunk["usage"]
                 choices = chunk.get("choices") or []
                 if not choices:
                     continue
@@ -110,7 +133,13 @@ class LLMClient:
             ToolCall(id=slot["id"], name=slot["name"], arguments=slot["arguments"])
             for _, slot in sorted(acc.items())
         ]
-        return ChatResult(content=content, tool_calls=tool_calls)
+        if usage_raw:
+            usage = Usage(int(usage_raw.get("prompt_tokens") or 0),
+                          int(usage_raw.get("completion_tokens") or 0), estimated=False)
+        else:
+            usage = Usage(estimate_messages_tokens(messages),
+                          estimate_tokens(content or ""), estimated=True)
+        return ChatResult(content=content, tool_calls=tool_calls, usage=usage)
 
 
 def _parse_message(message: dict[str, Any]) -> ChatResult:
