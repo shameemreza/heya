@@ -1,4 +1,4 @@
-from heya.review import Finding, parse_findings, synthesize, normalize_severity, SEVERITIES
+from heya.review import Finding, parse_findings, synthesize, normalize_severity, SEVERITIES, git_diff
 
 
 def test_normalize_severity():
@@ -77,3 +77,42 @@ def test_parse_non_integer_line_degrades_to_none():
     assert fs[0].line is None       # degraded, did not raise
     assert fs[0].file == "a.py"
     assert fs[0].title == "bad line value"
+
+
+def _fake_runner(script):
+    calls = []
+    def runner(argv, cwd):
+        calls.append(argv)
+        return script.pop(0)
+    runner.calls = calls
+    return runner
+
+
+def test_git_diff_branch_uses_merge_base(tmp_path):
+    runner = _fake_runner([
+        (0, "abc123\n", ""),            # merge-base
+        (0, "diff --git a/x b/x\n+new\n", ""),  # diff
+    ])
+    out = git_diff("branch", allowed_roots=[tmp_path], cwd=tmp_path, runner=runner)
+    assert "diff --git" in out
+    assert any("merge-base" in argv for argv in runner.calls)
+    assert any("abc123" in argv for argv in runner.calls)  # diff uses the merge-base
+
+
+def test_git_diff_staged(tmp_path):
+    runner = _fake_runner([(0, "diff --git a/y b/y\n+staged\n", "")])
+    out = git_diff("staged", allowed_roots=[tmp_path], cwd=tmp_path, runner=runner)
+    assert "staged" in out
+    assert any("--cached" in argv for argv in runner.calls)
+
+
+def test_git_diff_empty_is_clean_message(tmp_path):
+    runner = _fake_runner([(0, "abc\n", ""), (0, "", "")])  # empty diff
+    out = git_diff("branch", allowed_roots=[tmp_path], cwd=tmp_path, runner=runner)
+    assert "nothing to review" in out.lower()
+
+
+def test_git_diff_not_a_repo(tmp_path):
+    runner = _fake_runner([(128, "", "fatal: not a git repository")])
+    out = git_diff("branch", allowed_roots=[tmp_path], cwd=tmp_path, runner=runner)
+    assert "not a git repository" in out.lower()

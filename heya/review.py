@@ -6,7 +6,11 @@ the verdict never fabricates: zero surviving findings yields an explicit pass.
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
+
+from .tools_files import resolve_in_allowlist
 
 SEVERITIES = ("Blocker", "High", "Medium", "Nit")
 _SEV_INDEX = {s.lower(): s for s in SEVERITIES}
@@ -91,3 +95,39 @@ def synthesize(findings: list[Finding]) -> str:
         lines.append("")
         lines.append(f"{len(nits)} nit(s): " + "; ".join(f.title for f in nits))
     return "\n".join(lines)
+
+
+def git_diff(target, *, allowed_roots: Sequence[Path], cwd, runner) -> str:
+    """Resolve a review target to a unified diff. `runner(argv, cwd) -> (code, out, err)`.
+
+    target: "branch" (vs merge-base with origin/HEAD or main), "staged", or a path.
+    Returns a clean message (never raises) on non-repo / empty diff.
+    """
+    safe_cwd = resolve_in_allowlist(cwd, allowed_roots)
+
+    def run(argv):
+        return runner(argv, str(safe_cwd))
+
+    if target == "staged":
+        code, out, err = run(["git", "diff", "--cached"])
+    elif target == "branch":
+        base_code, base_out, base_err = run(["git", "merge-base", "HEAD", "main"])
+        if base_code != 0:
+            return _git_error(base_err)
+        base = base_out.strip()
+        code, out, err = run(["git", "diff", base, "HEAD"])
+    else:
+        # treat target as a path to diff (working tree changes for that path)
+        safe = resolve_in_allowlist(target, allowed_roots)
+        code, out, err = run(["git", "diff", "--", str(safe)])
+    if code != 0:
+        return _git_error(err)
+    if not out.strip():
+        return "Nothing to review — the diff is empty."
+    return out
+
+
+def _git_error(stderr: str) -> str:
+    msg = (stderr or "").strip().splitlines()
+    detail = msg[0] if msg else "git command failed"
+    return f"Could not get a diff: {detail}"
