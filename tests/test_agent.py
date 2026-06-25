@@ -891,6 +891,16 @@ def test_weak_chat_main_equals_weak_buckets_to_session(tmp_path):
     assert agent.weak_tokens == 0
 
 
+def test_weak_chat_propagates_when_both_fail(tmp_path):
+    # Both weak and main fail: exception must propagate (compact() handles).
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")],
+                          weak_client=FakeChatClient(raises=True))
+    agent.client = FakeChatClient(raises=True)
+    assert agent.weak_client is not agent.client  # ensure they are distinct
+    with pytest.raises(RuntimeError, match="weak down"):
+        agent._weak_chat([{"role": "user", "content": "hi"}])
+
+
 def test_summarizer_uses_weak_client(tmp_path):
     weak = FakeChatClient(ChatResult(content="THE SUMMARY", usage=Usage(2, 2)))
     agent, _ = make_agent(tmp_path, [ChatResult(content="x")], weak_client=weak)
