@@ -131,3 +131,96 @@ def _git_error(stderr: str) -> str:
     msg = (stderr or "").strip().splitlines()
     detail = msg[0] if msg else "git command failed"
     return f"Could not get a diff: {detail}"
+
+
+REVIEW_OUTPUT_CONTRACT = (
+    "Report each issue as a block exactly like this (repeat per issue):\n"
+    "### FINDING\n"
+    "file: <path>\nline: <number>\nseverity: <Blocker|High|Medium|Nit>\n"
+    "category: <bug|security|correctness|style|...>\n"
+    "title: <one line>\nevidence: <the concrete code/behavior proving it>\n"
+    "suggestion: <the fix>\n### END\n"
+    "If you find nothing that matters, reply with exactly: NO FINDINGS\n"
+    "Only report issues you can concretely justify from the code — do not pad with "
+    "speculation or pure style nits unless they are real. Prefer fewer, higher-signal "
+    "findings."
+)
+
+
+def REVIEWER_PROMPT(diff: str, dimension: str, guidance_name: str, standards: str) -> str:
+    parts = [
+        f"You are a meticulous {dimension} code reviewer. Review ONLY the change below.",
+        f"First call read_guidance('{guidance_name}') and follow it as the standard. "
+        "Use read_file and search_files to expand context (the enclosing function, "
+        "callers, related code) before judging — a hunk in isolation hides bugs.",
+    ]
+    if standards.strip():
+        parts.append("The user's saved standards/preferences (honor these):\n" + standards.strip())
+    parts.append(REVIEW_OUTPUT_CONTRACT)
+    parts.append("The change to review:\n" + diff)
+    return "\n\n".join(parts)
+
+
+def VERIFIER_PROMPT(finding: Finding, diff: str) -> str:
+    loc = f"{finding.file}:{finding.line}" if finding.line is not None else finding.file
+    return (
+        "You are an adversarial verifier. A reviewer claims the following issue. Your "
+        "job is to REFUTE it unless you can ground it concretely in the actual code. "
+        "Use read_file and search_files to check. For a security issue, require a real "
+        "source→sink path with no intervening guard; for a correctness issue, require a "
+        "named broken caller or contract. Default to false-positive when uncertain.\n\n"
+        f"Claimed issue: [{finding.severity}] {loc} — {finding.title}\n"
+        f"Reviewer's evidence: {finding.evidence}\n\n"
+        "Reply with exactly one of these on the first line:\n"
+        "VERDICT: real\n"
+        "VERDICT: false-positive\n"
+        "then a 'grounding:' line explaining the concrete code path (or why it does not hold).\n\n"
+        "Relevant change:\n" + diff
+    )
+
+
+def verifier_confirms(text: str) -> bool:
+    """True only if the verifier explicitly returned VERDICT: real (fail-closed)."""
+    for line in (text or "").splitlines():
+        stripped = line.strip().lower()
+        if stripped.startswith("verdict:"):
+            return stripped.split(":", 1)[1].strip().startswith("real")
+    return False
+
+
+_SEV_RANK = {s: i for i, s in enumerate(SEVERITIES)}  # Blocker=0 … Nit=3
+
+
+def run_review(target, *, run_children, git_diff_fn, reviewers, standards="", verify_cap=16) -> str:
+    diff = git_diff_fn(target)
+    if not diff.strip() or diff.startswith(("Nothing to review", "Could not get a diff")):
+        return diff if diff.strip() else "Nothing to review — the diff is empty."
+
+    # Stage 1: fan out reviewers (read-only parallel children).
+    reviewer_specs = [
+        {"prompt": REVIEWER_PROMPT(diff, dimension, guidance, standards),
+         "role": None, "instructions": None, "label": label}
+        for (label, dimension, guidance) in reviewers
+    ]
+    reviewer_reports = run_children(reviewer_specs)
+    findings: list[Finding] = []
+    for _label, report in reviewer_reports:
+        if isinstance(report, str):
+            findings.extend(parse_findings(report))
+    if not findings:
+        return synthesize([])
+
+    # Stage 2: verify (severity-sorted, capped). The verify pass always runs.
+    findings.sort(key=lambda f: _SEV_RANK.get(f.severity, 2))
+    to_verify = findings[:verify_cap]
+    verify_specs = [
+        {"prompt": VERIFIER_PROMPT(f, diff), "role": None, "instructions": None,
+         "label": f"verify:{f.file}"}
+        for f in to_verify
+    ]
+    verdicts = run_children(verify_specs)
+    kept = [
+        f for f, (_label, verdict) in zip(to_verify, verdicts)
+        if isinstance(verdict, str) and verifier_confirms(verdict)
+    ]
+    return synthesize(kept)

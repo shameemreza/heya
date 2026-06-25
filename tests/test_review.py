@@ -1,4 +1,5 @@
 from heya.review import Finding, parse_findings, synthesize, normalize_severity, SEVERITIES, git_diff
+from heya.review import run_review, verifier_confirms, REVIEWER_PROMPT, VERIFIER_PROMPT
 
 
 def test_normalize_severity():
@@ -126,3 +127,74 @@ def test_git_diff_path_target(tmp_path):
     # the path-target branch runs `git diff -- <path>` with the resolved path
     assert any("foo.py" in " ".join(argv) for argv in runner.calls)
     assert any("--" in argv for argv in runner.calls)
+
+
+def test_verifier_confirms():
+    assert verifier_confirms("VERDICT: real\ngrounding: source->sink confirmed") is True
+    assert verifier_confirms("VERDICT: false-positive\ngrounding: guarded") is False
+    assert verifier_confirms("unclear waffle") is False  # fail-closed → drop
+
+
+def test_reviewer_prompt_includes_diff_and_standards():
+    p = REVIEWER_PROMPT("DIFFTEXT", "correctness", "code-review", "- prefer early return")
+    assert "DIFFTEXT" in p
+    assert "code-review" in p           # told to read the guidance
+    assert "prefer early return" in p   # the user's standards injected
+    assert "### FINDING" in p           # the output contract
+
+
+def test_run_review_verifies_and_drops_spurious():
+    # The reviewer reports two findings; the verifier confirms the first, refutes
+    # the second. Only the confirmed one survives into the verdict.
+    reviewer_report = (
+        "### FINDING\nfile: a.php\nline: 5\nseverity: High\ncategory: security\n"
+        "title: real sqli\nevidence: $wpdb->query($_GET)\nsuggestion: prepare\n### END\n"
+        "### FINDING\nfile: b.php\nline: 9\nseverity: High\ncategory: security\n"
+        "title: spurious xss\nevidence: maybe\nsuggestion: escape\n### END\n"
+    )
+    # run_children is called twice: once for reviewers, once for verifiers.
+    calls = {"n": 0}
+    def fake_run_children(specs):
+        calls["n"] += 1
+        if calls["n"] == 1:  # reviewer fan-out
+            return [("code-reviewer", reviewer_report)]
+        # verifier fan-out: confirm the first finding, refute the second
+        verdicts = []
+        for spec in specs:
+            if "real sqli" in spec["prompt"]:
+                verdicts.append(("verify", "VERDICT: real\ngrounding: $_GET into query"))
+            else:
+                verdicts.append(("verify", "VERDICT: false-positive\ngrounding: output is escaped"))
+        return verdicts
+
+    out = run_review(
+        "branch",
+        run_children=fake_run_children,
+        git_diff_fn=lambda t: "diff --git a/a.php b/a.php\n+bad\n",
+        reviewers=[("code-reviewer", "correctness and quality", "code-review")],
+    )
+    assert "real sqli" in out
+    assert "spurious xss" not in out  # refuted → dropped
+    assert calls["n"] == 2            # verify pass ran
+
+
+def test_run_review_clean_diff_says_nothing_blocks():
+    def fake_run_children(specs):
+        return [("code-reviewer", "NO FINDINGS")]
+    out = run_review(
+        "branch",
+        run_children=fake_run_children,
+        git_diff_fn=lambda t: "diff --git a/a.php b/a.php\n+ok\n",
+        reviewers=[("code-reviewer", "correctness and quality", "code-review")],
+    )
+    assert "nothing blocks" in out.lower()
+
+
+def test_run_review_empty_diff_short_circuits():
+    out = run_review(
+        "branch",
+        run_children=lambda specs: [("x", "should not be called")],
+        git_diff_fn=lambda t: "Nothing to review — the diff is empty.",
+        reviewers=[("code-reviewer", "correctness and quality", "code-review")],
+    )
+    assert "nothing to review" in out.lower()
