@@ -51,3 +51,9 @@ def test_long_conversation_is_compacted_and_answers(tmp_path):
                 assert want <= got, "orphaned tool pair after compaction"
     # the system message (carrying any memory/rules) survived every call
     assert all(call[0]["role"] == "system" for call in client.calls)
+    # Positively prove compaction actually fired (the no-orphan check alone would
+    # pass even if it never ran): the big tool outputs were microcompacted to a stub.
+    assert any(
+        any("omitted to save context" in (m.get("content") or "") for m in call)
+        for call in client.calls
+    ), "compaction did not fire — a later call should carry the microcompaction stub"
