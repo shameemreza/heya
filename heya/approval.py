@@ -44,8 +44,8 @@ class ApprovalPolicy:
         """The command portion of a describe_call string ('name → cmd' → 'cmd')."""
         return detail.split("→", 1)[1].strip() if "→" in detail else detail.strip()
 
-    def check(self, name: str, detail: str) -> bool:
-        """Return True if the tool may run."""
+    def check(self, name: str, detail: str, label: str = "") -> bool:
+        """Return True if the tool may run. `label` names the agent asking."""
         is_mcp = name.startswith("mcp__")
         if name not in GATED_TOOLS and not is_mcp:
             return True
@@ -55,7 +55,8 @@ class ApprovalPolicy:
         candidates = (command, name) if is_mcp else (command,)
         if any(c.startswith(prefix) for c in candidates for prefix in self._allow if prefix):
             return True
-        decision = self._approver(name, detail)
+        display = f"[{label}] {detail}" if label else detail
+        decision = self._approver(name, display)
         if decision == "always":
             self._always.add(name)
             return True

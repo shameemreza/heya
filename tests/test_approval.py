@@ -102,3 +102,33 @@ def test_check_sampling_allowlist_auto_approves():
 def test_check_sampling_auto_approve():
     policy = ApprovalPolicy(auto_approve=True, approver=lambda n, d: "no")
     assert policy.check_sampling("srv", "preview text") is True
+
+
+def test_check_label_prefixes_approver_detail():
+    seen = {}
+    def approver(name, detail):
+        seen["name"] = name
+        seen["detail"] = detail
+        return "yes"
+    policy = ApprovalPolicy(approver=approver)
+    assert policy.check("write_file", "write_file → out.txt", label="researcher") is True
+    assert seen["detail"] == "[researcher] write_file → out.txt"
+
+
+def test_check_empty_label_leaves_detail_unchanged():
+    seen = {}
+    def approver(name, detail):
+        seen["detail"] = detail
+        return "yes"
+    policy = ApprovalPolicy(approver=approver)
+    policy.check("write_file", "write_file → out.txt")
+    assert seen["detail"] == "write_file → out.txt"
+
+
+def test_check_label_does_not_affect_allow_list_match():
+    # The allow list keys on the command, not the label; a labeled call still
+    # auto-approves without invoking the approver.
+    def approver(name, detail):
+        raise AssertionError("approver should not be called when allow-listed")
+    policy = ApprovalPolicy(approver=approver, allow=("out.txt",))
+    assert policy.check("write_file", "write_file → out.txt", label="researcher") is True

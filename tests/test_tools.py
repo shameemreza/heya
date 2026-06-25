@@ -516,3 +516,53 @@ def test_dispatch_list_resources_enumerates():
 def test_describe_call_gateway():
     assert describe_call("mcp_read_resource", '{"server": "s", "uri": "file:///a"}') == "mcp_read_resource → read resource file:///a from s"
     assert describe_call("mcp_get_prompt", '{"server": "s", "name": "p"}') == "mcp_get_prompt → prompt p from s"
+
+
+def _names(schemas):
+    return {s["function"]["name"] for s in schemas}
+
+
+def test_schemas_omit_spawn_agent_by_default():
+    assert "spawn_agent" not in _names(build_tool_schemas())
+
+
+def test_schemas_include_spawn_agent_when_can_spawn():
+    assert "spawn_agent" in _names(build_tool_schemas(can_spawn=True))
+
+
+def test_dispatch_spawn_agent_calls_spawn_fn(tmp_path):
+    seen = {}
+    def spawn_fn(task, role, instructions):
+        seen["task"] = task
+        seen["role"] = role
+        seen["instructions"] = instructions
+        return "child report"
+    out = dispatch_tool(
+        "spawn_agent",
+        '{"task": "look at X", "role": "researcher"}',
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=1.0, spawn_fn=spawn_fn,
+    )
+    assert out == "child report"
+    assert seen == {"task": "look at X", "role": "researcher", "instructions": None}
+
+
+def test_dispatch_spawn_agent_without_spawn_fn_is_unknown_tool(tmp_path):
+    out = dispatch_tool(
+        "spawn_agent", '{"task": "x"}',
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=1.0,
+    )
+    assert "unknown tool" in out.lower()
+
+
+def test_dispatch_spawn_agent_missing_task_is_clean_error(tmp_path):
+    out = dispatch_tool(
+        "spawn_agent", '{"role": "researcher"}',
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=1.0, spawn_fn=lambda *a: "x",
+    )
+    assert out.startswith("Error: missing required argument")
+
+
+def test_describe_call_spawn_agent():
+    d = describe_call("spawn_agent", '{"task": "review the diff", "role": "reviewer"}')
+    assert "spawn_agent" in d
+    assert "reviewer" in d

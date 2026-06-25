@@ -11,6 +11,7 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
+from .subagents import ROLES as _ROLES
 from .text import truncate_output
 from .tools_files import ToolError, read_file, resolve_in_allowlist, run_command, write_file
 from .tools_guidance import read_guidance as _read_guidance
@@ -47,6 +48,31 @@ _MCP_PROMPT_SCHEMAS = [
             "required": ["server", "name"]},
     }},
 ]
+
+_SPAWN_AGENT_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "spawn_agent",
+        "description": (
+            "Delegate a self-contained task to a fresh sub-agent that runs to "
+            "completion and returns only its final report. The sub-agent sees NONE "
+            "of this conversation, so describe everything it needs in `task`. "
+            "Optionally specialize it with `role` and extra `instructions`."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task": {"type": "string",
+                         "description": "Self-contained task for the sub-agent."},
+                "role": {"type": "string", "enum": sorted(_ROLES),
+                         "description": "Optional specialization."},
+                "instructions": {"type": "string",
+                                 "description": "Optional extra focusing guidance."},
+            },
+            "required": ["task"],
+        },
+    },
+}
 
 TOOL_SCHEMAS: list[dict] = [
     {
@@ -193,10 +219,14 @@ TOOL_SCHEMAS: list[dict] = [
 ]
 
 
-def build_tool_schemas(mcp_runtime=None) -> list[dict]:
-    """Native tools plus, when a runtime is connected, one schema per MCP tool."""
+def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False) -> list[dict]:
+    """Native tools plus, when a runtime is connected, one schema per MCP tool.
+
+    Includes the spawn_agent tool only when `can_spawn` (depth-0 agents only).
+    """
+    base = TOOL_SCHEMAS + [_SPAWN_AGENT_SCHEMA] if can_spawn else TOOL_SCHEMAS
     if mcp_runtime is None:
-        return TOOL_SCHEMAS
+        return base
     extra: list[dict] = []
     for server, tool in mcp_runtime.list_tools():
         description = (tool.get("description") or "")[:_MAX_DESC]
@@ -212,7 +242,7 @@ def build_tool_schemas(mcp_runtime=None) -> list[dict]:
         extra += _MCP_RESOURCE_SCHEMAS
     if mcp_runtime.has_prompts():
         extra += _MCP_PROMPT_SCHEMAS
-    return TOOL_SCHEMAS + extra
+    return base + extra
 
 
 def dispatch_tool(
@@ -229,6 +259,7 @@ def dispatch_tool(
     wp_default_root=None,
     playground_session=None,
     mcp_runtime=None,
+    spawn_fn=None,
 ) -> str:
     """Run one model tool-call. Returns a string result (errors included)."""
     try:
@@ -344,6 +375,13 @@ def dispatch_tool(
                 args["args"], args.get("path"), allowed_roots=allowed_roots,
                 cwd=cwd, default_root=wp_default_root, timeout=timeout,
             )
+        if name == "spawn_agent":
+            if spawn_fn is None:
+                return f"Error: unknown tool {name!r}."
+            task = args["task"]  # KeyError → handled below as missing-arg
+            return truncate_output(
+                spawn_fn(task, args.get("role"), args.get("instructions"))
+            )
         return f"Error: unknown tool {name!r}."
     except ToolError as exc:
         return f"Error: {exc}"
@@ -394,6 +432,10 @@ def describe_call(name: str, arguments: str) -> str:
         return f"mcp_get_prompt → prompt {args.get('name','?')} from {args.get('server','?')}"
     if name in ("mcp_list_resources", "mcp_list_prompts"):
         return name
+    if name == "spawn_agent":
+        role = args.get("role") or "agent"
+        task = (args.get("task") or "?")[:60]
+        return f"spawn_agent → {role}: {task}"
     if name.startswith(MCP_PREFIX):
         # name is mcp__<server>__<tool>; recover a readable server.tool(args)
         body = name[len(MCP_PREFIX):]
