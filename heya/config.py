@@ -27,6 +27,7 @@ class Profile:
     provider_type: str = "local"  # "local" | "api_key" | "oauth"
     api_key_env: str | None = None  # env var NAME holding the key, never the key itself
     timeout: float = DEFAULT_TIMEOUT
+    context_window: int = 32768
 
     @property
     def api_key(self) -> str | None:
@@ -171,6 +172,37 @@ def load_search_config(config_path: Path | None = None) -> SearchConfig:
         known = ", ".join(sorted(KNOWN_SEARCH_PROVIDERS))
         raise ConfigError(f"Unknown search provider {provider!r}. Known: {known}")
     return SearchConfig(provider=provider, api_key_env=raw.get("api_key_env"))
+
+
+@dataclass(frozen=True)
+class ContextConfig:
+    threshold: float = 0.85
+    reserve_tokens: int = 2048
+    keep_recent_tokens: int = 4096
+    task_token_budget: int = 200000
+
+
+def load_context_config(config_path: Path | None = None) -> ContextConfig:
+    """Context-management settings.
+
+    User file shape:
+        [context]
+        threshold = 0.85           # compact at this fraction of the window
+        reserve_tokens = 2048      # headroom for the reply + summary call
+        keep_recent_tokens = 4096  # verbatim recent-tail budget
+        task_token_budget = 200000 # per-task ceiling; 0 = unlimited
+    """
+    default = ContextConfig()
+    path = config_path or default_config_path()
+    if not path.exists():
+        return default
+    data = tomllib.loads(path.read_text()).get("context", {})
+    return ContextConfig(
+        threshold=float(data.get("threshold", default.threshold)),
+        reserve_tokens=int(data.get("reserve_tokens", default.reserve_tokens)),
+        keep_recent_tokens=int(data.get("keep_recent_tokens", default.keep_recent_tokens)),
+        task_token_budget=int(data.get("task_token_budget", default.task_token_budget)),
+    )
 
 
 def load_browser_headless(config_path: Path | None = None) -> bool:
@@ -402,6 +434,7 @@ def load_profiles(config_path: Path | None = None) -> dict[str, Profile]:
         model = "..."
         provider_type = "local" | "api_key" | "oauth"
         api_key_env = "SOME_ENV_VAR"   # optional
+        context_window = 32768         # optional; per-model context window override
     """
     profiles = dict(BUILTIN_PROFILES)
     path = config_path or default_config_path()
