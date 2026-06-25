@@ -23,10 +23,13 @@ class Role:
     tools: frozenset[str] | None = None  # None = inherit full toolbox
 
 
-_RESEARCHER_TOOLS = frozenset({
+# the read-only, thread-safe tool surface: safe to run concurrently and never
+# mutates. Used both for the `researcher` role and for parallel sub-agents.
+PARALLEL_SAFE_TOOLS = frozenset({
     "read_file", "read_guidance", "web_search", "web_fetch", "read_log",
     "mcp_list_resources", "mcp_read_resource", "mcp_list_prompts", "mcp_get_prompt",
 })
+_RESEARCHER_TOOLS = PARALLEL_SAFE_TOOLS
 _REVIEWER_TOOLS = frozenset({"read_file", "read_guidance", "read_log"})
 
 ROLES: dict[str, Role] = {
@@ -61,6 +64,25 @@ def build_child_system_prompt(
     if instructions:
         parts.append(instructions)
     return "\n\n".join(parts)
+
+
+def parallel_label(role_name: str | None, index: int) -> str:
+    """A distinguishable label for one parallel child (same-role children differ)."""
+    return f"{role_name or 'agent'}#{index}"
+
+
+MAX_REPORT_CHARS = 6000
+
+_STATUS_PREFIX = {"ok": "", "failed": "(failed) ", "timed-out": "(timed out) "}
+
+
+def format_parallel_report(label: str, task: str, body: str, *, status: str = "ok") -> str:
+    """Format one parallel child's report as a section, truncating the body with an
+    explicit marker (never a silent cut) so the parent's synthesis sees the loss."""
+    text = body or ""
+    if len(text) > MAX_REPORT_CHARS:
+        text = text[:MAX_REPORT_CHARS] + "\n…[report truncated]"
+    return f"## [{label}] {_STATUS_PREFIX.get(status, '')}{task}\n{text}"
 
 
 class LabeledStream:
