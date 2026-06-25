@@ -566,3 +566,46 @@ def test_describe_call_spawn_agent():
     d = describe_call("spawn_agent", '{"task": "review the diff", "role": "reviewer"}')
     assert "spawn_agent" in d
     assert "reviewer" in d
+
+
+def test_schemas_include_spawn_agents_when_can_spawn():
+    names = {s["function"]["name"] for s in build_tool_schemas(can_spawn=True)}
+    assert "spawn_agents" in names
+    assert "spawn_agent" in names  # both present
+
+
+def test_schemas_omit_spawn_agents_by_default():
+    names = {s["function"]["name"] for s in build_tool_schemas()}
+    assert "spawn_agents" not in names
+
+
+def test_dispatch_spawn_agents_calls_fn(tmp_path):
+    seen = {}
+    def fn(tasks):
+        seen["tasks"] = tasks
+        return "aggregate report"
+    out = dispatch_tool(
+        "spawn_agents", '{"tasks": [{"task": "a"}, {"task": "b", "role": "reviewer"}]}',
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=1.0, spawn_agents_fn=fn,
+    )
+    assert out == "aggregate report"
+    assert seen["tasks"] == [{"task": "a"}, {"task": "b", "role": "reviewer"}]
+
+
+def test_dispatch_spawn_agents_without_fn_is_unknown_tool(tmp_path):
+    out = dispatch_tool("spawn_agents", '{"tasks": [{"task": "a"}]}',
+                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=1.0)
+    assert "unknown tool" in out.lower()
+
+
+def test_dispatch_spawn_agents_missing_tasks_is_clean_error(tmp_path):
+    out = dispatch_tool("spawn_agents", '{}',
+                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=1.0,
+                        spawn_agents_fn=lambda tasks: "x")
+    assert out.startswith("Error: missing required argument")
+
+
+def test_describe_call_spawn_agents():
+    d = describe_call("spawn_agents", '{"tasks": [{"task": "review bugs"}, {"task": "review perf"}]}')
+    assert "spawn_agents" in d
+    assert "2 agents" in d
