@@ -1,6 +1,7 @@
 """End-to-end: a conversation that crosses the context window is compacted without
 orphaning a tool pair, the agent still answers, and usage is accounted."""
 from heya.agent import Agent
+from heya.context import SUMMARY_MARKER
 from heya.llm_client import ChatResult, ToolCall, Usage
 
 
@@ -51,9 +52,12 @@ def test_long_conversation_is_compacted_and_answers(tmp_path):
                 assert want <= got, "orphaned tool pair after compaction"
     # the system message (carrying any memory/rules) survived every call
     assert all(call[0]["role"] == "system" for call in client.calls)
-    # Positively prove compaction actually fired (the no-orphan check alone would
-    # pass even if it never ran): the big tool outputs were microcompacted to a stub.
+    # Positively prove compaction actually fired (the no-orphan check alone would pass
+    # even if it never ran). This scenario summarizes the middle, so a later call carries
+    # the summary marker; the microcompaction stub is the alternative if Tier 2 sufficed.
     assert any(
-        any("omitted to save context" in (m.get("content") or "") for m in call)
+        any(SUMMARY_MARKER in (m.get("content") or "")
+            or "omitted to save context" in (m.get("content") or "")
+            for m in call)
         for call in client.calls
-    ), "compaction did not fire — a later call should carry the microcompaction stub"
+    ), "compaction did not fire — a later call should carry the summary marker or stub"
