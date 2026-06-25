@@ -10,8 +10,8 @@ from .agent import Agent, DEFAULT_MAX_ITERS
 from .approval import ApprovalPolicy, prompt_stdin
 from .config import (
     load_allowed_roots, load_approval_allow, load_browser_headless, load_context_config,
-    load_guidance_paths, load_mcp_servers, load_memory_path, load_profiles, load_search_config,
-    load_wp_path, resolve_profile,
+    load_guidance_paths, load_mcp_servers, load_memory_path, load_profiles, load_routing_config,
+    load_search_config, load_wp_path, resolve_profile, resolve_weak_profile,
 )
 from .llm_client import LLMClient
 from .mcp_runtime import MCPRuntime
@@ -38,7 +38,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _default_make_agent(args: argparse.Namespace) -> Agent:
-    profile = resolve_profile(args.profile, profiles=load_profiles())
+    profiles = load_profiles()
+    profile = resolve_profile(args.profile, profiles=profiles)
+    weak_profile = resolve_weak_profile(load_routing_config(), profiles)
     roots = list(load_allowed_roots()) + [Path(p).expanduser().resolve() for p in args.allow]
     guidance_sources = (BUNDLED_GUIDANCE_DIR, *load_guidance_paths())
     search_provider = build_search_provider(load_search_config())
@@ -47,6 +49,11 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
     playground_session = PlaygroundSession(process_registry, cwd=Path.cwd(), allowed_roots=roots)
     wp_default_root = load_wp_path()
     client = LLMClient(profile)
+    weak_client = (
+        LLMClient(weak_profile)
+        if weak_profile is not None and weak_profile.name != profile.name
+        else None
+    )
     approval = ApprovalPolicy(
         auto_approve=args.auto_approve, approver=prompt_stdin, allow=load_approval_allow()
     )
@@ -89,6 +96,7 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
         reserve_tokens=ctx.reserve_tokens,
         keep_recent_tokens=ctx.keep_recent_tokens,
         task_token_budget=ctx.task_token_budget,
+        weak_client=weak_client,
     )
 
 

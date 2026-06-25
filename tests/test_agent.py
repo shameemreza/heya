@@ -396,7 +396,7 @@ def test_spawn_agent_fan_out_cap(tmp_path):
             return "ok"
         def close(self):
             pass
-    agent._make_child = lambda role, instructions: _StubChild()
+    agent._make_child = lambda role, instructions, **kw: _StubChild()
     assert agent._spawn_agent("t1") == "ok"
     assert agent._spawn_agent("t2") == "ok"
     third = agent._spawn_agent("t3")
@@ -473,7 +473,7 @@ def test_spawn_agent_flushes_child_on_exception(tmp_path):
             self.closed = True
 
     boom = _BoomChild()
-    agent._make_child = lambda role, instructions: boom
+    agent._make_child = lambda role, instructions, **kw: boom
     out = agent._spawn_agent("do it")
     assert out == "Error: sub-agent failed: boom"
     assert boom.closed is True  # flushed via finally even though run() raised
@@ -832,6 +832,87 @@ from heya.llm_client import Usage
 from heya.context import SUMMARY_MARKER
 
 
+class FakeChatClient:
+    """Records .chat() calls; returns a scripted ChatResult or raises."""
+
+    def __init__(self, result=None, raises=False):
+        self.result = result
+        self.raises = raises
+        self.calls = []
+
+    def chat(self, messages):
+        self.calls.append([dict(m) for m in messages])
+        if self.raises:
+            raise RuntimeError("weak down")
+        return self.result
+
+
+def test_weak_client_defaults_to_main(tmp_path):
+    agent, client = make_agent(tmp_path, [ChatResult(content="x")])
+    assert agent.weak_client is agent.client
+    assert agent.weak_tokens == 0
+
+
+def test_weak_chat_routes_to_weak_and_buckets_tokens(tmp_path):
+    weak = FakeChatClient(ChatResult(content="summary", usage=Usage(10, 5)))
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")], weak_client=weak)
+    out = agent._weak_chat([{"role": "user", "content": "hi"}])
+    assert out.content == "summary"
+    assert len(weak.calls) == 1
+    assert agent.weak_tokens == 15      # 10 + 5
+    assert agent.session_tokens == 0    # weak tokens never hit the main counters
+    assert agent._task_tokens == 0
+
+
+def test_weak_chat_falls_back_to_main_on_failure(tmp_path):
+    weak = FakeChatClient(raises=True)
+    warnings = []
+    agent, _ = make_agent(
+        tmp_path, [ChatResult(content="x")],
+        weak_client=weak, on_text=warnings.append,
+    )
+    # Patch the main client with a chat() that succeeds.
+    agent.client = FakeChatClient(ChatResult(content="main-summary", usage=Usage(7, 3)))
+    out = agent._weak_chat([{"role": "user", "content": "hi"}])
+    assert out.content == "main-summary"
+    assert agent.session_tokens == 10   # fallback tokens billed to main
+    assert agent.weak_tokens == 0
+    assert any("weak model unavailable" in w for w in warnings)
+
+
+def test_weak_chat_main_equals_weak_buckets_to_session(tmp_path):
+    # No weak profile: weak_client is the main client; summary tokens are main's.
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")])
+    agent.client = FakeChatClient(ChatResult(content="s", usage=Usage(4, 1)))
+    agent.weak_client = agent.client
+    out = agent._weak_chat([{"role": "user", "content": "hi"}])
+    assert out.content == "s"
+    assert agent.session_tokens == 5
+    assert agent.weak_tokens == 0
+
+
+def test_weak_chat_propagates_when_both_fail(tmp_path):
+    # Both weak and main fail: exception must propagate (compact() handles).
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")],
+                          weak_client=FakeChatClient(raises=True))
+    agent.client = FakeChatClient(raises=True)
+    assert agent.weak_client is not agent.client  # ensure they are distinct
+    with pytest.raises(RuntimeError, match="weak down"):
+        agent._weak_chat([{"role": "user", "content": "hi"}])
+
+
+def test_summarizer_uses_weak_client(tmp_path):
+    weak = FakeChatClient(ChatResult(content="THE SUMMARY", usage=Usage(2, 2)))
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")], weak_client=weak)
+    middle = [
+        {"role": "user", "content": "do a thing"},
+        {"role": "assistant", "content": "did the thing"},
+    ]
+    note = agent._summarize(middle)
+    assert "THE SUMMARY" in note
+    assert len(weak.calls) == 1
+
+
 def test_agent_accumulates_usage(tmp_path):
     scripted = [ChatResult(content="done", usage=Usage(10, 5))]
     agent, _ = make_agent(tmp_path, scripted)
@@ -890,3 +971,40 @@ def test_agent_compacts_when_over_window(tmp_path):
     # the big tool output was microcompacted (stubbed) before the third call
     third_call_msgs = client.calls[2]
     assert any("omitted to save context" in (m.get("content") or "") for m in third_call_msgs)
+
+
+def test_make_child_weak_uses_weak_client(tmp_path):
+    weak = FakeChatClient(ChatResult(content="x"))
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")], weak_client=weak)
+    child = agent._make_child(None, None, weak=True)
+    assert child.client is weak               # child's primary client is the weak one
+    assert child.weak_client is weak          # and its weak slot too
+    assert "weak" in child.label
+
+
+def test_make_child_default_uses_main_client(tmp_path):
+    weak = FakeChatClient(ChatResult(content="x"))
+    agent, client = make_agent(tmp_path, [ChatResult(content="x")], weak_client=weak)
+    child = agent._make_child(None, None)
+    assert child.client is client             # main by default
+    assert child.weak_client is weak          # weak reference still threaded
+
+
+def test_review_children_use_main_client_not_weak(tmp_path):
+    weak = FakeChatClient(ChatResult(content="x"))
+    agent, client = make_agent(tmp_path, [ChatResult(content="x")], weak_client=weak)
+    captured = []
+    orig = agent._make_child
+
+    def spy(role, instructions, **kw):
+        ch = orig(role, instructions, **kw)
+        captured.append(ch)
+        return ch
+
+    agent._make_child = spy
+    agent._run_children([
+        {"prompt": "review this"},
+    ])
+    assert captured, "expected at least one review child"
+    assert all(ch.client is client for ch in captured)
+    assert all(ch.client is not weak for ch in captured)

@@ -84,6 +84,10 @@ def compact(
     groups = group_messages(messages)
     if len(groups) <= 2:
         return messages
+    # Invariant: groups[0] is always the system message and groups[1] the first
+    # task group. compact() keeps this prefix verbatim — it is never summarized
+    # or dropped — so the system prompt and the original task survive every
+    # compaction. The summarized/microcompacted region is strictly the middle.
     system, first_task, rest = groups[0], groups[1], groups[2:]
     # recent tail: whole groups from the end summing to keep_recent_tokens
     tail: list[list[dict]] = []

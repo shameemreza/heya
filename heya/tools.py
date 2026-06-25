@@ -58,7 +58,12 @@ _SPAWN_AGENT_SCHEMA = {
             "Delegate a self-contained task to a fresh sub-agent that runs to "
             "completion and returns only its final report. The sub-agent sees NONE "
             "of this conversation, so describe everything it needs in `task`. "
-            "Optionally specialize it with `role` and extra `instructions`."
+            "Optionally specialize it with `role` and extra `instructions`. Set "
+            "`weak` to run it on the weak (cheaper, smaller) model — ONLY for "
+            "trivial, mechanical work (extraction, reformatting, listing, simple "
+            "summarization); never for judgment, code review, security analysis, "
+            "or multi-step reasoning. If no weak model is configured, it runs on "
+            "the main model."
         ),
         "parameters": {
             "type": "object",
@@ -69,6 +74,8 @@ _SPAWN_AGENT_SCHEMA = {
                          "description": "Optional specialization."},
                 "instructions": {"type": "string",
                                  "description": "Optional extra focusing guidance."},
+                "weak": {"type": "boolean",
+                         "description": "Run on the weak model; trivial tasks only."},
             },
             "required": ["task"],
         },
@@ -495,7 +502,7 @@ def dispatch_tool(
                 return f"Error: unknown tool {name!r}."
             task = args["task"]  # KeyError → handled below as missing-arg
             return truncate_output(
-                spawn_fn(task, args.get("role"), args.get("instructions"))
+                spawn_fn(task, args.get("role"), args.get("instructions"), args.get("weak", False))
             )
         if name == "spawn_agents":
             if spawn_agents_fn is None:
