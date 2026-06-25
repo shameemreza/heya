@@ -116,3 +116,13 @@ def test_git_diff_not_a_repo(tmp_path):
     runner = _fake_runner([(128, "", "fatal: not a git repository")])
     out = git_diff("branch", allowed_roots=[tmp_path], cwd=tmp_path, runner=runner)
     assert "not a git repository" in out.lower()
+
+
+def test_git_diff_path_target(tmp_path):
+    target = tmp_path / "foo.py"
+    runner = _fake_runner([(0, "diff --git a/foo.py b/foo.py\n+x\n", "")])
+    out = git_diff(str(target), allowed_roots=[tmp_path], cwd=tmp_path, runner=runner)
+    assert "diff --git" in out
+    # the path-target branch runs `git diff -- <path>` with the resolved path
+    assert any("foo.py" in " ".join(argv) for argv in runner.calls)
+    assert any("--" in argv for argv in runner.calls)
