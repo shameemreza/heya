@@ -6,6 +6,7 @@ from heya.tools_files import (
     read_file,
     resolve_in_allowlist,
     run_command,
+    search_files,
     write_file,
 )
 
@@ -152,3 +153,50 @@ def test_run_command_denies_cwd_outside_root(tmp_path):
 def test_run_command_times_out(tmp_path):
     with pytest.raises(ToolError):
         run_command("sleep 5", cwd=tmp_path, allowed_roots=[tmp_path], timeout=0.3)
+
+
+def test_search_files_finds_matches(tmp_path):
+    from heya.tools_files import search_files
+    (tmp_path / "a.py").write_text("alpha\nbeta nonce_check\ngamma\n")
+    (tmp_path / "b.py").write_text("delta\n")
+    out = search_files("nonce_check", allowed_roots=[tmp_path], cwd=tmp_path)
+    assert "a.py:2:" in out
+    assert "nonce_check" in out
+    assert "b.py" not in out
+
+
+def test_search_files_no_match(tmp_path):
+    from heya.tools_files import search_files
+    (tmp_path / "a.py").write_text("alpha\n")
+    out = search_files("zzz", allowed_roots=[tmp_path], cwd=tmp_path)
+    assert "no matches" in out.lower()
+
+
+def test_search_files_confined_to_allowlist(tmp_path):
+    from heya.tools_files import search_files
+    (tmp_path / "a.py").write_text("hit\n")
+    with pytest.raises(ToolError):
+        search_files("hit", allowed_roots=[tmp_path], cwd=tmp_path, path="/etc")
+
+
+def test_search_files_caps_results(tmp_path):
+    (tmp_path / "big.txt").write_text("hit\n" * 500)
+    out = search_files("hit", allowed_roots=[tmp_path], cwd=tmp_path, max_results=10)
+    assert out.count("big.txt:") <= 10
+    assert "truncated" in out.lower()
+
+
+def test_search_files_skips_symlink_escaping_allowlist(tmp_path):
+    import os
+    root = tmp_path / "root"
+    root.mkdir()
+    secret = tmp_path / "secret.txt"   # OUTSIDE root
+    secret.write_text("TOPSECRET\n")
+    link = root / "leak.txt"
+    try:
+        os.symlink(secret, link)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not supported on this platform")
+    out = search_files("TOPSECRET", allowed_roots=[root], cwd=root)
+    assert "leak.txt" not in out       # escaping symlink target not read
+    assert "1:" not in out             # no line results (only "No matches" echo is allowed)

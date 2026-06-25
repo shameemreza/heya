@@ -14,7 +14,7 @@ from pathlib import Path
 from .memory import MEMORY_TYPES
 from .subagents import ROLES as _ROLES
 from .text import truncate_output
-from .tools_files import ToolError, read_file, resolve_in_allowlist, run_command, write_file
+from .tools_files import ToolError, read_file, resolve_in_allowlist, run_command, search_files, write_file
 from .tools_guidance import read_guidance as _read_guidance
 from .tools_mcp import MCP_PREFIX, build_reverse_map, mcp_tool_name, parse_mcp_name, _MAX_DESC
 from .tools_web import web_fetch, web_search
@@ -114,6 +114,21 @@ _SPAWN_AGENTS_SCHEMA = {
     },
 }
 
+_REVIEW_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "review_changes",
+        "description": (
+            "Review a change with a panel of read-only specialist reviewers and an "
+            "adversarial verify pass; returns a severity-sorted verdict (or 'nothing "
+            "blocks'). target: 'branch' (default, vs the main branch), 'staged', or a path."),
+        "parameters": {"type": "object", "properties": {
+            "target": {"type": "string",
+                       "description": "'branch' (default), 'staged', or a file/dir path."},
+        }},
+    },
+}
+
 _MEMORY_SCHEMAS = [
     {"type": "function", "function": {
         "name": "remember",
@@ -177,6 +192,13 @@ TOOL_SCHEMAS: list[dict] = [
             },
         },
     },
+    {"type": "function", "function": {
+        "name": "search_files",
+        "description": "Read-only literal-substring search across files in the allowed folders (returns file:line: matches). Use it to find callers, definitions, or related code beyond a diff.",
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string", "description": "Literal substring to find."},
+            "path": {"type": "string", "description": "Optional folder to search under (default: working dir)."},
+        }, "required": ["query"]}}},
     {
         "type": "function",
         "function": {
@@ -294,17 +316,20 @@ TOOL_SCHEMAS: list[dict] = [
 ]
 
 
-def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False, with_memory: bool = False) -> list[dict]:
+def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False, with_memory: bool = False, with_review: bool = False) -> list[dict]:
     """Native tools plus, when a runtime is connected, one schema per MCP tool.
 
-    Includes the spawn tools only when `can_spawn` (depth-0 agents) and the memory
-    tools only when `with_memory` (the root agent, which holds the store).
+    Includes the spawn tools only when `can_spawn` (depth-0 agents), the memory
+    tools only when `with_memory` (the root agent, which holds the store), and the
+    review tool only when `with_review` (root-only, like spawn).
     """
     extras: list[dict] = []
     if can_spawn:
         extras += [_SPAWN_AGENT_SCHEMA, _SPAWN_AGENTS_SCHEMA]
     if with_memory:
         extras += _MEMORY_SCHEMAS
+    if with_review:
+        extras.append(_REVIEW_SCHEMA)
     base = TOOL_SCHEMAS + extras if extras else TOOL_SCHEMAS
     if mcp_runtime is None:
         return base
@@ -343,6 +368,7 @@ def dispatch_tool(
     spawn_fn=None,
     spawn_agents_fn=None,
     memory_store=None,
+    review_fn=None,
 ) -> str:
     """Run one model tool-call. Returns a string result (errors included)."""
     try:
@@ -387,6 +413,9 @@ def dispatch_tool(
                 mcp_runtime.get_prompt(args["server"], args["name"], args.get("arguments") or {}))
         if name == "read_file":
             return truncate_output(read_file(args["path"], allowed_roots=allowed_roots))
+        if name == "search_files":
+            return truncate_output(search_files(
+                args["query"], allowed_roots=allowed_roots, cwd=cwd, path=args.get("path")))
         if name == "write_file":
             n = write_file(args["path"], args["content"], allowed_roots=allowed_roots)
             return f"Wrote {n} bytes to {args['path']}."
@@ -480,6 +509,10 @@ def dispatch_tool(
             if name == "forget":
                 return memory_store.delete(args["name"])
             return memory_store.read(args["name"])  # read_memory
+        if name == "review_changes":
+            if review_fn is None:
+                return f"Error: unknown tool {name!r}."
+            return review_fn(args.get("target") or "branch")
         return f"Error: unknown tool {name!r}."
     except ToolError as exc:
         return f"Error: {exc}"
@@ -504,6 +537,8 @@ def describe_call(name: str, arguments: str) -> str:
         return f"kill_command → {args.get('id', '?')}"
     if name == "read_file":
         return f"read_file → {args.get('path', '?')}"
+    if name == "search_files":
+        return f"search_files → {args.get('query', '?')}"
     if name == "read_guidance":
         return f"read_guidance → {args.get('name') or '(list)'}"
     if name == "web_search":
@@ -551,6 +586,8 @@ def describe_call(name: str, arguments: str) -> str:
         return f"forget → {args.get('name', '?')}"
     if name == "read_memory":
         return f"read_memory → {args.get('name', '?')}"
+    if name == "review_changes":
+        return f"review_changes → {args.get('target') or 'branch'}"
     if name.startswith(MCP_PREFIX):
         # name is mcp__<server>__<tool>; recover a readable server.tool(args)
         body = name[len(MCP_PREFIX):]

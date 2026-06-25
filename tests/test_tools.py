@@ -666,3 +666,43 @@ def test_describe_call_spawn_agents():
     d = describe_call("spawn_agents", '{"tasks": [{"task": "review bugs"}, {"task": "review perf"}]}')
     assert "spawn_agents" in d
     assert "2 agents" in d
+
+
+def test_search_files_in_schema_and_dispatch(tmp_path):
+    (tmp_path / "a.py").write_text("needle here\n")
+    names = {s["function"]["name"] for s in build_tool_schemas()}
+    assert "search_files" in names
+    out = dispatch_tool("search_files", '{"query": "needle"}',
+                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=5.0)
+    assert "a.py:1:" in out
+
+
+def test_search_files_is_parallel_safe():
+    from heya.subagents import PARALLEL_SAFE_TOOLS
+    assert "search_files" in PARALLEL_SAFE_TOOLS
+
+
+def test_describe_call_search_files():
+    assert "search_files" in describe_call("search_files", '{"query": "x"}')
+
+
+def test_review_changes_schema_gated():
+    assert "review_changes" in {s["function"]["name"] for s in build_tool_schemas(with_review=True)}
+    assert "review_changes" not in {s["function"]["name"] for s in build_tool_schemas()}
+
+
+def test_dispatch_review_changes(tmp_path):
+    out = dispatch_tool("review_changes", '{"target": "staged"}',
+                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=5.0,
+                        review_fn=lambda target: f"reviewed {target}")
+    assert out == "reviewed staged"
+
+
+def test_dispatch_review_changes_without_fn(tmp_path):
+    out = dispatch_tool("review_changes", '{"target": "branch"}',
+                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=5.0)
+    assert "unknown tool" in out.lower()
+
+
+def test_describe_call_review_changes():
+    assert "review_changes" in describe_call("review_changes", '{"target": "branch"}')

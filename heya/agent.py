@@ -7,11 +7,14 @@ changed something, one scoped self-review pass runs.
 """
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import TimeoutError as FuturesTimeout
 from pathlib import Path
 from typing import Any
+
+from . import review
 
 from .approval import ApprovalPolicy
 from .memory import build_memory_block
@@ -141,7 +144,7 @@ class Agent:
     def _loop(self) -> str:
         can_spawn = self.spawn_depth < self.max_spawn_depth
         with_memory = self.memory_store is not None
-        tools = build_tool_schemas(self.mcp_runtime, can_spawn=can_spawn, with_memory=with_memory)
+        tools = build_tool_schemas(self.mcp_runtime, can_spawn=can_spawn, with_memory=with_memory, with_review=can_spawn)
         if self.tool_filter is not None:
             tools = [t for t in tools if t["function"]["name"] in self.tool_filter]
         for _ in range(self.max_iters):
@@ -191,6 +194,7 @@ class Agent:
             spawn_fn=self._spawn_agent,
             spawn_agents_fn=self._spawn_agents,
             memory_store=self.memory_store,
+            review_fn=self._review_changes,
         )
         mutating = call.name in ("write_file", "run_command", "run_wp_cli")
         if mutating and not output.startswith(("Error", "Started background process", "Declined")):
@@ -274,6 +278,53 @@ class Agent:
         except Exception as exc:  # never raise into dispatch
             return f"Error: spawn_agents failed: {exc}"
 
+    def _run_children(self, specs) -> list[tuple[str, str]]:
+        """Run read-only parallel children for `specs`; return [(label, report)] in
+        submission order. specs: dicts with 'prompt' (required), 'role', 'instructions',
+        'label'. Budget-free — the caller bounds the count. Per-child error isolation
+        and a wall-clock deadline scaled by the number of waves."""
+        if not specs:
+            return []
+        locked = LockedSink(self._root_on_text) if self._root_on_text is not None else None
+        results: list = [None] * len(specs)
+
+        def work(i, spec):
+            child = None
+            try:
+                child = self._make_child(
+                    spec.get("role"), spec.get("instructions"),
+                    parallel=True, index=i + 1,
+                    sink=locked.write if locked is not None else None,
+                )
+                return child.run(spec["prompt"])
+            except Exception as exc:
+                return f"Error: sub-agent failed: {exc}"
+            finally:
+                if child is not None:
+                    child.close()
+
+        max_workers = max(1, min(len(specs), self.max_concurrent))
+        waves = math.ceil(len(specs) / max_workers)
+        deadline = self.command_timeout * 1.5 * waves
+        executor = ThreadPoolExecutor(max_workers=max_workers)
+        try:
+            futures = {executor.submit(work, i, spec): i for i, spec in enumerate(specs)}
+            try:
+                for fut in as_completed(futures, timeout=deadline):
+                    results[futures[fut]] = fut.result()
+            except FuturesTimeout:
+                pass
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+
+        out = []
+        for i, spec in enumerate(specs):
+            role = spec.get("role")
+            label = spec.get("label") or parallel_label(
+                role.name if role is not None else None, i + 1)
+            out.append((label, results[i]))
+        return out
+
     def _run_parallel(self, tasks) -> str:
         if not isinstance(tasks, list) or not tasks:
             return "Error: spawn_agents requires a non-empty list of tasks."
@@ -291,40 +342,13 @@ class Agent:
         dropped = max(0, len(specs) - remaining)
         run = specs[:remaining]
         self._children_spawned += len(run)
-        locked = LockedSink(self._root_on_text) if self._root_on_text is not None else None
-        results: list = [None] * len(run)
-
-        def work(i, spec):
-            task, role, instructions = spec
-            child = None
-            try:
-                child = self._make_child(
-                    role, instructions, parallel=True, index=i + 1,
-                    sink=locked.write if locked is not None else None,
-                )
-                return child.run(task)
-            except Exception as exc:  # isolate: a failure becomes this child's report
-                return f"Error: sub-agent failed: {exc}"
-            finally:
-                if child is not None:
-                    child.close()
-
-        deadline = self.command_timeout * 1.5  # batch wall-clock; children run concurrently
-        executor = ThreadPoolExecutor(max_workers=min(len(run), self.max_concurrent))
-        try:
-            futures = {executor.submit(work, i, spec): i for i, spec in enumerate(run)}
-            try:
-                for fut in as_completed(futures, timeout=deadline):
-                    results[futures[fut]] = fut.result()
-            except FuturesTimeout:
-                pass  # stragglers stay None → reported as timed-out below
-        finally:
-            executor.shutdown(wait=False, cancel_futures=True)
+        children_specs = [{"prompt": task, "role": role, "instructions": instr}
+                          for (task, role, instr) in run]
+        children = self._run_children(children_specs)
 
         parts = []
         for i, (task, role, _instr) in enumerate(run):
-            label = parallel_label(role.name if role is not None else None, i + 1)
-            res = results[i]
+            label, res = children[i]
             if res is None:
                 parts.append(format_parallel_report(
                     label, task, "(no result before timeout)", status="timed-out"))
@@ -337,3 +361,29 @@ class Agent:
             out += (f"\n\n(Note: {dropped} task(s) not run — per-task sub-agent "
                     f"budget is {self.max_children}.)")
         return out
+
+    REVIEW_REVIEWERS = [("code-reviewer", "correctness and quality", "code-review")]
+
+    def _review_changes(self, target="branch") -> str:
+        """Run the deterministic review pipeline; never raises into dispatch."""
+        def runner(argv, cwd):
+            # Run git as an arg LIST (no shell) so a path with metacharacters can't
+            # inject; `cwd` is already allow-list-confined by git_diff.
+            import subprocess
+            try:
+                proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True,
+                                      timeout=self.command_timeout)
+            except (subprocess.TimeoutExpired, OSError) as exc:
+                return (1, "", str(exc))
+            return (proc.returncode, proc.stdout, proc.stderr)
+        try:
+            return review.run_review(
+                target or "branch",
+                run_children=self._run_children,
+                git_diff_fn=lambda t: review.git_diff(
+                    t, allowed_roots=self.allowed_roots, cwd=self.cwd, runner=runner),
+                reviewers=self.REVIEW_REVIEWERS,
+                standards=(self.memory_store.load_index() if self.memory_store else ""),
+            )
+        except Exception as exc:  # never raise into dispatch
+            return f"Error: review failed: {exc}"

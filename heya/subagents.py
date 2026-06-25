@@ -27,7 +27,7 @@ class Role:
 # the read-only, thread-safe tool surface: safe to run concurrently and never
 # mutates. Used both for the `researcher` role and for parallel sub-agents.
 PARALLEL_SAFE_TOOLS = frozenset({
-    "read_file", "read_guidance", "web_search", "web_fetch", "read_log",
+    "read_file", "read_guidance", "web_search", "web_fetch", "read_log", "search_files",
     "mcp_list_resources", "mcp_read_resource", "mcp_list_prompts", "mcp_get_prompt",
 })
 _RESEARCHER_TOOLS = PARALLEL_SAFE_TOOLS

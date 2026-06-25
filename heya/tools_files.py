@@ -43,6 +43,46 @@ def read_file(path: Path | str, *, allowed_roots: Sequence[Path]) -> str:
         raise ToolError(f"Is a directory, not a file: {resolved}") from exc
 
 
+def search_files(
+    query: str,
+    *,
+    allowed_roots,
+    cwd,
+    path: str | None = None,
+    max_results: int = 80,
+) -> str:
+    """Read-only literal-substring search under an allow-listed folder.
+
+    Walks text files under `path` (default: cwd), returning `relpath:line: text`
+    lines. Never writes, never runs a shell. Binary/oversized files are skipped.
+    """
+    root = resolve_in_allowlist(path or cwd, allowed_roots)
+    base = root if root.is_dir() else root.parent
+    hits: list[str] = []
+    for entry in sorted(base.rglob("*")):
+        if not entry.is_file():
+            continue
+        if any(part in {".git", "node_modules", "vendor", ".venv"} for part in entry.parts):
+            continue
+        try:
+            resolve_in_allowlist(entry, allowed_roots)  # re-resolve: follows symlinks, rejects escapes
+        except ToolError:
+            continue  # a symlink (or path) whose target escapes the allow-list
+        try:
+            text = entry.read_text(encoding="utf-8", errors="strict")
+        except (UnicodeDecodeError, OSError):
+            continue  # skip binary / unreadable
+        for n, line in enumerate(text.splitlines(), start=1):
+            if query in line:
+                rel = entry.relative_to(base)
+                hits.append(f"{rel}:{n}: {line.strip()[:200]}")
+                if len(hits) >= max_results:
+                    return "\n".join(hits) + f"\n…(truncated at {max_results} matches)"
+    if not hits:
+        return f"No matches for {query!r}."
+    return "\n".join(hits)
+
+
 def write_file(path: Path | str, content: str, *, allowed_roots: Sequence[Path]) -> int:
     """Write UTF-8 content inside the allow-list, creating parents. Returns bytes written."""
     resolved = resolve_in_allowlist(path, allowed_roots)
