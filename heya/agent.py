@@ -14,9 +14,14 @@ from concurrent.futures import TimeoutError as FuturesTimeout
 from pathlib import Path
 from typing import Any
 
+import json
+
 from . import review
 
 from .approval import ApprovalPolicy
+from .reproduction import (
+    parse_issue_context, repro_workdir, gate_verdict, render_report, render_comment,
+)
 from .context import build_summarizer, compact
 from .memory import build_memory_block
 from .subagents import (
@@ -168,7 +173,7 @@ class Agent:
     def _loop(self) -> str:
         can_spawn = self.spawn_depth < self.max_spawn_depth
         with_memory = self.memory_store is not None
-        tools = build_tool_schemas(self.mcp_runtime, can_spawn=can_spawn, with_memory=with_memory, with_review=can_spawn)
+        tools = build_tool_schemas(self.mcp_runtime, can_spawn=can_spawn, with_memory=with_memory, with_review=can_spawn, with_repro=can_spawn)
         if self.tool_filter is not None:
             tools = [t for t in tools if t["function"]["name"] in self.tool_filter]
         for _ in range(self.max_iters):
@@ -269,6 +274,8 @@ class Agent:
             spawn_agents_fn=self._spawn_agents,
             memory_store=self.memory_store,
             review_fn=self._review_changes,
+            start_repro_fn=self._start_reproduction,
+            repro_verdict_fn=self._record_repro_verdict,
         )
         mutating = call.name in ("write_file", "run_command", "run_wp_cli")
         if mutating and not output.startswith(("Error", "Started background process", "Declined")):
@@ -484,3 +491,62 @@ class Agent:
             )
         except Exception as exc:  # never raise into dispatch
             return f"Error: review failed: {exc}"
+
+    def _start_reproduction(self, **fields) -> str:
+        try:
+            ctx = parse_issue_context(fields)
+            if ctx.missing:
+                return (
+                    "blocked: needs-info. Missing required fields: "
+                    + ", ".join(ctx.missing)
+                    + ". No environment was built. Ask the reporter for these, "
+                    "then call start_reproduction again."
+                )
+            slug = fields.get("slug") or ctx.source or "issue"
+            base = repro_workdir(slug, allowed_roots=self.allowed_roots, cwd=self.cwd)
+            (base / "repro-spec.json").write_text(json.dumps(ctx.to_dict(), indent=2))
+            return (
+                f"Working folder ready: {base}\n"
+                f"Spec written to repro-spec.json. Now run the funnel "
+                f"(read_guidance('reproduction')): update -> theme test -> plugin "
+                f"test -> clean Playground repro. Code-level checks before the "
+                f"browser. Save artifacts under {base / 'evidence'}. End with "
+                f"record_repro_verdict."
+            )
+        except Exception as exc:  # never raise into dispatch
+            return f"Error: start_reproduction failed: {exc}"
+
+    def _record_repro_verdict(self, **fields) -> str:
+        # **fields (not explicit kwargs) so an unexpected key from the model can
+        # never raise a bind-time TypeError outside this try/except.
+        try:
+            slug = fields.get("slug") or "issue"
+            verdict = fields.get("verdict") or "blocked"
+            evidence = list(fields.get("evidence") or [])
+            what_happens = fields.get("what_happens", "")
+            summary = fields.get("summary", "")
+            suggested_next_step = fields.get("suggested_next_step", "")
+            pairs = [tuple(vr) for vr in (fields.get("version_results") or []) if len(tuple(vr)) == 2]
+            final = gate_verdict(verdict, evidence)
+            base = repro_workdir(slug, allowed_roots=self.allowed_roots, cwd=self.cwd)
+            # Re-parse a minimal context for rendering from the saved spec when present.
+            spec_path = base / "repro-spec.json"
+            ctx = parse_issue_context(
+                json.loads(spec_path.read_text()) if spec_path.is_file() else {"source": slug}
+            )
+            report = render_report(ctx, final, evidence, what_happens, summary, pairs, suggested_next_step)
+            comment = render_comment(ctx, final, evidence, what_happens, summary, pairs, suggested_next_step)
+            (base / "report.md").write_text(report)
+            (base / "comment.md").write_text(comment)
+            note = ""
+            if final != verdict:
+                note = (
+                    f" (verdict downgraded from '{verdict}' to '{final}': no evidence "
+                    f"was provided)"
+                )
+            return (
+                f"Verdict: {final}{note}. Wrote {base / 'report.md'} and "
+                f"{base / 'comment.md'}. Not posted anywhere; share or post them yourself."
+            )
+        except Exception as exc:  # never raise into dispatch
+            return f"Error: record_repro_verdict failed: {exc}"
