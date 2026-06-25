@@ -6,6 +6,7 @@ without stdin and the CLI supplies a real prompt.
 """
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 
 GATED_TOOLS = frozenset({
@@ -38,6 +39,7 @@ class ApprovalPolicy:
         self._approver = approver
         self._allow = tuple(allow)
         self._always: set[str] = set()
+        self._lock = threading.Lock()
 
     @staticmethod
     def _command_of(detail: str) -> str:
@@ -56,11 +58,14 @@ class ApprovalPolicy:
         if any(c.startswith(prefix) for c in candidates for prefix in self._allow if prefix):
             return True
         display = f"[{label}] {detail}" if label else detail
-        decision = self._approver(name, display)
-        if decision == "always":
-            self._always.add(name)
-            return True
-        return decision == "yes"
+        with self._lock:
+            if name in self._always:  # double-checked: another thread may have set it
+                return True
+            decision = self._approver(name, display)
+            if decision == "always":
+                self._always.add(name)
+                return True
+            return decision == "yes"
 
     def check_sampling(self, server: str, preview: str) -> bool:
         """Gate a server-initiated sampling request, reusing the allow list."""
@@ -69,8 +74,11 @@ class ApprovalPolicy:
             return True
         if any(name.startswith(prefix) for prefix in self._allow if prefix):
             return True
-        decision = self._approver(name, f"sampling for {server}: {preview}")
-        if decision == "always":
-            self._always.add(name)
-            return True
-        return decision == "yes"
+        with self._lock:
+            if name in self._always:
+                return True
+            decision = self._approver(name, f"sampling for {server}: {preview}")
+            if decision == "always":
+                self._always.add(name)
+                return True
+            return decision == "yes"

@@ -1,7 +1,10 @@
 import pytest
+import threading
+import time
 from heya.subagents import (
     Role, ROLES, resolve_role, build_child_system_prompt, SUBAGENT_FRAMING,
-    LabeledStream,
+    LabeledStream, PARALLEL_SAFE_TOOLS, parallel_label, format_parallel_report,
+    MAX_REPORT_CHARS, LockedSink,
 )
 
 
@@ -95,3 +98,65 @@ def test_labeled_stream_empty_write_is_noop():
     s.write("")
     s.close()
     assert out == []
+
+
+def test_parallel_safe_tools_are_read_only():
+    for forbidden in ("write_file", "run_command", "run_wp_cli", "wp_playground",
+                      "browser_navigate", "browser_click", "kill_command"):
+        assert forbidden not in PARALLEL_SAFE_TOOLS
+    for allowed in ("read_file", "web_search", "read_log", "mcp_read_resource"):
+        assert allowed in PARALLEL_SAFE_TOOLS
+
+
+def test_parallel_label():
+    assert parallel_label("researcher", 1) == "researcher#1"
+    assert parallel_label(None, 2) == "agent#2"
+
+
+def test_format_parallel_report_ok():
+    out = format_parallel_report("researcher#1", "look at X", "found Y")
+    assert out.startswith("## [researcher#1] look at X")
+    assert "found Y" in out
+
+
+def test_format_parallel_report_status_prefix():
+    failed = format_parallel_report("agent#1", "t", "boom", status="failed")
+    assert "(failed)" in failed
+    timed = format_parallel_report("agent#1", "t", "", status="timed-out")
+    assert "(timed out)" in timed
+
+
+def test_format_parallel_report_truncates_with_marker():
+    big = "x" * (MAX_REPORT_CHARS + 100)
+    out = format_parallel_report("agent#1", "t", big)
+    assert "[report truncated]" in out
+    assert len(out) < len(big) + 200  # bounded, not the full body
+
+
+def test_format_parallel_report_no_marker_when_short():
+    out = format_parallel_report("agent#1", "t", "short body")
+    assert "[report truncated]" not in out
+
+
+def test_locked_sink_serializes_concurrent_writes():
+    # A deliberately non-atomic sink: appends char-by-char with a yield between,
+    # so without the lock concurrent writers interleave. With the lock, each
+    # write's characters stay contiguous.
+    chars = []
+
+    def slow_sink(text):
+        for ch in text:
+            chars.append(ch)
+            time.sleep(0.0005)
+
+    sink = LockedSink(slow_sink)
+    msgs = [f"<{i:02d}>" for i in range(12)]
+    threads = [threading.Thread(target=sink.write, args=(m,)) for m in msgs]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    out = "".join(chars)
+    assert len(out) == sum(len(m) for m in msgs)
+    for m in msgs:
+        assert m in out  # each message contiguous, not interleaved

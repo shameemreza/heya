@@ -74,6 +74,45 @@ _SPAWN_AGENT_SCHEMA = {
     },
 }
 
+_SPAWN_AGENTS_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "spawn_agents",
+        "description": (
+            "Fan out several READ-ONLY sub-agents to run in parallel — each on a "
+            "self-contained task — and get all their reports back at once to "
+            "synthesize. Use for independent research/review/analysis you want done "
+            "concurrently (e.g. review a diff for bugs, security, and style at the "
+            "same time). Each sub-agent is read-only (no file writes, no browser, no "
+            "Playground) and sees none of this conversation, so give each a complete, "
+            "DISTINCT task to avoid duplicated work. For writing or browser work, use "
+            "spawn_agent (one at a time) instead."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tasks": {
+                    "type": "array",
+                    "description": "The parallel tasks; each runs in its own read-only sub-agent.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "task": {"type": "string",
+                                     "description": "Self-contained task for one sub-agent."},
+                            "role": {"type": "string", "enum": sorted(_ROLES),
+                                     "description": "Optional specialization."},
+                            "instructions": {"type": "string",
+                                             "description": "Optional extra focusing guidance."},
+                        },
+                        "required": ["task"],
+                    },
+                },
+            },
+            "required": ["tasks"],
+        },
+    },
+}
+
 TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
@@ -224,7 +263,10 @@ def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False) -> list[dic
 
     Includes the spawn_agent tool only when `can_spawn` (depth-0 agents only).
     """
-    base = TOOL_SCHEMAS + [_SPAWN_AGENT_SCHEMA] if can_spawn else TOOL_SCHEMAS
+    base = (
+        TOOL_SCHEMAS + [_SPAWN_AGENT_SCHEMA, _SPAWN_AGENTS_SCHEMA]
+        if can_spawn else TOOL_SCHEMAS
+    )
     if mcp_runtime is None:
         return base
     extra: list[dict] = []
@@ -260,6 +302,7 @@ def dispatch_tool(
     playground_session=None,
     mcp_runtime=None,
     spawn_fn=None,
+    spawn_agents_fn=None,
 ) -> str:
     """Run one model tool-call. Returns a string result (errors included)."""
     try:
@@ -382,6 +425,10 @@ def dispatch_tool(
             return truncate_output(
                 spawn_fn(task, args.get("role"), args.get("instructions"))
             )
+        if name == "spawn_agents":
+            if spawn_agents_fn is None:
+                return f"Error: unknown tool {name!r}."
+            return spawn_agents_fn(args["tasks"])  # method truncates per report itself
         return f"Error: unknown tool {name!r}."
     except ToolError as exc:
         return f"Error: {exc}"
@@ -436,6 +483,15 @@ def describe_call(name: str, arguments: str) -> str:
         role = args.get("role") or "agent"
         task = (args.get("task") or "?")[:60]
         return f"spawn_agent → {role}: {task}"
+    if name == "spawn_agents":
+        raw = args.get("tasks")
+        tasks = raw if isinstance(raw, list) else []
+        summary = "; ".join(
+            (t.get("task", "?") if isinstance(t, dict) else str(t))[:30]
+            for t in tasks[:3]
+        )
+        extra = "" if len(tasks) <= 3 else f" (+{len(tasks) - 3} more)"
+        return f"spawn_agents → {len(tasks)} agents: {summary}{extra}"
     if name.startswith(MCP_PREFIX):
         # name is mcp__<server>__<tool>; recover a readable server.tool(args)
         body = name[len(MCP_PREFIX):]

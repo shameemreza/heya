@@ -5,6 +5,7 @@ this module; this module never imports Agent.
 """
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -23,10 +24,13 @@ class Role:
     tools: frozenset[str] | None = None  # None = inherit full toolbox
 
 
-_RESEARCHER_TOOLS = frozenset({
+# the read-only, thread-safe tool surface: safe to run concurrently and never
+# mutates. Used both for the `researcher` role and for parallel sub-agents.
+PARALLEL_SAFE_TOOLS = frozenset({
     "read_file", "read_guidance", "web_search", "web_fetch", "read_log",
     "mcp_list_resources", "mcp_read_resource", "mcp_list_prompts", "mcp_get_prompt",
 })
+_RESEARCHER_TOOLS = PARALLEL_SAFE_TOOLS
 _REVIEWER_TOOLS = frozenset({"read_file", "read_guidance", "read_log"})
 
 ROLES: dict[str, Role] = {
@@ -63,6 +67,25 @@ def build_child_system_prompt(
     return "\n\n".join(parts)
 
 
+def parallel_label(role_name: str | None, index: int) -> str:
+    """A distinguishable label for one parallel child (same-role children differ)."""
+    return f"{role_name or 'agent'}#{index}"
+
+
+MAX_REPORT_CHARS = 6000
+
+_STATUS_PREFIX = {"ok": "", "failed": "(failed) ", "timed-out": "(timed out) "}
+
+
+def format_parallel_report(label: str, task: str, body: str, *, status: str = "ok") -> str:
+    """Format one parallel child's report as a section, truncating the body with an
+    explicit marker (never a silent cut) so the parent's synthesis sees the loss."""
+    text = body or ""
+    if len(text) > MAX_REPORT_CHARS:
+        text = text[:MAX_REPORT_CHARS] + "\n…[report truncated]"
+    return f"## [{label}] {_STATUS_PREFIX.get(status, '')}{task}\n{text}"
+
+
 class LabeledStream:
     """Wrap a text sink so each completed line is prefixed with [label].
 
@@ -88,3 +111,17 @@ class LabeledStream:
         if self._buf:
             self._sink(self._prefix + self._buf)
             self._buf = ""
+
+
+class LockedSink:
+    """Serialize writes to a text sink so concurrent sub-agents never interleave a
+    single write. Callers (LabeledStream) already emit whole lines, so locking each
+    write makes each labeled line atomic on the shared terminal."""
+
+    def __init__(self, sink: Callable[[str], None]) -> None:
+        self._sink = sink
+        self._lock = threading.Lock()
+
+    def write(self, text: str) -> None:
+        with self._lock:
+            self._sink(text)
