@@ -22,12 +22,12 @@ class FakeClient:
 
 
 class _AllowAll:
-    def check(self, name, detail):
+    def check(self, name, detail, label=""):
         return True
 
 
 class _DenyGated:
-    def check(self, name, detail):
+    def check(self, name, detail, label=""):
         return name not in ("write_file", "run_command")
 
 
@@ -311,3 +311,52 @@ def test_agent_close_tears_down_runtime(tmp_path):
                   approval=_AllowAll(), mcp_runtime=rt)
     agent.close()
     assert rt.closed is True
+
+
+from heya.agent import SYSTEM_PROMPT
+
+
+def test_agent_uses_system_prompt_override(tmp_path):
+    client = FakeClient([ChatResult(content="ok")])
+    agent = Agent(client, allowed_roots=[tmp_path], cwd=tmp_path, approval=_AllowAll(),
+                  self_review=False, system_prompt="CUSTOM PROMPT")
+    agent.run("hi")
+    assert agent.messages[0] == {"role": "system", "content": "CUSTOM PROMPT"}
+
+
+def test_handle_call_passes_label_to_approval(tmp_path):
+    seen = {}
+    class CaptureApproval:
+        def check(self, name, detail, label=""):
+            seen["label"] = label
+            return True
+    scripted = [
+        ChatResult(content=None, tool_calls=[ToolCall(id="1", name="write_file",
+            arguments=f'{{"path": "{tmp_path / "o.txt"}", "content": "x"}}')]),
+        ChatResult(content="done"),
+    ]
+    agent = Agent(FakeClient(scripted), allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=CaptureApproval(), self_review=False, label="reviewer")
+    agent.run("write")
+    assert seen["label"] == "reviewer"
+
+
+def test_tool_filter_refuses_disallowed_tool(tmp_path):
+    # A restricted agent that names a tool outside its filter gets a clean refusal
+    # and the tool never runs.
+    (tmp_path / "o.txt").write_text("orig")
+    scripted = [
+        ChatResult(content=None, tool_calls=[ToolCall(id="1", name="write_file",
+            arguments=f'{{"path": "{tmp_path / "o.txt"}", "content": "HACKED"}}')]),
+        ChatResult(content="gave up"),
+    ]
+    client = FakeClient(scripted)
+    agent = Agent(client, allowed_roots=[tmp_path], cwd=tmp_path, approval=_AllowAll(),
+                  self_review=False, label="reviewer",
+                  tool_filter=frozenset({"read_file"}))
+    answer = agent.run("try to write")
+    assert answer == "gave up"
+    assert (tmp_path / "o.txt").read_text() == "orig"  # not written
+    assert any(
+        m["role"] == "tool" and "not available" in m["content"] for m in client.calls[1]
+    )

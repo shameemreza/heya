@@ -58,6 +58,12 @@ class Agent:
         wp_default_root=None,
         playground_session=None,
         mcp_runtime=None,
+        label: str = "",
+        spawn_depth: int = 0,
+        max_spawn_depth: int = 1,
+        max_children: int = 4,
+        tool_filter: frozenset[str] | None = None,
+        system_prompt: str = SYSTEM_PROMPT,
     ) -> None:
         self.client = client
         self.allowed_roots = list(allowed_roots)
@@ -74,7 +80,16 @@ class Agent:
         self.wp_default_root = wp_default_root
         self.playground_session = playground_session
         self.mcp_runtime = mcp_runtime
-        self.messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        self.label = label
+        self.spawn_depth = spawn_depth
+        self.max_spawn_depth = max_spawn_depth
+        self.max_children = max_children
+        self.tool_filter = tool_filter
+        self._root_on_text = on_text
+        self._children_spawned = 0
+        self.messages: list[dict[str, Any]] = [
+            {"role": "system", "content": system_prompt}
+        ]
         self._mutated = False
 
     def run(self, user_message: str) -> str:
@@ -129,7 +144,9 @@ class Agent:
 
     def _handle_call(self, call) -> str:
         detail = describe_call(call.name, call.arguments)
-        if not self.approval.check(call.name, detail):
+        if self.tool_filter is not None and call.name not in self.tool_filter:
+            return f"Error: tool {call.name!r} is not available to the {self.label} sub-agent."
+        if not self.approval.check(call.name, detail, label=self.label):
             return f"Declined by user: {detail}"
         output = dispatch_tool(
             call.name,
