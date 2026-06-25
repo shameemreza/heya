@@ -17,11 +17,13 @@ from typing import Any
 from . import review
 
 from .approval import ApprovalPolicy
+from .context import build_summarizer, compact
 from .memory import build_memory_block
 from .subagents import (
     LabeledStream, LockedSink, PARALLEL_SAFE_TOOLS, build_child_system_prompt,
     format_parallel_report, parallel_label, resolve_role, ROLES,
 )
+from .text import estimate_messages_tokens
 from .tools import build_tool_schemas, describe_call, dispatch_tool
 
 SYSTEM_PROMPT = (
@@ -78,6 +80,11 @@ class Agent:
         max_concurrent: int = 4,
         root_on_text: Callable[[str], None] | None = None,
         memory_store=None,
+        context_window: int = 32768,
+        compaction_threshold: float = 0.85,
+        reserve_tokens: int = 2048,
+        keep_recent_tokens: int = 4096,
+        task_token_budget: int = 200000,
     ) -> None:
         self.client = client
         self.allowed_roots = list(allowed_roots)
@@ -103,6 +110,18 @@ class Agent:
         self._root_on_text = root_on_text if root_on_text is not None else on_text
         self._labeled_stream = None
         self._children_spawned = 0
+        self.context_window = context_window
+        self.compaction_threshold = compaction_threshold
+        self.reserve_tokens = reserve_tokens
+        self.keep_recent_tokens = keep_recent_tokens
+        self.task_token_budget = task_token_budget
+        self.session_tokens = 0
+        self._task_tokens = 0
+        self._compaction_warned = False
+        # Lazy: access self.client.chat only when a summary actually fires, so an
+        # Agent built with a client that has no chat() (e.g. test fakes, or a
+        # streaming-only client) never crashes at construction.
+        self._summarize = build_summarizer(lambda m: self.client.chat(m))
         self.memory_store = memory_store
         system_content = system_prompt
         if memory_store is not None:
@@ -115,6 +134,8 @@ class Agent:
         self.messages.append({"role": "user", "content": user_message})
         self._mutated = False
         self._children_spawned = 0  # per-task fan-out budget (spec: max_children per task)
+        self._task_tokens = 0
+        self._compaction_warned = False
         answer = self._loop()
         if self.self_review and self._mutated:
             self.messages.append({"role": "user", "content": SELF_REVIEW_NUDGE})
@@ -148,7 +169,11 @@ class Agent:
         if self.tool_filter is not None:
             tools = [t for t in tools if t["function"]["name"] in self.tool_filter]
         for _ in range(self.max_iters):
+            self._maybe_compact()
+            if self.task_token_budget and self._task_tokens >= self.task_token_budget:
+                return f"Stopped: reached this task's token budget ({self._task_tokens} tokens)."
             result = self.client.chat_stream(self.messages, tools=tools, on_text=self.on_text)
+            self._account(result)
             self.messages.append(self._assistant_message(result))
             if not result.tool_calls:
                 return result.content or ""
@@ -158,6 +183,27 @@ class Agent:
                     {"role": "tool", "tool_call_id": call.id, "content": output}
                 )
         return "Stopped: reached max iterations without a final answer."
+
+    def _maybe_compact(self) -> None:
+        trigger = self.context_window * self.compaction_threshold - self.reserve_tokens
+        before = estimate_messages_tokens(self.messages)
+        if before < trigger:
+            return
+        self.messages = compact(
+            self.messages, context_window=self.context_window,
+            threshold=self.compaction_threshold, reserve_tokens=self.reserve_tokens,
+            keep_recent_tokens=self.keep_recent_tokens, summarize_fn=self._summarize,
+        )
+        after = estimate_messages_tokens(self.messages)
+        if after >= before * 0.9 and not self._compaction_warned:
+            self._compaction_warned = True
+            if self._root_on_text is not None:
+                self._root_on_text("\n[context near full; could not reduce further]\n")
+
+    def _account(self, result) -> None:
+        tokens = result.usage.total_tokens if getattr(result, "usage", None) else 0
+        self._task_tokens += tokens
+        self.session_tokens += tokens
 
     def _assistant_message(self, result) -> dict[str, Any]:
         message: dict[str, Any] = {"role": "assistant", "content": result.content or ""}
@@ -250,6 +296,11 @@ class Agent:
             system_prompt=build_child_system_prompt(SYSTEM_PROMPT, role, instructions),
             max_concurrent=self.max_concurrent,
             root_on_text=self._root_on_text,
+            context_window=self.context_window,
+            compaction_threshold=self.compaction_threshold,
+            reserve_tokens=self.reserve_tokens,
+            keep_recent_tokens=self.keep_recent_tokens,
+            task_token_budget=self.task_token_budget,
         )
         child._labeled_stream = stream
         return child

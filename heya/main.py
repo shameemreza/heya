@@ -9,8 +9,9 @@ from typing import Any, Callable, TextIO
 from .agent import Agent, DEFAULT_MAX_ITERS
 from .approval import ApprovalPolicy, prompt_stdin
 from .config import (
-    load_allowed_roots, load_approval_allow, load_browser_headless, load_guidance_paths,
-    load_mcp_servers, load_memory_path, load_profiles, load_search_config, load_wp_path, resolve_profile,
+    load_allowed_roots, load_approval_allow, load_browser_headless, load_context_config,
+    load_guidance_paths, load_mcp_servers, load_memory_path, load_profiles, load_search_config,
+    load_wp_path, resolve_profile,
 )
 from .llm_client import LLMClient
 from .mcp_runtime import MCPRuntime
@@ -55,6 +56,7 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
         sampling_approver=lambda server, preview: approval.check_sampling(server, preview),
     )
     mcp_runtime.connect_all()
+    ctx = load_context_config()
 
     def on_text(chunk: str) -> None:
         sys.stdout.write(chunk)
@@ -82,6 +84,11 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
         wp_default_root=wp_default_root,
         mcp_runtime=mcp_runtime,
         memory_store=memory_store,
+        context_window=profile.context_window,
+        compaction_threshold=ctx.threshold,
+        reserve_tokens=ctx.reserve_tokens,
+        keep_recent_tokens=ctx.keep_recent_tokens,
+        task_token_budget=ctx.task_token_budget,
     )
 
 
