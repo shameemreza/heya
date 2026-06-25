@@ -111,10 +111,16 @@ def git_diff(target, *, allowed_roots: Sequence[Path], cwd, runner) -> str:
     if target == "staged":
         code, out, err = run(["git", "diff", "--cached"])
     elif target == "branch":
-        base_code, base_out, base_err = run(["git", "merge-base", "HEAD", "main"])
-        if base_code != 0:
-            return _git_error(base_err)
-        base = base_out.strip()
+        base = None
+        last_err = ""
+        for ref in ("main", "master", "origin/HEAD"):
+            base_code, base_out, base_err = run(["git", "merge-base", "HEAD", ref])
+            if base_code == 0:
+                base = base_out.strip()
+                break
+            last_err = base_err
+        if base is None:
+            return _git_error(last_err)
         code, out, err = run(["git", "diff", base, "HEAD"])
     else:
         # treat target as a path to diff (working tree changes for that path)

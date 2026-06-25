@@ -117,7 +117,11 @@ def test_git_diff_empty_is_clean_message(tmp_path):
 
 
 def test_git_diff_not_a_repo(tmp_path):
-    runner = _fake_runner([(128, "", "fatal: not a git repository")])
+    runner = _fake_runner([
+        (128, "", "fatal: not a git repository"),
+        (128, "", "fatal: not a git repository"),
+        (128, "", "fatal: not a git repository"),
+    ])
     out = git_diff("branch", allowed_roots=[tmp_path], cwd=tmp_path, runner=runner)
     assert "not a git repository" in out.lower()
 
@@ -292,3 +296,23 @@ def test_run_review_accepts_3_and_4_tuples():
                git_diff_fn=lambda t: "diff --git a/x b/x\n+x\n",
                reviewers=[("security-reviewer", "security", "wp-security", "TAINT_MARKER")])
     assert "TAINT_MARKER" in captured[1][0]["prompt"]
+
+
+def test_git_diff_falls_back_to_master(tmp_path):
+    runner = _fake_runner([
+        (1, "", "fatal: no main"),          # merge-base HEAD main fails
+        (0, "deadbeef\n", ""),              # merge-base HEAD master succeeds
+        (0, "diff --git a/x b/x\n+x\n", ""),  # diff
+    ])
+    out = git_diff("branch", allowed_roots=[tmp_path], cwd=tmp_path, runner=runner)
+    assert "diff --git" in out
+    assert any("master" in argv for argv in runner.calls)
+    assert any("deadbeef" in argv for argv in runner.calls)  # diff used master's base
+
+
+def test_git_diff_all_base_refs_fail(tmp_path):
+    runner = _fake_runner([
+        (1, "", "no main"), (1, "", "no master"), (1, "", "no origin"),
+    ])
+    out = git_diff("branch", allowed_roots=[tmp_path], cwd=tmp_path, runner=runner)
+    assert "could not get a diff" in out.lower()
