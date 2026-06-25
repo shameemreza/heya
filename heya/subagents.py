@@ -5,6 +5,7 @@ this module; this module never imports Agent.
 """
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -110,3 +111,17 @@ class LabeledStream:
         if self._buf:
             self._sink(self._prefix + self._buf)
             self._buf = ""
+
+
+class LockedSink:
+    """Serialize writes to a text sink so concurrent sub-agents never interleave a
+    single write. Callers (LabeledStream) already emit whole lines, so locking each
+    write makes each labeled line atomic on the shared terminal."""
+
+    def __init__(self, sink: Callable[[str], None]) -> None:
+        self._sink = sink
+        self._lock = threading.Lock()
+
+    def write(self, text: str) -> None:
+        with self._lock:
+            self._sink(text)

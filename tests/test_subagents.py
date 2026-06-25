@@ -1,8 +1,10 @@
 import pytest
+import threading
+import time
 from heya.subagents import (
     Role, ROLES, resolve_role, build_child_system_prompt, SUBAGENT_FRAMING,
     LabeledStream, PARALLEL_SAFE_TOOLS, parallel_label, format_parallel_report,
-    MAX_REPORT_CHARS,
+    MAX_REPORT_CHARS, LockedSink,
 )
 
 
@@ -134,3 +136,27 @@ def test_format_parallel_report_truncates_with_marker():
 def test_format_parallel_report_no_marker_when_short():
     out = format_parallel_report("agent#1", "t", "short body")
     assert "[report truncated]" not in out
+
+
+def test_locked_sink_serializes_concurrent_writes():
+    # A deliberately non-atomic sink: appends char-by-char with a yield between,
+    # so without the lock concurrent writers interleave. With the lock, each
+    # write's characters stay contiguous.
+    chars = []
+
+    def slow_sink(text):
+        for ch in text:
+            chars.append(ch)
+            time.sleep(0.0005)
+
+    sink = LockedSink(slow_sink)
+    msgs = [f"<{i:02d}>" for i in range(12)]
+    threads = [threading.Thread(target=sink.write, args=(m,)) for m in msgs]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    out = "".join(chars)
+    assert len(out) == sum(len(m) for m in msgs)
+    for m in msgs:
+        assert m in out  # each message contiguous, not interleaved
