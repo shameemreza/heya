@@ -755,3 +755,12 @@ def test_spawn_agent_dispatch_weak_defaults_false():
         allowed_roots=[], cwd=Path("."), timeout=10, spawn_fn=spawn_fn,
     )
     assert seen["weak"] is False
+
+
+def test_read_guidance_reproduction_present():
+    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    out = read_guidance("reproduction", sources=[BUNDLED_GUIDANCE_DIR])
+    assert "funnel" in out.lower()
+    assert "no evidence, no verdict" in out.lower()
+    # verdict enum present
+    assert "fixed-since-report" in out
