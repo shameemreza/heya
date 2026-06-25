@@ -374,8 +374,12 @@ class Agent:
         def work(i, spec):
             child = None
             try:
+                raw_role = spec.get("role")
+                role = (
+                    resolve_role(raw_role) if isinstance(raw_role, str) else raw_role
+                )
                 child = self._make_child(
-                    spec.get("role"), spec.get("instructions"),
+                    role, spec.get("instructions"),
                     parallel=True, index=i + 1,
                     sink=locked.write if locked is not None else None,
                 )
@@ -403,8 +407,13 @@ class Agent:
         out = []
         for i, spec in enumerate(specs):
             role = spec.get("role")
-            label = spec.get("label") or parallel_label(
-                role.name if role is not None else None, i + 1)
+            if role is None:
+                role_name = None
+            elif isinstance(role, str):
+                role_name = role
+            else:
+                role_name = role.name
+            label = spec.get("label") or parallel_label(role_name, i + 1)
             out.append((label, results[i]))
         return out
 

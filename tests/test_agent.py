@@ -988,3 +988,23 @@ def test_make_child_default_uses_main_client(tmp_path):
     child = agent._make_child(None, None)
     assert child.client is client             # main by default
     assert child.weak_client is weak          # weak reference still threaded
+
+
+def test_review_children_use_main_client_not_weak(tmp_path):
+    weak = FakeChatClient(ChatResult(content="x"))
+    agent, client = make_agent(tmp_path, [ChatResult(content="x")], weak_client=weak)
+    captured = []
+    orig = agent._make_child
+
+    def spy(role, instructions, **kw):
+        ch = orig(role, instructions, **kw)
+        captured.append(ch)
+        return ch
+
+    agent._make_child = spy
+    agent._run_children([
+        {"prompt": "review this", "role": "reviewer"},
+    ])
+    assert captured, "expected at least one review child"
+    assert all(ch.client is client for ch in captured)
+    assert all(ch.client is not weak for ch in captured)

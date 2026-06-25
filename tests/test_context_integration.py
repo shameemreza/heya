@@ -61,3 +61,35 @@ def test_long_conversation_is_compacted_and_answers(tmp_path):
             for m in call)
         for call in client.calls
     ), "compaction did not fire — a later call should carry the summary marker or stub"
+
+
+def test_agent_built_with_weak_client_summarizes_on_weak(tmp_path):
+    from heya.agent import Agent
+    from heya.llm_client import ChatResult, Usage
+
+    class FakeChat:
+        def __init__(self):
+            self.calls = 0
+
+        def chat(self, messages):
+            self.calls += 1
+            return ChatResult(content="WEAK SUMMARY", usage=Usage(1, 1))
+
+    weak = FakeChat()
+
+    class MainStream:
+        def chat_stream(self, messages, tools=None, on_text=None):
+            return ChatResult(content="done")
+
+    agent = Agent(
+        MainStream(),
+        allowed_roots=[tmp_path],
+        cwd=tmp_path,
+        self_review=False,
+        weak_client=weak,
+    )
+    note = agent._summarize([{"role": "user", "content": "task text"}])
+    assert "WEAK SUMMARY" in note
+    assert weak.calls == 1
+    assert agent.weak_tokens == 2
+    assert agent._task_tokens == 0
