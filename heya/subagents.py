@@ -61,3 +61,30 @@ def build_child_system_prompt(
     if instructions:
         parts.append(instructions)
     return "\n\n".join(parts)
+
+
+class LabeledStream:
+    """Wrap a text sink so each completed line is prefixed with [label].
+
+    Buffers partial lines so a label is only ever added at a line start, never
+    mid-token (chat output arrives in arbitrary chunks). close() flushes a final
+    unterminated line.
+    """
+
+    def __init__(self, sink: Callable[[str], None], label: str) -> None:
+        self._sink = sink
+        self._prefix = f"[{label}] "
+        self._buf = ""
+
+    def write(self, text: str) -> None:
+        if not text:
+            return
+        self._buf += text
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            self._sink(self._prefix + line + "\n")
+
+    def close(self) -> None:
+        if self._buf:
+            self._sink(self._prefix + self._buf)
+            self._buf = ""
