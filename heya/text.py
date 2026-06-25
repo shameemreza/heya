@@ -23,3 +23,25 @@ def truncate_output(text: str, *, max_chars: int = 30000, max_line: int = 2000) 
     half = max_chars // 2
     marker = f"\n… [truncated {dropped} chars] …\n"
     return capped[:half] + marker + capped[-half:]
+
+
+def estimate_tokens(text: str) -> int:
+    """Rough token count without a tokenizer: ~4 chars per token. Over-counts code
+    and non-English, which biases the context guard safely toward compacting early."""
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
+
+
+def estimate_messages_tokens(messages: list[dict]) -> int:
+    """Estimate the token size of an OpenAI-style message list (content + tool-call
+    arguments + a small per-message envelope)."""
+    total = 0
+    for m in messages:
+        total += estimate_tokens(m.get("content") or "")
+        total += 4  # per-message envelope
+        for call in m.get("tool_calls") or []:
+            fn = call.get("function") or {}
+            total += estimate_tokens(fn.get("arguments") or "")
+            total += estimate_tokens(fn.get("name") or "")
+    return total

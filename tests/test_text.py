@@ -1,4 +1,29 @@
-from heya.text import truncate_output
+from heya.text import truncate_output, estimate_tokens, estimate_messages_tokens
+
+
+def test_estimate_tokens_empty_is_zero():
+    assert estimate_tokens("") == 0
+    assert estimate_tokens(None or "") == 0
+
+
+def test_estimate_tokens_scales_and_is_at_least_one():
+    assert estimate_tokens("abcd") == 1          # 4 chars / 4
+    assert estimate_tokens("a") == 1             # non-empty floors to 1
+    assert estimate_tokens("x" * 400) == 100
+    assert estimate_tokens("x" * 4000) > estimate_tokens("x" * 400)  # monotonic
+
+
+def test_estimate_messages_tokens_counts_content_and_tool_calls():
+    messages = [
+        {"role": "system", "content": "x" * 40},          # ~10
+        {"role": "user", "content": "x" * 40},            # ~10
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"type": "function", "function": {"name": "read_file", "arguments": "x" * 40}}]},
+    ]
+    total = estimate_messages_tokens(messages)
+    assert total >= 20  # content + tool-call arguments counted
+    # adding a message increases the total
+    assert estimate_messages_tokens(messages + [{"role": "user", "content": "y" * 40}]) > total
 
 
 def test_short_text_unchanged():
