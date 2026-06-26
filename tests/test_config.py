@@ -538,6 +538,29 @@ def test_load_skill_paths_explicit(tmp_path):
     assert str(out[1]) == "/abs/skills"
 
 
+from heya.config import load_hooks_config
+
+
+def test_load_hooks_config_default_disabled(tmp_path):
+    enabled, sources = load_hooks_config(tmp_path / "nope.toml")
+    assert enabled is False
+    assert any(str(s).endswith(".claude/settings.json") for s in sources)
+
+
+def test_load_hooks_config_enabled(tmp_path):
+    p = tmp_path / "c.toml"
+    p.write_text("[hooks]\nenabled = true\n")
+    enabled, _ = load_hooks_config(p)
+    assert enabled is True
+
+
+def test_load_hooks_config_explicit_sources(tmp_path):
+    p = tmp_path / "c.toml"
+    p.write_text('[hooks]\nenabled = true\nsources = ["/abs/hooks.json"]\n')
+    enabled, sources = load_hooks_config(p)
+    assert enabled is True and str(sources[0]) == "/abs/hooks.json"
+
+
 from heya.config import (
     RoutingConfig, load_routing_config, resolve_weak_profile,
 )
