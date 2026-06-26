@@ -41,18 +41,16 @@ def _find_manifests(root: Path, max_depth: int) -> list[Path]:
     def walk(d: Path, depth: int) -> None:
         if depth > max_depth:
             return
+        manifest = d / ".claude-plugin" / "plugin.json"
+        if manifest.is_file():
+            found.append(manifest)
+            return  # a plugin root; do not descend into its component folders
         try:
             entries = sorted(d.iterdir())
         except OSError:
             return
         for entry in entries:
-            if not entry.is_dir() or entry.is_symlink():
-                continue
-            if entry.name == ".claude-plugin":
-                manifest = entry / "plugin.json"
-                if manifest.is_file():
-                    found.append(manifest)
-            else:
+            if entry.is_dir() and not entry.is_symlink():
                 walk(entry, depth + 1)
 
     walk(root, 0)

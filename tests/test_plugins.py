@@ -71,3 +71,16 @@ def test_discover_plugins_skips_symlinked_dirs(tmp_path):
         pytest.skip("symlinks not supported here")
     plugins = discover_plugins([tmp_path], max_depth=6)
     assert "real" in plugins  # completes without raising; symlinked dir skipped
+
+
+def test_discover_does_not_recurse_into_plugin_subtree(tmp_path):
+    root = tmp_path / "p"
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / ".claude-plugin" / "plugin.json").write_text('{"name": "p"}')
+    # A nested .claude-plugin deeper inside the plugin must be ignored (pruned).
+    nested = root / "vendor" / "inner"
+    (nested / ".claude-plugin").mkdir(parents=True)
+    (nested / ".claude-plugin" / "plugin.json").write_text('{"name": "inner"}')
+    plugins = discover_plugins([tmp_path])
+    assert "p" in plugins
+    assert "inner" not in plugins  # pruned: not descended into p's subtree
