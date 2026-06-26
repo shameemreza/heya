@@ -486,6 +486,32 @@ def test_load_context_config_no_file(tmp_path):
     assert c == ContextConfig(0.85, 2048, 4096, 200000)
 
 
+from heya.config import default_skill_paths, load_skill_paths
+
+
+def test_default_skill_paths_includes_claude_dir():
+    paths = default_skill_paths()
+    assert any(str(p).endswith(".claude/skills") for p in paths)
+
+
+def test_load_skill_paths_absent_file_defaults(tmp_path):
+    assert load_skill_paths(tmp_path / "nope.toml") == default_skill_paths()
+
+
+def test_load_skill_paths_disabled(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text("[skills]\nenabled = false\n")
+    assert load_skill_paths(p) == ()
+
+
+def test_load_skill_paths_explicit(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('[skills]\npaths = ["~/x/skills", "/abs/skills"]\n')
+    out = load_skill_paths(p)
+    assert len(out) == 2
+    assert str(out[1]) == "/abs/skills"
+
+
 from heya.config import (
     RoutingConfig, load_routing_config, resolve_weak_profile,
 )

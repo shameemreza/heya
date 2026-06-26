@@ -1175,3 +1175,14 @@ def test_agent_exposes_skills_block_and_tool(tmp_path):
 def test_agent_no_skills_no_block(tmp_path):
     agent, _ = make_agent(tmp_path, [ChatResult(content="x")])
     assert "Skills available" not in agent.messages[0]["content"]
+
+
+def test_collect_skills_into_agent(tmp_path):
+    from heya.skills import collect_skills
+    sd = tmp_path / "wp-fix"
+    sd.mkdir()
+    (sd / "SKILL.md").write_text("---\nname: wp-fix\ndescription: fixes WP issues\n---\nDo the fix.")
+    skills = collect_skills([tmp_path])
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")], skills=skills)
+    assert "wp-fix: fixes WP issues" in agent.messages[0]["content"]
+    assert "Do the fix." in agent._skill("wp-fix")

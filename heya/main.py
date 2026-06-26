@@ -11,8 +11,9 @@ from .approval import ApprovalPolicy, prompt_stdin
 from .config import (
     load_allowed_roots, load_approval_allow, load_browser_headless, load_context_config,
     load_guidance_paths, load_mcp_servers, load_memory_path, load_profiles, load_routing_config,
-    load_search_config, load_wp_path, resolve_profile, resolve_weak_profile,
+    load_search_config, load_skill_paths, load_wp_path, resolve_profile, resolve_weak_profile,
 )
+from .skills import collect_skills
 from .llm_client import LLMClient
 from .mcp_runtime import MCPRuntime
 from .memory import MemoryStore
@@ -74,6 +75,7 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
         sys.stdout.flush()
 
     memory_store = MemoryStore(load_memory_path(), notify=memory_notify)
+    skills = collect_skills(load_skill_paths())
 
     return Agent(
         client,
@@ -97,6 +99,7 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
         keep_recent_tokens=ctx.keep_recent_tokens,
         task_token_budget=ctx.task_token_budget,
         weak_client=weak_client,
+        skills=skills,
     )
 
 

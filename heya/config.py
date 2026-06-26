@@ -109,6 +109,39 @@ def load_allowed_roots(config_path: Path | None = None) -> tuple[Path, ...]:
     return tuple(Path(p).expanduser().resolve() for p in raw)
 
 
+def default_skill_paths() -> tuple[Path, ...]:
+    """Where Heya looks for Claude SKILL.md skills, in precedence order (later
+    wins on a name collision): the user's Claude dir, the project's Claude dir,
+    and a Heya-native dir. Only existing directories matter; collect_skills skips
+    the rest."""
+    home = Path.home()
+    return (
+        home / ".claude" / "skills",
+        Path.cwd() / ".claude" / "skills",
+        home / ".config" / "heya" / "skills",
+    )
+
+
+def load_skill_paths(config_path: Path | None = None) -> tuple[Path, ...]:
+    """Skill discovery directories.
+
+    User file shape:
+        [skills]
+        enabled = true            # set false to disable skill discovery
+        paths = ["~/x/skills"]    # replaces the defaults when given
+    """
+    path = config_path or default_config_path()
+    if not path.exists():
+        return default_skill_paths()
+    data = tomllib.loads(path.read_text()).get("skills", {})
+    if data.get("enabled") is False:
+        return ()
+    raw = data.get("paths")
+    if not raw:
+        return default_skill_paths()
+    return tuple(Path(p).expanduser() for p in raw)
+
+
 def load_guidance_paths(config_path: Path | None = None) -> tuple[Path, ...]:
     """User guidance folders the read_guidance tool searches, on top of the
     bundled baseline.
