@@ -814,3 +814,27 @@ def test_read_guidance_diagnosis_present():
     assert "conflict test" in low
     assert "cite" in low or "ground" in low  # the cite-or-drop rule
     assert "deactivate" in low
+
+
+def test_diagnose_tool_root_only():
+    from heya.tools import build_tool_schemas
+    root = {t["function"]["name"] for t in build_tool_schemas(with_diagnose=True)}
+    child = {t["function"]["name"] for t in build_tool_schemas(with_diagnose=False)}
+    assert "diagnose_issue" in root
+    assert "diagnose_issue" not in child
+
+
+def test_dispatch_diagnose_routes():
+    from heya.tools import dispatch_tool
+    seen = {}
+
+    def diagnose_fn(**fields):
+        seen.update(fields)
+        return "diagnosis written"
+
+    out = dispatch_tool(
+        "diagnose_issue", '{"slug": "WOO-1", "evidence": "saw a fatal", "logs": "x"}',
+        allowed_roots=[], cwd=Path("."), timeout=10, diagnose_fn=diagnose_fn,
+    )
+    assert "diagnosis written" in out
+    assert seen["slug"] == "WOO-1"

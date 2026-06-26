@@ -22,6 +22,7 @@ from .approval import ApprovalPolicy
 from .reproduction import (
     parse_issue_context, repro_workdir, gate_verdict, render_report, render_comment,
 )
+from .diagnosis import run_diagnosis, classify_log, extract_trace_frames
 from .context import build_summarizer, compact
 from .memory import build_memory_block
 from .subagents import (
@@ -173,7 +174,7 @@ class Agent:
     def _loop(self) -> str:
         can_spawn = self.spawn_depth < self.max_spawn_depth
         with_memory = self.memory_store is not None
-        tools = build_tool_schemas(self.mcp_runtime, can_spawn=can_spawn, with_memory=with_memory, with_review=can_spawn, with_repro=can_spawn)
+        tools = build_tool_schemas(self.mcp_runtime, can_spawn=can_spawn, with_memory=with_memory, with_review=can_spawn, with_repro=can_spawn, with_diagnose=can_spawn)
         if self.tool_filter is not None:
             tools = [t for t in tools if t["function"]["name"] in self.tool_filter]
         for _ in range(self.max_iters):
@@ -276,6 +277,7 @@ class Agent:
             review_fn=self._review_changes,
             start_repro_fn=self._start_reproduction,
             repro_verdict_fn=self._record_repro_verdict,
+            diagnose_fn=self._diagnose_issue,
         )
         mutating = call.name in ("write_file", "run_command", "run_wp_cli")
         if mutating and not output.startswith(("Error", "Started background process", "Declined")):
@@ -515,6 +517,35 @@ class Agent:
             )
         except Exception as exc:  # never raise into dispatch
             return f"Error: start_reproduction failed: {exc}"
+
+    def _diagnose_issue(self, **fields) -> str:
+        try:
+            slug = fields.get("slug") or "issue"
+            evidence = fields.get("evidence", "")
+            logs = fields.get("logs", "")
+            base = repro_workdir(slug, allowed_roots=self.allowed_roots, cwd=self.cwd)
+            spec_path = base / "repro-spec.json"
+            ctx = parse_issue_context(
+                json.loads(spec_path.read_text()) if spec_path.is_file() else {"source": slug}
+            )
+            # Seed deterministic signals into the context handed to the explorers.
+            seeds = []
+            log_hits = classify_log(logs)
+            if log_hits:
+                seeds.append("log patterns: " + ", ".join(f"{p} -> {c}" for p, c in log_hits))
+            frames = extract_trace_frames(logs)
+            if frames:
+                seeds.append("trace frames: " + ", ".join(f"{f}:{n}" for f, n in frames))
+            context = (
+                f"source: {ctx.source}\nsteps: {', '.join(ctx.steps)}\n"
+                f"expected: {ctx.expected}\nactual: {ctx.actual}\n"
+                + ("\n".join(seeds))
+            )
+            result = run_diagnosis(context, evidence, run_children=self._run_children)
+            (base / "diagnosis.md").write_text(result)
+            return f"Diagnosis written to {base / 'diagnosis.md'}.\n\n{result}"
+        except Exception as exc:  # never raise into dispatch
+            return f"Error: diagnose_issue failed: {exc}"
 
     def _record_repro_verdict(self, **fields) -> str:
         # **fields (not explicit kwargs) so an unexpected key from the model can
