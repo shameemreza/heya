@@ -227,3 +227,100 @@ def synthesize_diagnosis(hypotheses) -> str:
         alternatives=alternatives,
     )
     return render_diagnosis(diag)
+
+
+# (label, lens-instruction) — one read-only explorer per lens. The label names
+# the class the lens probes; the instruction tells the explorer what to test.
+DIAGNOSIS_LENSES = (
+    ("conflict", "Test whether a plugin or theme conflict explains the symptom "
+     "(the conflict test result, redeclared functions, overrides)."),
+    ("config", "Test whether a setting or configuration explains it (compare the "
+     "actual settings against what the expected behavior requires)."),
+    ("environment", "Test whether the environment explains it (PHP/WP/WC version "
+     "floors, memory or execution limits, missing extensions)."),
+    ("bug", "Test whether this is a genuine code bug, and if so localize it: which "
+     "installed source file and function. Use the stack trace and search_files."),
+    ("integration", "Test whether a third-party integration explains it (gateway, "
+     "shipping, tax, email): credentials, connectivity, API errors in the log."),
+    ("other", "Test the remaining classes (security, performance, caching, "
+     "client-side, user-error) and report the best-supported one, if any."),
+)
+
+_HYPOTHESIS_CONTRACT = (
+    "Return zero or more hypotheses. For each, emit exactly this block:\n"
+    "### HYPOTHESIS\n"
+    "class: <one of: " + ", ".join(ISSUE_CLASSES) + ">\n"
+    "claim: <one sentence root-cause claim>\n"
+    "evidence: <comma-separated artifacts you actually observed: log lines, file:line, "
+    "command output; NEVER your own assertion>\n"
+    "candidate_files: <comma-separated installed-source paths, if any>\n"
+    "confidence: <high|medium|low>\n"
+    "### END\n"
+    "Ground every claim in a captured artifact or the installed source. If you "
+    "cannot ground a lens, emit no block for it."
+)
+
+
+def HYPOTHESIS_PROMPT(context: str, evidence: str, lens: str) -> str:
+    return (
+        "You are a diagnostic investigator. First call read_guidance('diagnosis') "
+        "and follow it. Use read_file and search_files to check the installed source; "
+        "do not assert a cause you cannot ground in an artifact.\n\n"
+        f"Lens for this pass: {lens}\n\n"
+        f"Issue context:\n{context}\n\n"
+        f"Evidence gathered so far:\n{evidence}\n\n"
+        + _HYPOTHESIS_CONTRACT
+    )
+
+
+def VERIFY_HYPOTHESIS_PROMPT(hyp: "Hypothesis", context: str, evidence: str) -> str:
+    return (
+        "You are an adversarial verifier. A diagnostic investigator claims the "
+        "hypothesis below. Try to REFUTE it. It is 'grounded' ONLY if every part of "
+        "the claim is backed by a concrete artifact you can confirm (a log line, a "
+        "file:line in the installed source, command output). Use read_file and "
+        "search_files to check. Default to ungrounded when uncertain.\n\n"
+        f"Claimed class: {hyp.issue_class}\n"
+        f"Claim: {hyp.claim}\n"
+        f"Investigator's evidence: {', '.join(hyp.evidence) or '(none)'}\n"
+        f"Candidate files: {', '.join(hyp.candidate_files) or '(none)'}\n\n"
+        f"Issue context:\n{context}\n\nEvidence:\n{evidence}\n\n"
+        "Reply with exactly one of these on the first line:\n"
+        "VERDICT: grounded\n"
+        "VERDICT: ungrounded\n"
+        "then a 'grounding:' line explaining the concrete artifact (or why it does not hold)."
+    )
+
+
+def run_diagnosis(context, evidence, *, run_children, lenses=DIAGNOSIS_LENSES, verify_cap=16) -> str:
+    """Read-only fan-out -> fail-closed adversarial verify -> synthesize. Mirrors
+    run_review. `run_children(specs)` returns submission-ordered [(label, report)].
+    Never raises (callers wrap)."""
+    # Stage 1: one explorer per lens.
+    explorer_specs = [
+        {"prompt": HYPOTHESIS_PROMPT(context, evidence, instruction),
+         "role": None, "instructions": None, "label": f"diagnose:{label}"}
+        for label, instruction in lenses
+    ]
+    reports = run_children(explorer_specs)
+    hypotheses: list[Hypothesis] = []
+    for _label, report in reports:
+        if isinstance(report, str):
+            hypotheses.extend(parse_hypotheses(report))
+    if not hypotheses:
+        return synthesize_diagnosis([])
+
+    # Stage 2: adversarially verify (capped). Fail-closed: keep only grounded.
+    ranked = sorted(hypotheses, key=lambda h: _CONF_RANK.get(h.confidence, 2))
+    to_verify = ranked[:verify_cap]
+    verify_specs = [
+        {"prompt": VERIFY_HYPOTHESIS_PROMPT(h, context, evidence),
+         "role": None, "instructions": None, "label": f"verify:{h.issue_class}"}
+        for h in to_verify
+    ]
+    verdicts = run_children(verify_specs)
+    kept = [
+        h for h, (_label, verdict) in zip(to_verify, verdicts)
+        if isinstance(verdict, str) and diagnosis_confirmed(verdict)
+    ]
+    return synthesize_diagnosis(kept)
