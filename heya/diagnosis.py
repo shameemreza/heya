@@ -324,3 +324,19 @@ def run_diagnosis(context, evidence, *, run_children, lenses=DIAGNOSIS_LENSES, v
         if isinstance(verdict, str) and diagnosis_confirmed(verdict)
     ]
     return synthesize_diagnosis(kept)
+
+
+_INSUFFICIENT_MARKER = "insufficient evidence to localize"
+
+
+def is_insufficient(result_text: str) -> bool:
+    """True when a diagnosis result is the no-grounded-hypothesis synthesis."""
+    return _INSUFFICIENT_MARKER in (result_text or "")
+
+
+def escalation_should_stop(rounds: int, *, cap: int = 2) -> tuple[bool, str]:
+    """Bound the diagnose escalation loop. Stops once more than `cap` escalation
+    rounds have failed (cap=2 → rounds 1 and 2 continue, round 3 stops)."""
+    if rounds > cap:
+        return (True, f"reached the escalation cap ({cap})")
+    return (False, "")
