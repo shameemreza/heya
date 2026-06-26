@@ -82,3 +82,20 @@ this: a hypothesis it cannot ground is dropped.
 
 WooCommerce logs are under wp-content/uploads/wc-logs/; the debug log is
 wp-content/debug.log when WP_DEBUG and WP_DEBUG_LOG are on.
+
+## Escalation when the evidence is thin
+
+When diagnose_issue returns "insufficient evidence to localize," do not fabricate
+a cause and do not give up. Gather exactly one more signal, then call
+diagnose_issue again:
+
+- Enable WP_DEBUG_LOG and re-read the log.
+- Run a wp diagnostic you have not run yet (wp plugin list, wp option get, a
+  wp wc command, wp db check).
+- Widen or repeat the conflict test.
+
+After two escalation rounds with still no grounded hypothesis, stop and report it
+blocked as insufficient evidence, with what you tried and what is still missing.
+A bounded counter enforces this: diagnose_issue tells you when you have reached
+the limit. Guessing a wrong root cause is worse than an honest "insufficient
+evidence," because it sends the fix in the wrong direction.
