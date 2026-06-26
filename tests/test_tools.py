@@ -887,3 +887,26 @@ def test_diagnosis_guidance_has_escalation():
     assert "insufficient evidence" in out
     assert "one more signal" in out
     assert "two escalation rounds" in out or "two rounds" in out
+
+
+def test_skill_tool_gated_by_with_skills():
+    from heya.tools import build_tool_schemas
+    with_it = {t["function"]["name"] for t in build_tool_schemas(with_skills=True)}
+    without = {t["function"]["name"] for t in build_tool_schemas(with_skills=False)}
+    assert "Skill" in with_it
+    assert "Skill" not in without
+
+
+def test_dispatch_skill_routes():
+    from heya.tools import dispatch_tool
+    seen = {}
+
+    def skill_fn(name, arguments=""):
+        seen["name"] = name
+        seen["arguments"] = arguments
+        return "loaded skill body"
+
+    out = dispatch_tool("Skill", '{"name": "foo", "arguments": "x y"}',
+                        allowed_roots=[], cwd=Path("."), timeout=10, skill_fn=skill_fn)
+    assert "loaded skill body" in out
+    assert seen == {"name": "foo", "arguments": "x y"}
