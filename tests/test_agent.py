@@ -1036,3 +1036,35 @@ def test_agent_start_reproduction_full_writes_spec(tmp_path):
     )
     assert "WOO-2" in out
     assert (tmp_path / "repro" / "WOO-2" / "repro-spec.json").is_file()
+
+
+def test_agent_diagnose_issue_writes_diagnosis(tmp_path, monkeypatch):
+    import heya.agent as agent_mod
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")])
+    # Seed a working folder with a spec (as 12a would).
+    base = tmp_path / "repro" / "WOO-9"
+    (base / "evidence").mkdir(parents=True)
+    (base / "repro-spec.json").write_text('{"source": "WOO-9", "steps": ["x"], '
+                                          '"expected": "a", "actual": "b", "wp_version": "6.5"}')
+
+    # Stub run_diagnosis so the test is deterministic and offline.
+    monkeypatch.setattr(agent_mod, "run_diagnosis",
+                        lambda context, evidence, **kw: "## Diagnosis\n**Class:** conflict")
+    out = agent._diagnose_issue(slug="WOO-9", evidence="conflict test isolated plugin X",
+                                logs="Cannot redeclare foo()")
+    assert "WOO-9" in out
+    diag = (base / "diagnosis.md").read_text()
+    assert "conflict" in diag
+
+
+def test_agent_diagnose_issue_never_raises_on_missing_spec(tmp_path, monkeypatch):
+    import heya.agent as agent_mod
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")])
+    # Patch run_diagnosis so the test is offline/deterministic; the point is that
+    # a missing repro-spec.json does not raise (the else-branch handles it).
+    monkeypatch.setattr(agent_mod, "run_diagnosis",
+                        lambda context, evidence, **kw: "## Diagnosis\ninsufficient evidence")
+    out = agent._diagnose_issue(slug="does-not-exist", evidence="", logs="")
+    assert isinstance(out, str)
+    assert "diagnosis" in out.lower()
+    assert (tmp_path / "repro" / "does-not-exist" / "diagnosis.md").is_file()

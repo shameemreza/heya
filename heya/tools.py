@@ -189,6 +189,25 @@ _RECORD_REPRO_VERDICT_SCHEMA = {
             "suggested_next_step": {"type": "string"},
         }, "required": ["slug", "verdict"]}}}
 
+_DIAGNOSE_ISSUE_SCHEMA = {
+    "type": "function", "function": {
+        "name": "diagnose_issue",
+        "description": (
+            "Diagnose a reproduced issue: classify it, localize the likely root cause, "
+            "and recommend the next step. First read read_guidance('diagnosis') and run "
+            "the stateful funnel yourself (the conflict test with run_wp_cli, read_log, "
+            "wp diagnostics), capturing what each step shows. Then call this with the "
+            "working-folder `slug`, the `evidence` you captured, and any `logs` excerpt. "
+            "It fans out read-only hypothesis explorers, adversarially verifies each "
+            "(ungrounded hypotheses are dropped), and writes diagnosis.md. It does not "
+            "propose or apply a fix."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "slug": {"type": "string", "description": "Working-folder slug from start_reproduction."},
+            "evidence": {"type": "string", "description": "Artifacts/observations captured so far."},
+            "logs": {"type": "string", "description": "Optional relevant log/trace excerpt."},
+        }, "required": ["slug", "evidence"]}}}
+
 _MEMORY_SCHEMAS = [
     {"type": "function", "function": {
         "name": "remember",
@@ -376,7 +395,7 @@ TOOL_SCHEMAS: list[dict] = [
 ]
 
 
-def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False, with_memory: bool = False, with_review: bool = False, with_repro: bool = False) -> list[dict]:
+def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False, with_memory: bool = False, with_review: bool = False, with_repro: bool = False, with_diagnose: bool = False) -> list[dict]:
     """Native tools plus, when a runtime is connected, one schema per MCP tool.
 
     Includes the spawn tools only when `can_spawn` (depth-0 agents), the memory
@@ -393,6 +412,8 @@ def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False, with_memory
     if with_repro:
         extras.append(_START_REPRODUCTION_SCHEMA)
         extras.append(_RECORD_REPRO_VERDICT_SCHEMA)
+    if with_diagnose:
+        extras.append(_DIAGNOSE_ISSUE_SCHEMA)
     base = TOOL_SCHEMAS + extras if extras else TOOL_SCHEMAS
     if mcp_runtime is None:
         return base
@@ -434,6 +455,7 @@ def dispatch_tool(
     review_fn=None,
     start_repro_fn=None,
     repro_verdict_fn=None,
+    diagnose_fn=None,
 ) -> str:
     """Run one model tool-call. Returns a string result (errors included)."""
     try:
@@ -586,6 +608,10 @@ def dispatch_tool(
             if repro_verdict_fn is None:
                 return f"Error: unknown tool {name!r}."
             return repro_verdict_fn(**args)
+        if name == "diagnose_issue":
+            if diagnose_fn is None:
+                return f"Error: unknown tool {name!r}."
+            return diagnose_fn(**args)
         return f"Error: unknown tool {name!r}."
     except ToolError as exc:
         return f"Error: {exc}"
@@ -665,6 +691,8 @@ def describe_call(name: str, arguments: str) -> str:
         return f"start_reproduction → {args.get('slug') or args.get('source') or 'issue'}"
     if name == "record_repro_verdict":
         return f"record_repro_verdict → {args.get('slug', '')}: {args.get('verdict', '')}"
+    if name == "diagnose_issue":
+        return f"diagnose_issue → {args.get('slug', '')}"
     if name.startswith(MCP_PREFIX):
         # name is mcp__<server>__<tool>; recover a readable server.tool(args)
         body = name[len(MCP_PREFIX):]
