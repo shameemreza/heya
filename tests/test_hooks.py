@@ -102,3 +102,15 @@ def test_collect_hooks_from_files(tmp_path):
     f.write_text(json.dumps(_BLOCK_CFG))
     by_event = collect_hooks([f, tmp_path / "missing.json"])
     assert "PreToolUse" in by_event and by_event["PreToolUse"][0].command == "validate.sh"
+
+
+def test_run_command_hook_continue_false_only_blocks_pretooluse():
+    post = HookSpec("PostToolUse", "*", "x.sh", (), 5.0, "cfg")
+    out = run_command_hook(post, {}, runner=lambda s, *, stdin: (0, '{"continue": false}', ""))
+    assert out.block is False  # continue:false must NOT block a PostToolUse hook
+
+
+def test_run_command_hook_nonserializable_payload_is_nonblocking():
+    spec = HookSpec("PreToolUse", "*", "x.sh", (), 5.0, "cfg")
+    out = run_command_hook(spec, {"bad": object()}, runner=lambda s, *, stdin: (0, "", ""))
+    assert out.block is False  # never raises even on a non-serializable payload

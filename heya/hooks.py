@@ -117,7 +117,8 @@ def run_command_hook(spec: HookSpec, payload: dict, *, runner) -> HookOutcome:
     """Run one command hook via the injected runner(spec, *, stdin) -> (exit, out, err).
     Never raises. PreToolUse exit 2 (or stdout {"continue": false}) blocks."""
     try:
-        exit_code, stdout, stderr = runner(spec, stdin=json.dumps(payload))
+        stdin_json = json.dumps(payload)
+        exit_code, stdout, stderr = runner(spec, stdin=stdin_json)
     except Exception as exc:  # a runner failure is non-blocking
         return HookOutcome(False, "", f"hook {spec.command} errored: {exc}")
     block = spec.event == "PreToolUse" and exit_code == 2
@@ -126,7 +127,7 @@ def run_command_hook(spec: HookSpec, payload: dict, *, runner) -> HookOutcome:
         try:
             data = json.loads(stdout)
             if isinstance(data, dict):
-                if data.get("continue") is False:
+                if data.get("continue") is False and spec.event == "PreToolUse":
                     block = True
                 system_message = str(data.get("systemMessage", "") or "")
         except ValueError:
