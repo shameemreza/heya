@@ -1254,3 +1254,65 @@ def test_hooks_collected_and_fire(tmp_path):
     agent._run_hook_command = lambda s, *, stdin: fired.append(s.event) or (0, "", "")
     agent.run("hi")
     assert "SessionStart" in fired
+
+
+def test_spawn_agent_uses_discovered_role(tmp_path):
+    from heya.subagents import Role
+    role = Role(name="sec", system_addendum="You are a security reviewer.",
+                tools=frozenset({"read_file"}))
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")], agent_roles={"sec": role})
+    # the discovered role is listed in the system prompt
+    assert "sec" in agent.messages[0]["content"]
+    child = agent._make_child(role, None)
+    assert child.tool_filter == frozenset({"read_file"})
+
+
+def test_spawn_agent_unknown_role_lists_discovered(tmp_path):
+    from heya.subagents import Role
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")],
+                          agent_roles={"sec": Role("sec", "addendum", None)})
+    out = agent._spawn_agent("do x", role="ghost")
+    assert "unknown role" in out.lower() and "sec" in out
+
+
+def test_spawn_agent_builtin_role_still_works(tmp_path):
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")],
+                          agent_roles={"sec": __import__("heya.subagents", fromlist=["Role"]).Role("sec", "a", None)})
+    # built-in 'researcher' resolves even with discovered roles present
+    from heya.subagents import resolve_role
+    assert resolve_role("researcher") is not None
+
+
+def test_command_and_agent_reach_agent(tmp_path):
+    from heya.skills import collect_commands
+    from heya.agent_defs import discover_agent_roles
+    cdir = tmp_path / "commands"; cdir.mkdir()
+    (cdir / "deploy.md").write_text("---\nname: deploy\ndescription: ship\n---\nDeploy now.")
+    adir = tmp_path / "agents"; adir.mkdir()
+    (adir / "sec.md").write_text("---\nname: sec\ndescription: security\ntools: Read\n---\nReview security.")
+    skills = collect_commands([cdir])
+    roles = discover_agent_roles([adir])
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")], skills=skills, agent_roles=roles)
+    assert "deploy: ship" in agent.messages[0]["content"]
+    assert "sec" in agent.messages[0]["content"]
+    assert "Deploy now." in agent._skill("deploy")
+
+
+def test_spawn_agents_uses_discovered_role(tmp_path):
+    from heya.subagents import Role
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")],
+                          agent_roles={"sec": Role("sec", "You are a security reviewer.",
+                                                   frozenset({"read_file"}))})
+    # A discovered role must NOT be rejected as unknown by the parallel path.
+    # _run_parallel builds child specs; resolving the role must succeed.
+    out = agent._spawn_agents([{"task": "check", "role": "sec"}])
+    assert "unknown role" not in out.lower()
+
+
+def test_spawn_agent_builtin_role_via_call_site(tmp_path):
+    from heya.subagents import Role
+    # Even with discovered roles present, a built-in role resolves at the _spawn_agent call site.
+    agent, _ = make_agent(tmp_path, [ChatResult(content="report")],
+                          agent_roles={"sec": Role("sec", "a", None)})
+    out = agent._spawn_agent("investigate", role="researcher")
+    assert "unknown role" not in out.lower()

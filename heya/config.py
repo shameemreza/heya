@@ -142,6 +142,40 @@ def load_skill_paths(config_path: Path | None = None) -> tuple[Path, ...]:
     return tuple(Path(p).expanduser() for p in raw)
 
 
+def default_command_paths() -> tuple[Path, ...]:
+    home = Path.home()
+    return (home / ".claude" / "commands", Path.cwd() / ".claude" / "commands",
+            home / ".config" / "heya" / "commands")
+
+
+def load_command_paths(config_path: Path | None = None) -> tuple[Path, ...]:
+    path = config_path or default_config_path()
+    if not path.exists():
+        return default_command_paths()
+    data = tomllib.loads(path.read_text()).get("commands", {})
+    if data.get("enabled") is False:
+        return ()
+    raw = data.get("paths")
+    return tuple(Path(p).expanduser() for p in raw) if raw else default_command_paths()
+
+
+def default_agent_paths() -> tuple[Path, ...]:
+    home = Path.home()
+    return (home / ".claude" / "agents", Path.cwd() / ".claude" / "agents",
+            home / ".config" / "heya" / "agents")
+
+
+def load_agent_paths(config_path: Path | None = None) -> tuple[Path, ...]:
+    path = config_path or default_config_path()
+    if not path.exists():
+        return default_agent_paths()
+    data = tomllib.loads(path.read_text()).get("agents", {})
+    if data.get("enabled") is False:
+        return ()
+    raw = data.get("paths")
+    return tuple(Path(p).expanduser() for p in raw) if raw else default_agent_paths()
+
+
 def default_plugin_paths() -> tuple[Path, ...]:
     home = Path.home()
     return (home / ".claude" / "plugins" / "cache", home / ".config" / "heya" / "plugins")

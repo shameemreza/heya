@@ -19,6 +19,7 @@ from typing import Any
 from . import review
 from .hooks import fire_hooks, hook_payload
 
+from .agent_defs import agent_roles_note
 from .approval import ApprovalPolicy
 from .reproduction import (
     parse_issue_context, repro_workdir, gate_verdict, render_report, render_comment,
@@ -106,6 +107,7 @@ class Agent:
         hooks=None,
         hooks_enabled=False,
         session_id="",
+        agent_roles=None,
     ) -> None:
         self.client = client
         self.weak_client = weak_client if weak_client is not None else client
@@ -157,6 +159,11 @@ class Agent:
             block = build_skills_block(self.skills)
             if block:
                 system_content = system_content + "\n\n" + block
+        self.agent_roles = agent_roles or {}
+        if self.agent_roles:
+            note = agent_roles_note(self.agent_roles)
+            if note:
+                system_content = system_content + "\n\n" + note
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": system_content}]
         self._mutated = False
 
@@ -403,6 +410,7 @@ class Agent:
             hooks=self.hooks,
             hooks_enabled=self.hooks_enabled,
             session_id=self.session_id,
+            agent_roles=self.agent_roles,
         )
         child._labeled_stream = stream
         return child
@@ -411,10 +419,11 @@ class Agent:
         """Run a child agent to completion and return its final report."""
         if self._children_spawned >= self.max_children:
             return "Error: sub-agent limit reached for this task."
-        if role is not None and resolve_role(role) is None:
-            return f"Error: unknown role {role!r}. Available: {sorted(ROLES)}."
+        resolved = resolve_role(role) or (self.agent_roles.get(role) if role else None)
+        if role is not None and resolved is None:
+            available = sorted(set(ROLES) | set(self.agent_roles))
+            return f"Error: unknown role {role!r}. Available: {available}."
         self._children_spawned += 1
-        resolved = resolve_role(role)
         child = self._make_child(resolved, instructions, weak=weak)
         try:
             return child.run(task)
@@ -486,9 +495,10 @@ class Agent:
             if not isinstance(t, dict) or not t.get("task"):
                 return "Error: each spawn_agents task needs a 'task' string."
             role_name = t.get("role")
-            if role_name is not None and resolve_role(role_name) is None:
-                return f"Error: unknown role {role_name!r}. Available: {sorted(ROLES)}."
-            specs.append((t["task"], resolve_role(role_name), t.get("instructions")))
+            resolved = resolve_role(role_name) or (self.agent_roles.get(role_name) if role_name else None)
+            if role_name is not None and resolved is None:
+                return f"Error: unknown role {role_name!r}. Available: {sorted(set(ROLES) | set(self.agent_roles))}."
+            specs.append((t["task"], resolved, t.get("instructions")))
         remaining = self.max_children - self._children_spawned
         if remaining <= 0:
             return "Error: sub-agent limit reached for this task."

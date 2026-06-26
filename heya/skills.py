@@ -114,6 +114,33 @@ def collect_skills(dirs: Sequence[Path]) -> dict[str, SkillItem]:
     return items
 
 
+def collect_commands(dirs: Sequence[Path]) -> dict[str, SkillItem]:
+    """Map command name -> SkillItem from flat `<name>.md` files in each dir
+    (Claude slash commands). Later dirs win; missing dirs and unreadable files
+    are skipped; never raises. The file's parent is the skill directory."""
+    items: dict[str, SkillItem] = {}
+    for d in dirs:
+        d = Path(d)
+        if not d.is_dir():
+            continue
+        for entry in sorted(d.iterdir()):
+            if not entry.is_file() or entry.suffix.lower() != ".md":
+                continue
+            try:
+                text = entry.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            fm = parse_skill_frontmatter(text)
+            name = fm["name"] or entry.stem
+            description = (fm["description"] or fm["when_to_use"] or name)[:300]
+            items[name] = SkillItem(
+                name=name, description=description, when_to_use=fm["when_to_use"],
+                directory=entry.parent, allowed_tools=translate_allowed_tools(fm["allowed_tools"]),
+                path=entry,
+            )
+    return items
+
+
 def build_skills_block(skills) -> str:
     """The skills section appended to an agent's system prompt. One bounded line
     per skill, and the total count is capped so a large library cannot flood the

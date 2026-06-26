@@ -603,3 +603,23 @@ def test_resolve_weak_profile_unknown_raises():
     with pytest.raises(ConfigError) as exc:
         resolve_weak_profile(RoutingConfig("ghost"), _profiles())
     assert "ghost" in str(exc.value)
+
+
+from heya.config import default_command_paths, load_command_paths, default_agent_paths, load_agent_paths
+
+
+def test_default_command_and_agent_paths_include_claude_dirs():
+    assert any(str(p).endswith(".claude/commands") for p in default_command_paths())
+    assert any(str(p).endswith(".claude/agents") for p in default_agent_paths())
+
+
+def test_load_command_paths_explicit(tmp_path):
+    p = tmp_path / "c.toml"
+    p.write_text('[commands]\npaths = ["/abs/cmds"]\n')
+    assert str(load_command_paths(p)[0]) == "/abs/cmds"
+
+
+def test_load_agent_paths_disabled(tmp_path):
+    p = tmp_path / "c.toml"
+    p.write_text("[agents]\nenabled = false\n")
+    assert load_agent_paths(p) == ()

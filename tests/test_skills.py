@@ -2,7 +2,7 @@ from pathlib import Path
 
 from heya.skills import (
     SkillItem, parse_skill_frontmatter, collect_skills, build_skills_block,
-    render_skill, translate_allowed_tools,
+    render_skill, translate_allowed_tools, collect_commands,
 )
 
 
@@ -123,3 +123,26 @@ def test_render_skill_plugin_root_none_untouched(tmp_path):
     item = SkillItem("s", "d", "", sd, (), sd / "SKILL.md")
     out = render_skill(item)
     assert "${CLAUDE_PLUGIN_ROOT}" in out  # left literal when no plugin_root
+
+
+def test_collect_commands_flat_md(tmp_path):
+    (tmp_path / "deploy.md").write_text("---\nname: deploy\ndescription: ship it\n---\nDeploy steps for $ARGUMENTS.")
+    (tmp_path / "note.md").write_text("no frontmatter, just a note")  # stem fallback
+    cmds = collect_commands([tmp_path])
+    assert "deploy" in cmds and cmds["deploy"].description == "ship it"
+    assert "note" in cmds  # name falls back to file stem
+    assert cmds["deploy"].path == tmp_path / "deploy.md"
+
+
+def test_collect_commands_skips_missing_and_nonmd(tmp_path):
+    (tmp_path / "a.md").write_text("---\nname: a\ndescription: d\n---\nbody")
+    (tmp_path / "readme.txt").write_text("not markdown")
+    cmds = collect_commands([tmp_path, tmp_path / "missing"])
+    assert set(cmds) == {"a"}
+
+
+def test_collect_commands_render_substitutes(tmp_path):
+    (tmp_path / "greet.md").write_text("---\nname: greet\ndescription: g\n---\nHi $ARGUMENTS from ${CLAUDE_SKILL_DIR}")
+    cmds = collect_commands([tmp_path])
+    out = render_skill(cmds["greet"], "Sam")
+    assert "Hi Sam from" in out and str(tmp_path) in out
