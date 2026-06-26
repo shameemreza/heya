@@ -33,3 +33,18 @@ def test_agent_roles_note(tmp_path):
     note = agent_roles_note(roles)
     assert "sec" in note and "spawn_agent" in note
     assert agent_roles_note({}) == ""
+
+
+def test_discover_agent_roles_wildcard_tools_is_none(tmp_path):
+    (tmp_path / "all.md").write_text("---\nname: all\ndescription: d\ntools: '*'\n---\nDo anything.")
+    roles = discover_agent_roles([tmp_path])
+    assert roles["all"].tools is None  # '*' means inherit full toolbox, not zero tools
+
+
+def test_agent_roles_note_caps_total(tmp_path):
+    for i in range(60):
+        (tmp_path / f"a{i:03d}.md").write_text(f"---\nname: a{i:03d}\ndescription: d\n---\nbody")
+    roles = discover_agent_roles([tmp_path])
+    note = agent_roles_note(roles)
+    assert note.count("\n- a") <= 50          # capped, not all 60 listed
+    assert "more" in note                      # a truncation note is present

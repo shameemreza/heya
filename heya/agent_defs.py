@@ -14,6 +14,8 @@ from .skills import _split_tools, _strip_frontmatter, translate_allowed_tools
 from .subagents import Role
 from .tools_guidance import _frontmatter
 
+_MAX_AGENTS_LISTED = 50
+
 
 def discover_agent_roles(dirs: Sequence[Path]) -> dict[str, Role]:
     roles: dict[str, Role] = {}
@@ -33,6 +35,9 @@ def discover_agent_roles(dirs: Sequence[Path]) -> dict[str, Role]:
             description = fm.get("description", "")
             raw_tools = fm.get("tools", "") or fm.get("allowed-tools", "")
             tools = translate_allowed_tools(_split_tools(raw_tools))
+            # wildcard '*' means inherit full toolbox (None), not a literal tool
+            if tools == ("*",) or "*" in tools:
+                tools = ()
             body = _strip_frontmatter(text).strip()
             addendum = body or description or f"You are the {name} sub-agent."
             roles[name] = Role(
@@ -46,9 +51,13 @@ def agent_roles_note(roles) -> str:
     """A short listing of discovered agents for the system prompt."""
     if not roles:
         return ""
+    names = sorted(roles)
     lines = ["Sub-agents available for spawn_agent(role=...):"]
-    for name in sorted(roles):
+    for name in names[:_MAX_AGENTS_LISTED]:
         first = (roles[name].system_addendum or "").strip().splitlines()
         summary = (first[0] if first else "")[:120]
         lines.append(f"- {name}: {summary}")
+    extra = len(names) - _MAX_AGENTS_LISTED
+    if extra > 0:
+        lines.append(f"- (+{extra} more agents)")
     return "\n".join(lines)
