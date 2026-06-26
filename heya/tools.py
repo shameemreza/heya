@@ -247,6 +247,19 @@ _RECORD_FIX_VERDICT_SCHEMA = {
             "caveats": {"type": "string"},
         }, "required": ["slug", "repro_passes", "regression_passes"]}}}
 
+_SKILL_SCHEMA = {
+    "type": "function", "function": {
+        "name": "Skill",
+        "description": (
+            "Load and follow an installed skill by name. Call this when a skill listed "
+            "in the skills block matches the task, then follow the instructions it "
+            "returns. Optional `arguments` are substituted into the skill text."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string", "description": "The skill name from the skills block."},
+            "arguments": {"type": "string", "description": "Optional arguments to pass to the skill."},
+        }, "required": ["name"]}}}
+
 _MEMORY_SCHEMAS = [
     {"type": "function", "function": {
         "name": "remember",
@@ -434,7 +447,7 @@ TOOL_SCHEMAS: list[dict] = [
 ]
 
 
-def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False, with_memory: bool = False, with_review: bool = False, with_repro: bool = False, with_diagnose: bool = False, with_remediate: bool = False) -> list[dict]:
+def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False, with_memory: bool = False, with_review: bool = False, with_repro: bool = False, with_diagnose: bool = False, with_remediate: bool = False, with_skills: bool = False) -> list[dict]:
     """Native tools plus, when a runtime is connected, one schema per MCP tool.
 
     Includes the spawn tools only when `can_spawn` (depth-0 agents), the memory
@@ -456,6 +469,8 @@ def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False, with_memory
     if with_remediate:
         extras.append(_CHECK_REMEDIATION_SCHEMA)
         extras.append(_RECORD_FIX_VERDICT_SCHEMA)
+    if with_skills:
+        extras.append(_SKILL_SCHEMA)
     base = TOOL_SCHEMAS + extras if extras else TOOL_SCHEMAS
     if mcp_runtime is None:
         return base
@@ -500,6 +515,7 @@ def dispatch_tool(
     diagnose_fn=None,
     check_remediation_fn=None,
     fix_verdict_fn=None,
+    skill_fn=None,
 ) -> str:
     """Run one model tool-call. Returns a string result (errors included)."""
     try:
@@ -664,6 +680,10 @@ def dispatch_tool(
             if fix_verdict_fn is None:
                 return f"Error: unknown tool {name!r}."
             return fix_verdict_fn(**args)
+        if name == "Skill":
+            if skill_fn is None:
+                return f"Error: unknown tool {name!r}."
+            return skill_fn(args["name"], args.get("arguments", ""))
         return f"Error: unknown tool {name!r}."
     except ToolError as exc:
         return f"Error: {exc}"
@@ -749,6 +769,8 @@ def describe_call(name: str, arguments: str) -> str:
         return f"check_remediation → {args.get('slug', '')}: {args.get('kind', '')}"
     if name == "record_fix_verdict":
         return f"record_fix_verdict → {args.get('slug', '')}"
+    if name == "Skill":
+        return f"Skill → {args.get('name', '')}"
     if name.startswith(MCP_PREFIX):
         # name is mcp__<server>__<tool>; recover a readable server.tool(args)
         body = name[len(MCP_PREFIX):]

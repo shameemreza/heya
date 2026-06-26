@@ -1154,3 +1154,35 @@ def test_agent_diagnose_grounded_resets_counter(tmp_path, monkeypatch):
                             [Hypothesis("conflict", "x", ("e",), ("f.php",), "high")]))
     agent._diagnose_issue(slug="WOO-reset", evidence="", logs="")
     assert _json.loads((base / "diagnosis-rounds.json").read_text()) == 0
+
+
+def test_agent_exposes_skills_block_and_tool(tmp_path):
+    from heya.skills import SkillItem
+    sd = tmp_path / "greet"
+    (sd).mkdir()
+    (sd / "SKILL.md").write_text("---\nname: greet\ndescription: greets people\n---\nSay hi to $ARGUMENTS.")
+    skills = {"greet": SkillItem("greet", "greets people", "", sd, (), sd / "SKILL.md")}
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")], skills=skills)
+    # skills block injected into the system prompt
+    assert "greet: greets people" in agent.messages[0]["content"]
+    # _skill loads the body with substitution
+    out = agent._skill("greet", "Sam")
+    assert "Say hi to Sam." in out
+    # unknown skill -> error with available names
+    assert "unknown skill" in agent._skill("nope").lower()
+
+
+def test_agent_no_skills_no_block(tmp_path):
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")])
+    assert "Skills available" not in agent.messages[0]["content"]
+
+
+def test_collect_skills_into_agent(tmp_path):
+    from heya.skills import collect_skills
+    sd = tmp_path / "wp-fix"
+    sd.mkdir()
+    (sd / "SKILL.md").write_text("---\nname: wp-fix\ndescription: fixes WP issues\n---\nDo the fix.")
+    skills = collect_skills([tmp_path])
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")], skills=skills)
+    assert "wp-fix: fixes WP issues" in agent.messages[0]["content"]
+    assert "Do the fix." in agent._skill("wp-fix")

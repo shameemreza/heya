@@ -32,6 +32,7 @@ from .remediation import (
 )
 from .context import build_summarizer, compact
 from .memory import build_memory_block
+from .skills import build_skills_block, render_skill
 from .subagents import (
     LabeledStream, LockedSink, PARALLEL_SAFE_TOOLS, build_child_system_prompt,
     format_parallel_report, parallel_label, resolve_role, ROLES,
@@ -93,6 +94,7 @@ class Agent:
         max_concurrent: int = 4,
         root_on_text: Callable[[str], None] | None = None,
         memory_store=None,
+        skills=None,
         context_window: int = 32768,
         compaction_threshold: float = 0.85,
         reserve_tokens: int = 2048,
@@ -142,6 +144,11 @@ class Agent:
         system_content = system_prompt
         if memory_store is not None:
             system_content = system_content + "\n\n" + build_memory_block(memory_store.load_index())
+        self.skills = skills or {}
+        if self.skills:
+            block = build_skills_block(self.skills)
+            if block:
+                system_content = system_content + "\n\n" + block
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": system_content}]
         self._mutated = False
 
@@ -181,7 +188,7 @@ class Agent:
     def _loop(self) -> str:
         can_spawn = self.spawn_depth < self.max_spawn_depth
         with_memory = self.memory_store is not None
-        tools = build_tool_schemas(self.mcp_runtime, can_spawn=can_spawn, with_memory=with_memory, with_review=can_spawn, with_repro=can_spawn, with_diagnose=can_spawn, with_remediate=can_spawn)
+        tools = build_tool_schemas(self.mcp_runtime, can_spawn=can_spawn, with_memory=with_memory, with_review=can_spawn, with_repro=can_spawn, with_diagnose=can_spawn, with_remediate=can_spawn, with_skills=bool(self.skills))
         if self.tool_filter is not None:
             tools = [t for t in tools if t["function"]["name"] in self.tool_filter]
         for _ in range(self.max_iters):
@@ -287,6 +294,7 @@ class Agent:
             diagnose_fn=self._diagnose_issue,
             check_remediation_fn=self._check_remediation,
             fix_verdict_fn=self._record_fix_verdict,
+            skill_fn=self._skill,
         )
         mutating = call.name in ("write_file", "run_command", "run_wp_cli")
         if mutating and not output.startswith(("Error", "Started background process", "Declined")):
@@ -351,6 +359,7 @@ class Agent:
             keep_recent_tokens=self.keep_recent_tokens,
             task_token_budget=self.task_token_budget,
             weak_client=self.weak_client,
+            skills=self.skills,
         )
         child._labeled_stream = stream
         return child
@@ -526,6 +535,16 @@ class Agent:
             )
         except Exception as exc:  # never raise into dispatch
             return f"Error: start_reproduction failed: {exc}"
+
+    def _skill(self, name, arguments="") -> str:
+        item = self.skills.get(name)
+        if item is None:
+            available = ", ".join(sorted(self.skills)) or "(none)"
+            return f"Error: unknown skill {name!r}. Available: {available}"
+        try:
+            return render_skill(item, arguments)
+        except Exception as exc:  # never raise into dispatch
+            return f"Error: skill {name!r} failed to load: {exc}"
 
     def _diagnose_issue(self, **fields) -> str:
         try:
