@@ -13,20 +13,6 @@ import json
 
 FIX_KINDS = ("setting", "snippet", "mu-plugin", "patch", "version")
 
-# issue class -> appropriate remediation form(s). Guidance, not enforcement.
-REMEDIATION_FORMS = {
-    "config": ("setting",),
-    "conflict": ("setting", "snippet", "escalate"),
-    "bug": ("patch", "snippet"),
-    "environment": ("version", "host"),
-    "integration": ("setting", "credentials"),
-    "user-error": ("guidance",),
-    "security": ("incident",),
-    "performance": ("setting", "patch"),
-    "caching": ("setting",),
-    "client-side": ("patch",),
-}
-
 
 def check_fix_safety(kind: str, content: str) -> tuple[bool, str]:
     """Deterministic pre-apply check. JSON validity for a setting; a lightweight
