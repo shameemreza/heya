@@ -1068,3 +1068,53 @@ def test_agent_diagnose_issue_never_raises_on_missing_spec(tmp_path, monkeypatch
     assert isinstance(out, str)
     assert "diagnosis" in out.lower()
     assert (tmp_path / "repro" / "does-not-exist" / "diagnosis.md").is_file()
+
+
+def test_agent_record_fix_verdict_gate_and_write(tmp_path):
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")])
+    base = tmp_path / "repro" / "WOO-7"
+    (base / "evidence").mkdir(parents=True)
+    (base / "repro-spec.json").write_text('{"source": "WOO-7", "steps": ["x"], '
+                                          '"expected": "a", "actual": "b", "wp_version": "6.5"}')
+    # Regression fails -> must be recorded not-verified despite repro passing.
+    out = agent._record_fix_verdict(slug="WOO-7", repro_passes=True, regression_passes=False,
+                                    evidence=["repro passes"], kind="snippet",
+                                    content="<?php return 1;", how_to_apply="snippet plugin",
+                                    caveats="")
+    assert "not-verified" in out
+    sol = (base / "solution.md").read_text()
+    assert "**Verdict:** not-verified" in sol
+    assert "unsupported workaround" in sol.lower()
+
+
+def test_agent_record_fix_verdict_bounds_the_loop(tmp_path):
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")])
+    base = tmp_path / "repro" / "WOO-loop"
+    (base / "evidence").mkdir(parents=True)
+    (base / "repro-spec.json").write_text('{"source": "WOO-loop", "wp_version": "6.5"}')
+    # Three distinct not-verified attempts, then a fourth: the durable attempt log
+    # must tell the agent to STOP (the bound is enforced in code, not just prompt).
+    outs = []
+    for i in range(4):
+        outs.append(agent._record_fix_verdict(
+            slug="WOO-loop", repro_passes=False, regression_passes=False,
+            evidence=[f"still failing v{i}"], kind="patch", content=f"diff version {i}",
+            how_to_apply="apply", caveats=""))
+    assert "STOP" in outs[-1]
+    import json as _json
+    log = _json.loads((base / "attempts.json").read_text())
+    assert len(log) == 4 and all(not a["verified"] for a in log)
+
+
+def test_agent_check_remediation_runs_grounding(tmp_path, monkeypatch):
+    import heya.agent as agent_mod
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")])
+    base = tmp_path / "repro" / "WOO-8"
+    (base / "evidence").mkdir(parents=True)
+    (base / "repro-spec.json").write_text('{"source": "WOO-8", "steps": ["x"], '
+                                          '"expected": "a", "actual": "b", "wp_version": "6.5"}')
+    monkeypatch.setattr(agent_mod, "verify_remediation",
+                        lambda fix, context, **kw: "grounded: ok")
+    out = agent._check_remediation(slug="WOO-8", kind="setting", content='{"a": "b"}')
+    assert "grounded" in out.lower()
+    assert "valid json" in out.lower() or "safe" in out.lower()

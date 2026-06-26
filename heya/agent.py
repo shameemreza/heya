@@ -23,6 +23,10 @@ from .reproduction import (
     parse_issue_context, repro_workdir, gate_verdict, render_report, render_comment,
 )
 from .diagnosis import run_diagnosis, classify_log, extract_trace_frames
+from .remediation import (
+    verify_remediation, check_fix_safety, gate_fix_verdict, render_solution,
+    repair_should_stop,
+)
 from .context import build_summarizer, compact
 from .memory import build_memory_block
 from .subagents import (
@@ -174,7 +178,7 @@ class Agent:
     def _loop(self) -> str:
         can_spawn = self.spawn_depth < self.max_spawn_depth
         with_memory = self.memory_store is not None
-        tools = build_tool_schemas(self.mcp_runtime, can_spawn=can_spawn, with_memory=with_memory, with_review=can_spawn, with_repro=can_spawn, with_diagnose=can_spawn)
+        tools = build_tool_schemas(self.mcp_runtime, can_spawn=can_spawn, with_memory=with_memory, with_review=can_spawn, with_repro=can_spawn, with_diagnose=can_spawn, with_remediate=can_spawn)
         if self.tool_filter is not None:
             tools = [t for t in tools if t["function"]["name"] in self.tool_filter]
         for _ in range(self.max_iters):
@@ -278,6 +282,8 @@ class Agent:
             start_repro_fn=self._start_reproduction,
             repro_verdict_fn=self._record_repro_verdict,
             diagnose_fn=self._diagnose_issue,
+            check_remediation_fn=self._check_remediation,
+            fix_verdict_fn=self._record_fix_verdict,
         )
         mutating = call.name in ("write_file", "run_command", "run_wp_cli")
         if mutating and not output.startswith(("Error", "Started background process", "Declined")):
@@ -546,6 +552,77 @@ class Agent:
             return f"Diagnosis written to {base / 'diagnosis.md'}.\n\n{result}"
         except Exception as exc:  # never raise into dispatch
             return f"Error: diagnose_issue failed: {exc}"
+
+    def _check_remediation(self, **fields) -> str:
+        try:
+            slug = fields.get("slug") or "issue"
+            kind = fields.get("kind", "")
+            content = fields.get("content", "")
+            base = repro_workdir(slug, allowed_roots=self.allowed_roots, cwd=self.cwd)
+            spec_path = base / "repro-spec.json"
+            ctx = parse_issue_context(
+                json.loads(spec_path.read_text()) if spec_path.is_file() else {"source": slug}
+            )
+            diag_path = base / "diagnosis.md"
+            diag = diag_path.read_text() if diag_path.is_file() else ""
+            context = (
+                f"source: {ctx.source}\nexpected: {ctx.expected}\nactual: {ctx.actual}\n"
+                + (f"diagnosis:\n{diag}" if diag else "")
+            )
+            grounding = verify_remediation(content, context, run_children=self._run_children)
+            safe, safe_msg = check_fix_safety(kind, content)
+            safety = ("edit-safety: ok - " + safe_msg) if safe else ("edit-safety: FAILED - " + safe_msg)
+            return f"{grounding}\n\n{safety}"
+        except Exception as exc:  # never raise into dispatch
+            return f"Error: check_remediation failed: {exc}"
+
+    def _record_fix_verdict(self, **fields) -> str:
+        try:
+            slug = fields.get("slug") or "issue"
+            evidence = list(fields.get("evidence") or [])
+            content = fields.get("content", "")
+            verdict = gate_fix_verdict(
+                repro_passes=bool(fields.get("repro_passes")),
+                regression_passes=bool(fields.get("regression_passes")),
+                evidence=evidence,
+            )
+            base = repro_workdir(slug, allowed_roots=self.allowed_roots, cwd=self.cwd)
+            # Durable attempt log bounds the agent's repair loop (in code, not just
+            # the prompt). Load prior attempts, decide stop BEFORE appending this one.
+            log_path = base / "attempts.json"
+            attempts = []
+            if log_path.is_file():
+                try:
+                    attempts = json.loads(log_path.read_text())
+                except ValueError:
+                    attempts = []
+            loop_note = ""
+            if verdict == "verified":
+                attempts.append({"patch": content, "signature": "verified", "verified": True})
+            else:
+                stop, reason = repair_should_stop(attempts, content, cap=3)
+                signature = " ".join(sorted(evidence))[:200]
+                attempts.append({"patch": content, "signature": signature, "verified": False})
+                loop_note = (
+                    f" Not verified (attempt {len(attempts)}). "
+                    + (f"STOP refining and report the best attempt: {reason}." if stop
+                       else "You may refine once more and retry, feeding back the raw failure.")
+                )
+            log_path.write_text(json.dumps(attempts, indent=2))
+            spec_path = base / "repro-spec.json"
+            ctx = parse_issue_context(
+                json.loads(spec_path.read_text()) if spec_path.is_file() else {"source": slug}
+            )
+            solution = render_solution(
+                ctx, kind=fields.get("kind", ""), content=content,
+                verdict=verdict, evidence=evidence,
+                how_to_apply=fields.get("how_to_apply", ""), caveats=fields.get("caveats", ""),
+            )
+            (base / "solution.md").write_text(solution)
+            return (f"Fix verdict: {verdict}.{loop_note} Wrote {base / 'solution.md'}. "
+                    f"Not posted anywhere; share or apply it yourself.")
+        except Exception as exc:  # never raise into dispatch
+            return f"Error: record_fix_verdict failed: {exc}"
 
     def _record_repro_verdict(self, **fields) -> str:
         # **fields (not explicit kwargs) so an unexpected key from the model can

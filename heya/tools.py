@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .memory import MEMORY_TYPES
+from .remediation import FIX_KINDS
 from .reproduction import VERDICTS
 from .subagents import ROLES as _ROLES
 from .text import truncate_output
@@ -208,6 +209,44 @@ _DIAGNOSE_ISSUE_SCHEMA = {
             "logs": {"type": "string", "description": "Optional relevant log/trace excerpt."},
         }, "required": ["slug", "evidence"]}}}
 
+_CHECK_REMEDIATION_SCHEMA = {
+    "type": "function", "function": {
+        "name": "check_remediation",
+        "description": (
+            "Before applying a proposed fix, ground it and check it is safe to apply. "
+            "Grounds every referenced hook/function/option/class against the INSTALLED "
+            "source (fail-closed: an ungrounded fix is refused) and runs an edit-safety "
+            "check (valid JSON for a setting; PHP sanity for code). Also run php -l via "
+            "run_command on PHP. Read read_guidance('remediation') first. kind is one of: "
+            "setting, snippet, mu-plugin, patch, version."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "slug": {"type": "string"},
+            "kind": {"type": "string", "enum": list(FIX_KINDS)},
+            "content": {"type": "string", "description": "The fix content (JSON for a setting, PHP for code)."},
+        }, "required": ["slug", "kind", "content"]}}}
+
+_RECORD_FIX_VERDICT_SCHEMA = {
+    "type": "function", "function": {
+        "name": "record_fix_verdict",
+        "description": (
+            "Record whether a fix is verified and write solution.md. A fix is 'verified' "
+            "ONLY when BOTH oracles passed on a fresh disposable environment: the original "
+            "reproduction now passes (repro_passes) AND a regression smoke set still passes "
+            "(regression_passes) AND evidence is attached. Otherwise it is 'not-verified'. "
+            "Apply fixes only in the disposable environment, never production. Never posts."
+        ),
+        "parameters": {"type": "object", "properties": {
+            "slug": {"type": "string"},
+            "repro_passes": {"type": "boolean", "description": "Does the original reproduction now pass?"},
+            "regression_passes": {"type": "boolean", "description": "Does the regression smoke set still pass?"},
+            "evidence": {"type": "array", "items": {"type": "string"}},
+            "kind": {"type": "string", "enum": list(FIX_KINDS)},
+            "content": {"type": "string"},
+            "how_to_apply": {"type": "string"},
+            "caveats": {"type": "string"},
+        }, "required": ["slug", "repro_passes", "regression_passes"]}}}
+
 _MEMORY_SCHEMAS = [
     {"type": "function", "function": {
         "name": "remember",
@@ -395,7 +434,7 @@ TOOL_SCHEMAS: list[dict] = [
 ]
 
 
-def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False, with_memory: bool = False, with_review: bool = False, with_repro: bool = False, with_diagnose: bool = False) -> list[dict]:
+def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False, with_memory: bool = False, with_review: bool = False, with_repro: bool = False, with_diagnose: bool = False, with_remediate: bool = False) -> list[dict]:
     """Native tools plus, when a runtime is connected, one schema per MCP tool.
 
     Includes the spawn tools only when `can_spawn` (depth-0 agents), the memory
@@ -414,6 +453,9 @@ def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False, with_memory
         extras.append(_RECORD_REPRO_VERDICT_SCHEMA)
     if with_diagnose:
         extras.append(_DIAGNOSE_ISSUE_SCHEMA)
+    if with_remediate:
+        extras.append(_CHECK_REMEDIATION_SCHEMA)
+        extras.append(_RECORD_FIX_VERDICT_SCHEMA)
     base = TOOL_SCHEMAS + extras if extras else TOOL_SCHEMAS
     if mcp_runtime is None:
         return base
@@ -456,6 +498,8 @@ def dispatch_tool(
     start_repro_fn=None,
     repro_verdict_fn=None,
     diagnose_fn=None,
+    check_remediation_fn=None,
+    fix_verdict_fn=None,
 ) -> str:
     """Run one model tool-call. Returns a string result (errors included)."""
     try:
@@ -612,6 +656,14 @@ def dispatch_tool(
             if diagnose_fn is None:
                 return f"Error: unknown tool {name!r}."
             return diagnose_fn(**args)
+        if name == "check_remediation":
+            if check_remediation_fn is None:
+                return f"Error: unknown tool {name!r}."
+            return check_remediation_fn(**args)
+        if name == "record_fix_verdict":
+            if fix_verdict_fn is None:
+                return f"Error: unknown tool {name!r}."
+            return fix_verdict_fn(**args)
         return f"Error: unknown tool {name!r}."
     except ToolError as exc:
         return f"Error: {exc}"
@@ -693,6 +745,10 @@ def describe_call(name: str, arguments: str) -> str:
         return f"record_repro_verdict → {args.get('slug', '')}: {args.get('verdict', '')}"
     if name == "diagnose_issue":
         return f"diagnose_issue → {args.get('slug', '')}"
+    if name == "check_remediation":
+        return f"check_remediation → {args.get('slug', '')}: {args.get('kind', '')}"
+    if name == "record_fix_verdict":
+        return f"record_fix_verdict → {args.get('slug', '')}"
     if name.startswith(MCP_PREFIX):
         # name is mcp__<server>__<tool>; recover a readable server.tool(args)
         body = name[len(MCP_PREFIX):]

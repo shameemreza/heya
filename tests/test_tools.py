@@ -838,3 +838,44 @@ def test_dispatch_diagnose_routes():
     )
     assert "diagnosis written" in out
     assert seen["slug"] == "WOO-1"
+
+
+def test_read_guidance_remediation_present():
+    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    out = read_guidance("remediation", sources=[BUNDLED_GUIDANCE_DIR])
+    low = out.lower()
+    assert "dual oracle" in low or "regression" in low
+    assert "disposable" in low
+    assert "workaround" in low
+    assert "never" in low  # never production
+
+
+def test_remediation_tools_root_only():
+    from heya.tools import build_tool_schemas
+    root = {t["function"]["name"] for t in build_tool_schemas(with_remediate=True)}
+    child = {t["function"]["name"] for t in build_tool_schemas(with_remediate=False)}
+    assert {"check_remediation", "record_fix_verdict"} <= root
+    assert not ({"check_remediation", "record_fix_verdict"} & child)
+
+
+def test_dispatch_remediation_routes():
+    from heya.tools import dispatch_tool
+    seen = {}
+
+    def check_fn(**fields):
+        seen["check"] = fields
+        return "grounded + safe"
+
+    def verdict_fn(**fields):
+        seen["verdict"] = fields
+        return "verified"
+
+    out1 = dispatch_tool("check_remediation",
+                         '{"slug": "WOO-1", "kind": "setting", "content": "{}"}',
+                         allowed_roots=[], cwd=Path("."), timeout=10, check_remediation_fn=check_fn)
+    out2 = dispatch_tool("record_fix_verdict",
+                         '{"slug": "WOO-1", "repro_passes": true, "regression_passes": true, "evidence": ["e"]}',
+                         allowed_roots=[], cwd=Path("."), timeout=10, fix_verdict_fn=verdict_fn)
+    assert "grounded" in out1 and "verified" in out2
+    assert seen["check"]["kind"] == "setting"
+    assert seen["verdict"]["repro_passes"] is True
