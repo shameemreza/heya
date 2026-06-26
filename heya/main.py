@@ -14,10 +14,12 @@ from .config import (
     load_guidance_paths, load_hooks_config, load_mcp_servers, load_memory_path, load_profiles,
     load_routing_config, load_search_config, load_skill_paths, load_wp_path, resolve_profile,
     resolve_weak_profile, load_plugin_paths, load_disabled_plugins,
+    load_command_paths, load_agent_paths,
 )
 from .hooks import collect_hooks
 from .plugins import discover_plugins, collect_plugin_skills
-from .skills import collect_skills
+from .skills import collect_skills, collect_commands
+from .agent_defs import discover_agent_roles
 from .llm_client import LLMClient
 from .mcp_runtime import MCPRuntime
 from .memory import MemoryStore
@@ -84,6 +86,14 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
     plugins = {n: p for n, p in discover_plugins(load_plugin_paths()).items() if n not in disabled}
     plugin_skills = collect_plugin_skills(plugins)
     skills = {**plugin_skills, **user_skills}  # a user's own same-named skill wins
+    command_skills = collect_commands(load_command_paths())
+    plugin_command_skills = {f"{p.name}:{k}": v for p in plugins.values()
+                             for k, v in collect_commands([p.root / "commands"]).items()}
+    skills = {**command_skills, **plugin_command_skills, **skills}  # user/explicit skills still win
+    agent_roles = discover_agent_roles(load_agent_paths())
+    plugin_agent_roles = {f"{p.name}:{k}": v for p in plugins.values()
+                          for k, v in discover_agent_roles([p.root / "agents"]).items()}
+    agent_roles = {**plugin_agent_roles, **agent_roles}  # user agents win
 
     hooks_enabled, hook_sources = load_hooks_config()
     plugin_hook_files = [p.root / "hooks" / "hooks.json" for p in plugins.values()]
@@ -113,6 +123,7 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
         task_token_budget=ctx.task_token_budget,
         weak_client=weak_client,
         skills=skills,
+        agent_roles=agent_roles,
         hooks=hooks,
         hooks_enabled=hooks_enabled,
         session_id=session_id,

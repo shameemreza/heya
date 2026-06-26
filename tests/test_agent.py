@@ -1281,3 +1281,18 @@ def test_spawn_agent_builtin_role_still_works(tmp_path):
     # built-in 'researcher' resolves even with discovered roles present
     from heya.subagents import resolve_role
     assert resolve_role("researcher") is not None
+
+
+def test_command_and_agent_reach_agent(tmp_path):
+    from heya.skills import collect_commands
+    from heya.agent_defs import discover_agent_roles
+    cdir = tmp_path / "commands"; cdir.mkdir()
+    (cdir / "deploy.md").write_text("---\nname: deploy\ndescription: ship\n---\nDeploy now.")
+    adir = tmp_path / "agents"; adir.mkdir()
+    (adir / "sec.md").write_text("---\nname: sec\ndescription: security\ntools: Read\n---\nReview security.")
+    skills = collect_commands([cdir])
+    roles = discover_agent_roles([adir])
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")], skills=skills, agent_roles=roles)
+    assert "deploy: ship" in agent.messages[0]["content"]
+    assert "sec" in agent.messages[0]["content"]
+    assert "Deploy now." in agent._skill("deploy")
