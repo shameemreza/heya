@@ -879,3 +879,11 @@ def test_dispatch_remediation_routes():
     assert "grounded" in out1 and "verified" in out2
     assert seen["check"]["kind"] == "setting"
     assert seen["verdict"]["repro_passes"] is True
+
+
+def test_diagnosis_guidance_has_escalation():
+    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    out = read_guidance("diagnosis", sources=[BUNDLED_GUIDANCE_DIR]).lower()
+    assert "insufficient evidence" in out
+    assert "one more signal" in out
+    assert "two escalation rounds" in out or "two rounds" in out

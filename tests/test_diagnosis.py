@@ -154,3 +154,23 @@ def test_run_diagnosis_no_hypotheses_short_circuits():
 def test_lenses_cover_core_classes():
     labels = {label for label, _ in DIAGNOSIS_LENSES}
     assert {"conflict", "config", "environment"} <= labels
+
+
+def test_is_insufficient_on_empty_synthesis():
+    from heya.diagnosis import is_insufficient
+    assert is_insufficient(synthesize_diagnosis([])) is True
+
+
+def test_is_insufficient_false_on_real_diagnosis():
+    from heya.diagnosis import is_insufficient
+    out = synthesize_diagnosis([Hypothesis("conflict", "x redeclares foo", ("e",), ("f.php",), "high")])
+    assert is_insufficient(out) is False
+    assert is_insufficient("") is False
+
+
+def test_escalation_should_stop_cap():
+    from heya.diagnosis import escalation_should_stop
+    assert escalation_should_stop(1, cap=2)[0] is False
+    assert escalation_should_stop(2, cap=2)[0] is False
+    stop, reason = escalation_should_stop(3, cap=2)
+    assert stop is True and "cap" in reason.lower()
