@@ -495,9 +495,10 @@ class Agent:
             if not isinstance(t, dict) or not t.get("task"):
                 return "Error: each spawn_agents task needs a 'task' string."
             role_name = t.get("role")
-            if role_name is not None and resolve_role(role_name) is None:
-                return f"Error: unknown role {role_name!r}. Available: {sorted(ROLES)}."
-            specs.append((t["task"], resolve_role(role_name), t.get("instructions")))
+            resolved = resolve_role(role_name) or (self.agent_roles.get(role_name) if role_name else None)
+            if role_name is not None and resolved is None:
+                return f"Error: unknown role {role_name!r}. Available: {sorted(set(ROLES) | set(self.agent_roles))}."
+            specs.append((t["task"], resolved, t.get("instructions")))
         remaining = self.max_children - self._children_spawned
         if remaining <= 0:
             return "Error: sub-agent limit reached for this task."
