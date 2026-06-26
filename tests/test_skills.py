@@ -100,3 +100,26 @@ def test_build_skills_block_caps_total():
     block = build_skills_block(many)
     assert block.count("\n- s") <= 150          # not all 200 listed
     assert "more skills" in block               # a truncation note is present
+
+
+def test_skillitem_plugin_root_defaults_none():
+    item = SkillItem("a", "d", "", Path("/x"), (), Path("/x/SKILL.md"))
+    assert item.plugin_root is None
+
+
+def test_render_skill_substitutes_plugin_root(tmp_path):
+    sd = tmp_path / "s"
+    sd.mkdir()
+    (sd / "SKILL.md").write_text("---\nname: s\ndescription: d\n---\nRoot=${CLAUDE_PLUGIN_ROOT}")
+    item = SkillItem("s", "d", "", sd, (), sd / "SKILL.md", plugin_root=tmp_path / "plug")
+    out = render_skill(item)
+    assert f"Root={tmp_path / 'plug'}" in out
+
+
+def test_render_skill_plugin_root_none_untouched(tmp_path):
+    sd = tmp_path / "s"
+    sd.mkdir()
+    (sd / "SKILL.md").write_text("---\nname: s\ndescription: d\n---\nRoot=${CLAUDE_PLUGIN_ROOT}")
+    item = SkillItem("s", "d", "", sd, (), sd / "SKILL.md")
+    out = render_skill(item)
+    assert "${CLAUDE_PLUGIN_ROOT}" in out  # left literal when no plugin_root
