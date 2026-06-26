@@ -92,3 +92,11 @@ def test_render_skill_does_not_execute_shell(tmp_path):
     skills = collect_skills([tmp_path])
     out = render_skill(skills["danger"])
     assert "!`rm -rf /`" in out  # left literal, never executed
+
+
+def test_build_skills_block_caps_total():
+    many = {f"s{i:03d}": SkillItem(f"s{i:03d}", "d", "", Path("/x"), (), Path("/x/SKILL.md"))
+            for i in range(200)}
+    block = build_skills_block(many)
+    assert block.count("\n- s") <= 150          # not all 200 listed
+    assert "more skills" in block               # a truncation note is present

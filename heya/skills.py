@@ -33,6 +33,8 @@ SKILLS_FRAMING = (
     "Skill(name) to load its full instructions and follow them."
 )
 
+_MAX_SKILLS_LISTED = 150
+
 
 @dataclass(frozen=True)
 class SkillItem:
@@ -113,13 +115,18 @@ def collect_skills(dirs: Sequence[Path]) -> dict[str, SkillItem]:
 
 def build_skills_block(skills) -> str:
     """The skills section appended to an agent's system prompt. One bounded line
-    per skill; empty -> ''."""
+    per skill, and the total count is capped so a large library cannot flood the
+    context window; empty -> ''."""
     if not skills:
         return ""
+    names = sorted(skills)
     lines = [SKILLS_FRAMING, ""]
-    for name in sorted(skills):
+    for name in names[:_MAX_SKILLS_LISTED]:
         desc = " ".join((skills[name].description or "").split())[:160]
         lines.append(f"- {name}: {desc}")
+    extra = len(names) - _MAX_SKILLS_LISTED
+    if extra > 0:
+        lines.append(f"- (+{extra} more skills; call Skill(name) if you know the name)")
     return "\n".join(lines)
 
 
