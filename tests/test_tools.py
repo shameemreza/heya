@@ -838,3 +838,13 @@ def test_dispatch_diagnose_routes():
     )
     assert "diagnosis written" in out
     assert seen["slug"] == "WOO-1"
+
+
+def test_read_guidance_remediation_present():
+    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    out = read_guidance("remediation", sources=[BUNDLED_GUIDANCE_DIR])
+    low = out.lower()
+    assert "dual oracle" in low or "regression" in low
+    assert "disposable" in low
+    assert "workaround" in low
+    assert "never" in low  # never production
