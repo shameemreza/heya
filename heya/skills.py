@@ -44,6 +44,7 @@ class SkillItem:
     directory: Path
     allowed_tools: tuple[str, ...]
     path: Path
+    plugin_root: Path | None = None
 
     def read(self) -> str:
         return self.path.read_text(encoding="utf-8", errors="replace")
@@ -146,6 +147,8 @@ def render_skill(item: SkillItem, arguments: str = "") -> str:
     body = _strip_frontmatter(item.read())
     args = arguments or ""
     body = body.replace("${CLAUDE_SKILL_DIR}", str(item.directory))
+    if item.plugin_root is not None:
+        body = body.replace("${CLAUDE_PLUGIN_ROOT}", str(item.plugin_root))
     for i, val in enumerate(args.split()):
         body = body.replace(f"${i}", val)
     body = body.replace("$ARGUMENTS", args)

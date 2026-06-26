@@ -142,6 +142,41 @@ def load_skill_paths(config_path: Path | None = None) -> tuple[Path, ...]:
     return tuple(Path(p).expanduser() for p in raw)
 
 
+def default_plugin_paths() -> tuple[Path, ...]:
+    home = Path.home()
+    return (home / ".claude" / "plugins" / "cache", home / ".config" / "heya" / "plugins")
+
+
+def load_plugin_paths(config_path: Path | None = None) -> tuple[Path, ...]:
+    """Plugin discovery roots.
+
+    User file shape:
+        [plugins]
+        enabled = true            # false disables plugin discovery
+        paths = ["~/x/plugins"]   # replaces the defaults when given
+        disabled = ["name", ...]  # drop specific plugins after discovery
+    """
+    path = config_path or default_config_path()
+    if not path.exists():
+        return default_plugin_paths()
+    data = tomllib.loads(path.read_text()).get("plugins", {})
+    if data.get("enabled") is False:
+        return ()
+    raw = data.get("paths")
+    if not raw:
+        return default_plugin_paths()
+    return tuple(Path(p).expanduser() for p in raw)
+
+
+def load_disabled_plugins(config_path: Path | None = None) -> frozenset[str]:
+    path = config_path or default_config_path()
+    if not path.exists():
+        return frozenset()
+    data = tomllib.loads(path.read_text()).get("plugins", {})
+    raw = data.get("disabled") or []
+    return frozenset(str(n) for n in raw if isinstance(n, str))
+
+
 def load_guidance_paths(config_path: Path | None = None) -> tuple[Path, ...]:
     """User guidance folders the read_guidance tool searches, on top of the
     bundled baseline.

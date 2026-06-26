@@ -12,7 +12,9 @@ from .config import (
     load_allowed_roots, load_approval_allow, load_browser_headless, load_context_config,
     load_guidance_paths, load_mcp_servers, load_memory_path, load_profiles, load_routing_config,
     load_search_config, load_skill_paths, load_wp_path, resolve_profile, resolve_weak_profile,
+    load_plugin_paths, load_disabled_plugins,
 )
+from .plugins import discover_plugins, collect_plugin_skills
 from .skills import collect_skills
 from .llm_client import LLMClient
 from .mcp_runtime import MCPRuntime
@@ -75,7 +77,11 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
         sys.stdout.flush()
 
     memory_store = MemoryStore(load_memory_path(), notify=memory_notify)
-    skills = collect_skills(load_skill_paths())
+    user_skills = collect_skills(load_skill_paths())
+    disabled = load_disabled_plugins()
+    plugins = {n: p for n, p in discover_plugins(load_plugin_paths()).items() if n not in disabled}
+    plugin_skills = collect_plugin_skills(plugins)
+    skills = {**plugin_skills, **user_skills}  # a user's own same-named skill wins
 
     return Agent(
         client,

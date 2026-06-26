@@ -1186,3 +1186,17 @@ def test_collect_skills_into_agent(tmp_path):
     agent, _ = make_agent(tmp_path, [ChatResult(content="x")], skills=skills)
     assert "wp-fix: fixes WP issues" in agent.messages[0]["content"]
     assert "Do the fix." in agent._skill("wp-fix")
+
+
+def test_plugin_skill_reaches_agent(tmp_path):
+    from heya.plugins import discover_plugins, collect_plugin_skills
+    root = tmp_path / "cache" / "mkt" / "superpowers" / "1.0.0"
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / ".claude-plugin" / "plugin.json").write_text('{"name": "superpowers"}')
+    sd = root / "skills" / "brainstorm"
+    sd.mkdir(parents=True)
+    (sd / "SKILL.md").write_text("---\nname: brainstorm\ndescription: ideate\n---\nBrainstorm now.")
+    skills = collect_plugin_skills(discover_plugins([tmp_path]))
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")], skills=skills)
+    assert "superpowers:brainstorm: ideate" in agent.messages[0]["content"]
+    assert "Brainstorm now." in agent._skill("superpowers:brainstorm")

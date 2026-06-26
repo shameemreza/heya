@@ -486,6 +486,32 @@ def test_load_context_config_no_file(tmp_path):
     assert c == ContextConfig(0.85, 2048, 4096, 200000)
 
 
+from heya.config import default_plugin_paths, load_plugin_paths, load_disabled_plugins
+
+
+def test_default_plugin_paths_includes_claude_cache():
+    assert any(str(p).endswith(".claude/plugins/cache") for p in default_plugin_paths())
+
+
+def test_load_plugin_paths_disabled(tmp_path):
+    p = tmp_path / "c.toml"
+    p.write_text("[plugins]\nenabled = false\n")
+    assert load_plugin_paths(p) == ()
+
+
+def test_load_plugin_paths_explicit(tmp_path):
+    p = tmp_path / "c.toml"
+    p.write_text('[plugins]\npaths = ["/abs/plugins"]\n')
+    assert str(load_plugin_paths(p)[0]) == "/abs/plugins"
+
+
+def test_load_disabled_plugins(tmp_path):
+    p = tmp_path / "c.toml"
+    p.write_text('[plugins]\ndisabled = ["foo", "bar"]\n')
+    assert load_disabled_plugins(p) == frozenset({"foo", "bar"})
+    assert load_disabled_plugins(tmp_path / "none.toml") == frozenset()
+
+
 from heya.config import default_skill_paths, load_skill_paths
 
 
