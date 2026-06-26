@@ -1239,3 +1239,18 @@ def test_agent_sessionstart_and_stop_fire(tmp_path):
     agent._run_hook_command = lambda s, *, stdin: events.append(s.event) or (0, "", "")
     agent.run("hello")
     assert "SessionStart" in events and "Stop" in events
+
+
+def test_hooks_collected_and_fire(tmp_path):
+    import json as _json
+    from heya.hooks import collect_hooks
+    settings = tmp_path / "settings.json"
+    settings.write_text(_json.dumps({"hooks": {"SessionStart": [
+        {"hooks": [{"type": "command", "command": "start.sh"}]}]}}))
+    hooks = collect_hooks([settings])
+    fired = []
+    agent, _ = make_agent(tmp_path, [ChatResult(content="ok")],
+                          hooks=hooks, hooks_enabled=True, session_id="s")
+    agent._run_hook_command = lambda s, *, stdin: fired.append(s.event) or (0, "", "")
+    agent.run("hi")
+    assert "SessionStart" in fired

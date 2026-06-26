@@ -536,6 +536,33 @@ def load_mcp_servers(config_path: Path | None = None) -> tuple[MCPServerConfig, 
     return tuple(servers)
 
 
+def load_hooks_config(config_path: Path | None = None) -> tuple[bool, tuple[Path, ...]]:
+    """Lifecycle hooks. OFF by default — hooks execute shell.
+
+    User file shape:
+        [hooks]
+        enabled = true                      # default false
+        sources = ["~/.config/heya/hooks.json"]   # replaces the defaults
+    """
+    home = Path.home()
+    default_sources = (
+        home / ".claude" / "settings.json",
+        Path.cwd() / ".claude" / "settings.json",
+        home / ".config" / "heya" / "hooks.json",
+    )
+    path = config_path or default_config_path()
+    if not path.exists():
+        return (False, default_sources)
+    data = tomllib.loads(path.read_text()).get("hooks", {})
+    enabled = data.get("enabled") is True
+    raw = data.get("sources")
+    if raw:
+        sources = tuple(Path(p).expanduser() for p in raw)
+    else:
+        sources = default_sources
+    return (enabled, sources)
+
+
 def load_profiles(config_path: Path | None = None) -> dict[str, Profile]:
     """Built-in profiles merged with any user-defined ones from a TOML file.
 

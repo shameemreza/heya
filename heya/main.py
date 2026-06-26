@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import uuid
 from pathlib import Path
 from typing import Any, Callable, TextIO
 
@@ -10,10 +11,11 @@ from .agent import Agent, DEFAULT_MAX_ITERS
 from .approval import ApprovalPolicy, prompt_stdin
 from .config import (
     load_allowed_roots, load_approval_allow, load_browser_headless, load_context_config,
-    load_guidance_paths, load_mcp_servers, load_memory_path, load_profiles, load_routing_config,
-    load_search_config, load_skill_paths, load_wp_path, resolve_profile, resolve_weak_profile,
-    load_plugin_paths, load_disabled_plugins,
+    load_guidance_paths, load_hooks_config, load_mcp_servers, load_memory_path, load_profiles,
+    load_routing_config, load_search_config, load_skill_paths, load_wp_path, resolve_profile,
+    resolve_weak_profile, load_plugin_paths, load_disabled_plugins,
 )
+from .hooks import collect_hooks
 from .plugins import discover_plugins, collect_plugin_skills
 from .skills import collect_skills
 from .llm_client import LLMClient
@@ -83,6 +85,11 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
     plugin_skills = collect_plugin_skills(plugins)
     skills = {**plugin_skills, **user_skills}  # a user's own same-named skill wins
 
+    hooks_enabled, hook_sources = load_hooks_config()
+    plugin_hook_files = [p.root / "hooks" / "hooks.json" for p in plugins.values()]
+    hooks = collect_hooks([*hook_sources, *plugin_hook_files])
+    session_id = uuid.uuid4().hex
+
     return Agent(
         client,
         allowed_roots=roots,
@@ -106,6 +113,9 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
         task_token_budget=ctx.task_token_budget,
         weak_client=weak_client,
         skills=skills,
+        hooks=hooks,
+        hooks_enabled=hooks_enabled,
+        session_id=session_id,
     )
 
 
