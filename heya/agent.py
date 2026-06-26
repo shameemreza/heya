@@ -22,7 +22,10 @@ from .approval import ApprovalPolicy
 from .reproduction import (
     parse_issue_context, repro_workdir, gate_verdict, render_report, render_comment,
 )
-from .diagnosis import run_diagnosis, classify_log, extract_trace_frames
+from .diagnosis import (
+    run_diagnosis, classify_log, extract_trace_frames,
+    is_insufficient, escalation_should_stop,
+)
 from .remediation import (
     verify_remediation, check_fix_safety, gate_fix_verdict, render_solution,
     repair_should_stop,
@@ -549,7 +552,36 @@ class Agent:
             )
             result = run_diagnosis(context, evidence, run_children=self._run_children)
             (base / "diagnosis.md").write_text(result)
-            return f"Diagnosis written to {base / 'diagnosis.md'}.\n\n{result}"
+            # Bounded escalation loop: when diagnosis cannot localize, tell the agent
+            # to gather one more signal and retry, capped in code via a durable counter.
+            rounds_path = base / "diagnosis-rounds.json"
+            rounds = 0
+            if rounds_path.is_file():
+                try:
+                    rounds = int(json.loads(rounds_path.read_text()))
+                except (ValueError, TypeError):
+                    rounds = 0
+            note = ""
+            if is_insufficient(result):
+                rounds += 1
+                rounds_path.write_text(json.dumps(rounds))
+                stop, reason = escalation_should_stop(rounds, cap=2)
+                if stop:
+                    note = (
+                        f"\n\nblocked: insufficient evidence after {rounds} rounds "
+                        f"({reason}). Report it honestly with what you tried and what is "
+                        f"still missing; do not guess a cause."
+                    )
+                else:
+                    note = (
+                        f"\n\nEscalation round {rounds}: not localized yet. Gather ONE "
+                        f"more signal (enable WP_DEBUG_LOG and re-read the log; run a wp "
+                        f"diagnostic you have not run; widen or repeat the conflict test), "
+                        f"then call diagnose_issue again."
+                    )
+            else:
+                rounds_path.write_text(json.dumps(0))  # grounded result resets the loop
+            return f"Diagnosis written to {base / 'diagnosis.md'}.{note}\n\n{result}"
         except Exception as exc:  # never raise into dispatch
             return f"Error: diagnose_issue failed: {exc}"
 

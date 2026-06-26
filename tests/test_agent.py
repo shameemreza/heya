@@ -1118,3 +1118,39 @@ def test_agent_check_remediation_runs_grounding(tmp_path, monkeypatch):
     out = agent._check_remediation(slug="WOO-8", kind="setting", content='{"a": "b"}')
     assert "grounded" in out.lower()
     assert "valid json" in out.lower() or "safe" in out.lower()
+
+
+def test_agent_diagnose_escalates_then_blocks(tmp_path, monkeypatch):
+    import heya.agent as agent_mod
+    from heya.diagnosis import synthesize_diagnosis
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")])
+    base = tmp_path / "repro" / "WOO-esc"
+    (base / "evidence").mkdir(parents=True)
+    (base / "repro-spec.json").write_text('{"source": "WOO-esc", "wp_version": "6.5"}')
+    monkeypatch.setattr(agent_mod, "run_diagnosis",
+                        lambda context, evidence, **kw: synthesize_diagnosis([]))
+    out1 = agent._diagnose_issue(slug="WOO-esc", evidence="", logs="")
+    assert "escalation round 1" in out1.lower()
+    out2 = agent._diagnose_issue(slug="WOO-esc", evidence="", logs="")
+    assert "escalation round 2" in out2.lower()
+    out3 = agent._diagnose_issue(slug="WOO-esc", evidence="", logs="")
+    assert "blocked" in out3.lower() and "insufficient evidence after 3 rounds" in out3.lower()
+
+
+def test_agent_diagnose_grounded_resets_counter(tmp_path, monkeypatch):
+    import heya.agent as agent_mod
+    import json as _json
+    from heya.diagnosis import synthesize_diagnosis, Hypothesis
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")])
+    base = tmp_path / "repro" / "WOO-reset"
+    (base / "evidence").mkdir(parents=True)
+    (base / "repro-spec.json").write_text('{"source": "WOO-reset", "wp_version": "6.5"}')
+    monkeypatch.setattr(agent_mod, "run_diagnosis",
+                        lambda context, evidence, **kw: synthesize_diagnosis([]))
+    agent._diagnose_issue(slug="WOO-reset", evidence="", logs="")
+    assert _json.loads((base / "diagnosis-rounds.json").read_text()) == 1
+    monkeypatch.setattr(agent_mod, "run_diagnosis",
+                        lambda context, evidence, **kw: synthesize_diagnosis(
+                            [Hypothesis("conflict", "x", ("e",), ("f.php",), "high")]))
+    agent._diagnose_issue(slug="WOO-reset", evidence="", logs="")
+    assert _json.loads((base / "diagnosis-rounds.json").read_text()) == 0
