@@ -805,3 +805,12 @@ def test_dispatch_record_repro_verdict_routes():
     )
     assert "wrote report" in out
     assert seen["verdict"] == "reproduced"
+
+
+def test_read_guidance_diagnosis_present():
+    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    out = read_guidance("diagnosis", sources=[BUNDLED_GUIDANCE_DIR])
+    low = out.lower()
+    assert "conflict test" in low
+    assert "cite" in low or "ground" in low  # the cite-or-drop rule
+    assert "deactivate" in low
