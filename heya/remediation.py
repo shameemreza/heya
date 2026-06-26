@@ -111,3 +111,36 @@ def render_solution(ctx, *, kind, content, verdict, evidence,
         f"**Evidence it works:**\n{_bullets(evidence)}\n\n"
         f"**Caveats:** {caveats or '(none)'}\n"
     )
+
+
+def VERIFY_REMEDIATION_PROMPT(fix: str, context: str) -> str:
+    return (
+        "You are an adversarial verifier for a proposed fix. Try to REFUTE that it "
+        "is safe to recommend. It is 'grounded' ONLY if every hook, function, option, "
+        "or class it references actually EXISTS in the INSTALLED source (check with "
+        "read_file and search_files) and is not deprecated for the installed version. "
+        "Watch the HPOS trap (order data via CRUD, not get_post_meta) and the Block "
+        "checkout trap (classic checkout hooks are inert on the Store API checkout). "
+        "Default to ungrounded when uncertain.\n\n"
+        f"Issue context:\n{context}\n\nProposed fix:\n{fix}\n\n"
+        "Reply with exactly one of these on the first line:\n"
+        "VERDICT: grounded\n"
+        "VERDICT: ungrounded\n"
+        "then a 'grounding:' line citing the file:line where each referenced symbol "
+        "exists (or why it does not)."
+    )
+
+
+def verify_remediation(fix, context, *, run_children) -> str:
+    """Read-only fail-closed grounding check. Returns a 'grounded: ...' summary only
+    when a verifier confirms the fix references real installed symbols; otherwise
+    'unsafe: ...'. Mirrors run_diagnosis. Never raises (callers wrap)."""
+    specs = [{"prompt": VERIFY_REMEDIATION_PROMPT(fix, context),
+              "role": None, "instructions": None, "label": "verify:remediation"}]
+    reports = run_children(specs)
+    for _label, report in reports:
+        if isinstance(report, str) and fix_grounded(report):
+            return ("grounded: the fix references only symbols confirmed in the "
+                    "installed source.\n\n" + report)
+    return ("unsafe: the fix could not be grounded in the installed source "
+            "(fail-closed). Do not recommend it as-is.")

@@ -92,3 +92,34 @@ def test_render_solution_patch_not_workaround():
     out = render_solution(ctx, kind="patch", content="diff", verdict="not-verified",
                           evidence=[], how_to_apply="apply the patch", caveats="")
     assert "unsupported workaround" not in out.lower()
+
+
+from heya.remediation import VERIFY_REMEDIATION_PROMPT, verify_remediation
+
+
+def test_verify_remediation_grounded():
+    def fake_run_children(specs):
+        return [(s["label"], "VERDICT: grounded\ngrounding: add_filter exists at x.php:10")
+                for s in specs]
+    out = verify_remediation("<?php add_filter(...)", "context", run_children=fake_run_children)
+    assert out.lower().startswith("grounded")
+
+
+def test_verify_remediation_ungrounded_is_unsafe():
+    def fake_run_children(specs):
+        return [(s["label"], "VERDICT: ungrounded\ngrounding: hook does not exist")
+                for s in specs]
+    out = verify_remediation("<?php do_action('made_up')", "context", run_children=fake_run_children)
+    assert out.lower().startswith("unsafe")
+
+
+def test_verify_remediation_error_fails_closed():
+    def fake_run_children(specs):
+        return [(s["label"], "Error: sub-agent failed") for s in specs]
+    out = verify_remediation("fix", "context", run_children=fake_run_children)
+    assert out.lower().startswith("unsafe")
+
+
+def test_verify_prompt_contains_refute():
+    p = VERIFY_REMEDIATION_PROMPT("fix", "context")
+    assert "REFUTE" in p
