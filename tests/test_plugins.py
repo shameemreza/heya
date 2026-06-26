@@ -55,3 +55,19 @@ def test_collect_plugin_skills_namespaced(tmp_path):
     skills = collect_plugin_skills(plugins)
     assert "superpowers:brainstorming" in skills
     assert skills["superpowers:brainstorming"].plugin_root == root
+
+
+def test_discover_plugins_skips_symlinked_dirs(tmp_path):
+    import os
+    real = tmp_path / "real"
+    (real / ".claude-plugin").mkdir(parents=True)
+    (real / ".claude-plugin" / "plugin.json").write_text('{"name": "real"}')
+    # A symlink loop: link -> tmp_path (its own ancestor). Must not hang or RecursionError.
+    link = tmp_path / "loop"
+    try:
+        os.symlink(tmp_path, link)
+    except (OSError, NotImplementedError):
+        import pytest
+        pytest.skip("symlinks not supported here")
+    plugins = discover_plugins([tmp_path], max_depth=6)
+    assert "real" in plugins  # completes without raising; symlinked dir skipped

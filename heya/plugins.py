@@ -46,7 +46,7 @@ def _find_manifests(root: Path, max_depth: int) -> list[Path]:
         except OSError:
             return
         for entry in entries:
-            if not entry.is_dir():
+            if not entry.is_dir() or entry.is_symlink():
                 continue
             if entry.name == ".claude-plugin":
                 manifest = entry / "plugin.json"
