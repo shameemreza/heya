@@ -1254,3 +1254,30 @@ def test_hooks_collected_and_fire(tmp_path):
     agent._run_hook_command = lambda s, *, stdin: fired.append(s.event) or (0, "", "")
     agent.run("hi")
     assert "SessionStart" in fired
+
+
+def test_spawn_agent_uses_discovered_role(tmp_path):
+    from heya.subagents import Role
+    role = Role(name="sec", system_addendum="You are a security reviewer.",
+                tools=frozenset({"read_file"}))
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")], agent_roles={"sec": role})
+    # the discovered role is listed in the system prompt
+    assert "sec" in agent.messages[0]["content"]
+    child = agent._make_child(role, None)
+    assert child.tool_filter == frozenset({"read_file"})
+
+
+def test_spawn_agent_unknown_role_lists_discovered(tmp_path):
+    from heya.subagents import Role
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")],
+                          agent_roles={"sec": Role("sec", "addendum", None)})
+    out = agent._spawn_agent("do x", role="ghost")
+    assert "unknown role" in out.lower() and "sec" in out
+
+
+def test_spawn_agent_builtin_role_still_works(tmp_path):
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")],
+                          agent_roles={"sec": __import__("heya.subagents", fromlist=["Role"]).Role("sec", "a", None)})
+    # built-in 'researcher' resolves even with discovered roles present
+    from heya.subagents import resolve_role
+    assert resolve_role("researcher") is not None
