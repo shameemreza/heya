@@ -1200,3 +1200,42 @@ def test_plugin_skill_reaches_agent(tmp_path):
     agent, _ = make_agent(tmp_path, [ChatResult(content="x")], skills=skills)
     assert "superpowers:brainstorm: ideate" in agent.messages[0]["content"]
     assert "Brainstorm now." in agent._skill("superpowers:brainstorm")
+
+
+def test_agent_pretooluse_hook_blocks(tmp_path):
+    from heya.hooks import HookSpec
+    from heya.llm_client import ToolCall
+    # A PreToolUse hook on run_command that exits 2 -> the tool is blocked.
+    spec = HookSpec("PreToolUse", "run_command", "x.sh", (), 5.0, "cfg")
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")],
+                          hooks={"PreToolUse": [spec]}, hooks_enabled=True, session_id="s")
+    agent._run_hook_command = lambda s, *, stdin: (2, "", "blocked by policy")
+    call = ToolCall(id="1", name="run_command", arguments='{"command": "echo hi"}')
+    out = agent._handle_call(call)
+    assert "blocked by policy" in out.lower() or "pretooluse" in out.lower()
+
+
+def test_agent_hooks_disabled_do_not_fire(tmp_path):
+    from heya.hooks import HookSpec
+    from heya.llm_client import ToolCall
+    spec = HookSpec("PreToolUse", "*", "x.sh", (), 5.0, "cfg")
+    fired = []
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")],
+                          hooks={"PreToolUse": [spec]}, hooks_enabled=False, session_id="s")
+    agent._run_hook_command = lambda s, *, stdin: fired.append(1) or (2, "", "x")
+    call = ToolCall(id="1", name="read_file", arguments='{"path": "x"}')
+    agent._handle_call(call)
+    assert fired == []  # disabled -> never runs
+
+
+def test_agent_sessionstart_and_stop_fire(tmp_path):
+    from heya.hooks import HookSpec
+    spec_start = HookSpec("SessionStart", "", "s.sh", (), 5.0, "cfg")
+    spec_stop = HookSpec("Stop", "", "e.sh", (), 5.0, "cfg")
+    events = []
+    agent, _ = make_agent(tmp_path, [ChatResult(content="done")],
+                          hooks={"SessionStart": [spec_start], "Stop": [spec_stop]},
+                          hooks_enabled=True, session_id="s")
+    agent._run_hook_command = lambda s, *, stdin: events.append(s.event) or (0, "", "")
+    agent.run("hello")
+    assert "SessionStart" in events and "Stop" in events

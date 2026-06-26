@@ -7,16 +7,17 @@ changed something, one scoped self-review pass runs.
 """
 from __future__ import annotations
 
+import json
 import math
+import subprocess
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import TimeoutError as FuturesTimeout
 from pathlib import Path
 from typing import Any
 
-import json
-
 from . import review
+from .hooks import fire_hooks, hook_payload
 
 from .approval import ApprovalPolicy
 from .reproduction import (
@@ -39,6 +40,7 @@ from .subagents import (
 )
 from .text import estimate_messages_tokens
 from .tools import build_tool_schemas, describe_call, dispatch_tool
+from .tools_files import resolve_in_allowlist
 
 SYSTEM_PROMPT = (
     "You are Heya, a careful, capable command-line assistant. You help with "
@@ -101,6 +103,9 @@ class Agent:
         keep_recent_tokens: int = 4096,
         task_token_budget: int = 200000,
         weak_client: Any = None,
+        hooks=None,
+        hooks_enabled=False,
+        session_id="",
     ) -> None:
         self.client = client
         self.weak_client = weak_client if weak_client is not None else client
@@ -144,6 +149,9 @@ class Agent:
         system_content = system_prompt
         if memory_store is not None:
             system_content = system_content + "\n\n" + build_memory_block(memory_store.load_index())
+        self.hooks = hooks or {}
+        self.hooks_enabled = hooks_enabled
+        self.session_id = session_id
         self.skills = skills or {}
         if self.skills:
             block = build_skills_block(self.skills)
@@ -154,7 +162,9 @@ class Agent:
 
     def run(self, user_message: str) -> str:
         """Run one task to a final answer, with optional scoped self-review."""
+        self._fire("SessionStart")
         self.messages.append({"role": "user", "content": user_message})
+        self._fire("UserPromptSubmit")
         self._mutated = False
         self._children_spawned = 0  # per-task fan-out budget (spec: max_children per task)
         self._task_tokens = 0
@@ -164,6 +174,7 @@ class Agent:
             self.messages.append({"role": "user", "content": SELF_REVIEW_NUDGE})
             self._mutated = False
             answer = self._loop()
+        self._fire("Stop")
         return answer
 
     def close(self) -> None:
@@ -266,12 +277,40 @@ class Agent:
             ]
         return message
 
+    def _run_hook_command(self, spec, *, stdin):
+        """Run one command hook's process: stdin = the JSON payload; returns
+        (exit_code, stdout, stderr). Confined to the allowlist cwd; a timeout is a
+        non-blocking error (exit 1)."""
+        argv = [spec.command, *spec.args]
+        shell = len(spec.args) == 0  # shell form when no explicit args (Claude's rule)
+        try:
+            cwd = resolve_in_allowlist(self.cwd, self.allowed_roots)
+            proc = subprocess.run(
+                spec.command if shell else argv, shell=shell, cwd=str(cwd),
+                input=stdin, capture_output=True, text=True, timeout=spec.timeout,
+            )
+            return (proc.returncode, proc.stdout, proc.stderr)
+        except subprocess.TimeoutExpired:
+            return (1, "", f"hook timed out after {spec.timeout}s")
+
+    def _fire(self, event, *, tool_name=None, tool_input=None, tool_output=None):
+        if not self.hooks_enabled:
+            return None
+        payload = hook_payload(event, session_id=self.session_id, cwd=str(self.cwd),
+                               tool_name=tool_name, tool_input=tool_input, tool_output=tool_output)
+        return fire_hooks(event, self.hooks, payload, enabled=self.hooks_enabled,
+                          runner=self._run_hook_command, tool_name=tool_name,
+                          on_note=self._root_on_text)
+
     def _handle_call(self, call) -> str:
         detail = describe_call(call.name, call.arguments)
         if self.tool_filter is not None and call.name not in self.tool_filter:
             return f"Error: tool {call.name!r} is not available to the {self.label} sub-agent."
         if not self.approval.check(call.name, detail, label=self.label):
             return f"Declined by user: {detail}"
+        pre = self._fire("PreToolUse", tool_name=call.name, tool_input=call.arguments)
+        if pre is not None and pre.block:
+            return f"Blocked by PreToolUse hook: {pre.message or '(no reason given)'}"
         output = dispatch_tool(
             call.name,
             call.arguments,
@@ -296,6 +335,7 @@ class Agent:
             fix_verdict_fn=self._record_fix_verdict,
             skill_fn=self._skill,
         )
+        self._fire("PostToolUse", tool_name=call.name, tool_input=call.arguments, tool_output=output)
         mutating = call.name in ("write_file", "run_command", "run_wp_cli")
         if mutating and not output.startswith(("Error", "Started background process", "Declined")):
             self._mutated = True
@@ -360,6 +400,9 @@ class Agent:
             task_token_budget=self.task_token_budget,
             weak_client=self.weak_client,
             skills=self.skills,
+            hooks=self.hooks,
+            hooks_enabled=self.hooks_enabled,
+            session_id=self.session_id,
         )
         child._labeled_stream = stream
         return child
