@@ -1316,3 +1316,28 @@ def test_spawn_agent_builtin_role_via_call_site(tmp_path):
                           agent_roles={"sec": Role("sec", "a", None)})
     out = agent._spawn_agent("investigate", role="researcher")
     assert "unknown role" not in out.lower()
+
+
+def test_agent_triage_report_writes_and_gates_priority(tmp_path):
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")])
+    base = tmp_path / "repro" / "WOO-9"
+    (base / "evidence").mkdir(parents=True)
+    (base / "repro-spec.json").write_text('{"source": "WOO-9", "wp_version": "6.5"}')
+    # priority "close" on a "reproduced" verdict must be downgraded to "medium".
+    out = agent._triage_report(slug="WOO-9", verdict="reproduced", what_happens="w",
+                               impact="i", priority="close", evidence=["e"],
+                               repro_link="http://x", candidate_area="c", next_step="n",
+                               version_results=[])
+    assert "medium" in out.lower()
+    report = (base / "triage-report.md").read_text()
+    assert "medium" in report and "reproduced" in report
+    assert (base / "triage-comment.md").is_file()
+
+
+def test_agent_record_pick_list_writes(tmp_path):
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")])
+    out = agent._record_pick_list(source="view", items=[
+        {"id": "A", "title": "t", "complexity": 2, "route": "ready-to-fix",
+         "reason": "clear", "action": "go"}])
+    assert "A" in out
+    assert (tmp_path / "pick-list.md").is_file()

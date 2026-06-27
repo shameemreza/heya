@@ -24,6 +24,7 @@ from .approval import ApprovalPolicy
 from .reproduction import (
     parse_issue_context, repro_workdir, gate_verdict, render_report, render_comment,
 )
+from .triage import gate_priority, render_triage_report, render_triage_comment, render_pick_list
 from .diagnosis import (
     run_diagnosis, classify_log, extract_trace_frames,
     is_insufficient, escalation_should_stop,
@@ -206,7 +207,7 @@ class Agent:
     def _loop(self) -> str:
         can_spawn = self.spawn_depth < self.max_spawn_depth
         with_memory = self.memory_store is not None
-        tools = build_tool_schemas(self.mcp_runtime, can_spawn=can_spawn, with_memory=with_memory, with_review=can_spawn, with_repro=can_spawn, with_diagnose=can_spawn, with_remediate=can_spawn, with_skills=bool(self.skills))
+        tools = build_tool_schemas(self.mcp_runtime, can_spawn=can_spawn, with_memory=with_memory, with_review=can_spawn, with_repro=can_spawn, with_diagnose=can_spawn, with_remediate=can_spawn, with_skills=bool(self.skills), with_triage=can_spawn)
         if self.tool_filter is not None:
             tools = [t for t in tools if t["function"]["name"] in self.tool_filter]
         for _ in range(self.max_iters):
@@ -341,6 +342,8 @@ class Agent:
             check_remediation_fn=self._check_remediation,
             fix_verdict_fn=self._record_fix_verdict,
             skill_fn=self._skill,
+            triage_report_fn=self._triage_report,
+            pick_list_fn=self._record_pick_list,
         )
         self._fire("PostToolUse", tool_name=call.name, tool_input=call.arguments, tool_output=output)
         mutating = call.name in ("write_file", "run_command", "run_wp_cli")
@@ -727,6 +730,45 @@ class Agent:
                     f"Not posted anywhere; share or apply it yourself.")
         except Exception as exc:  # never raise into dispatch
             return f"Error: record_fix_verdict failed: {exc}"
+
+    def _triage_report(self, **fields) -> str:
+        try:
+            slug = fields.get("slug") or "issue"
+            base = repro_workdir(slug, allowed_roots=self.allowed_roots, cwd=self.cwd)
+            spec_path = base / "repro-spec.json"
+            ctx = parse_issue_context(
+                json.loads(spec_path.read_text()) if spec_path.is_file() else {"source": slug}
+            )
+            diag = (base / "diagnosis.md").read_text() if (base / "diagnosis.md").is_file() else ""
+            sol = (base / "solution.md").read_text() if (base / "solution.md").is_file() else ""
+            verdict = fields.get("verdict", "")
+            priority = gate_priority(fields.get("priority", ""), verdict)
+            evidence = list(fields.get("evidence") or [])
+            pairs = [tuple(vr) for vr in (fields.get("version_results") or []) if len(tuple(vr)) == 2]
+            common = dict(verdict=verdict, what_happens=fields.get("what_happens", ""),
+                          impact=fields.get("impact", ""), priority=priority, evidence=evidence,
+                          repro_link=fields.get("repro_link", ""), next_step=fields.get("next_step", ""))
+            report = render_triage_report(
+                ctx, candidate_area=fields.get("candidate_area", ""), version_results=pairs,
+                diagnosis_summary=diag[:1500], solution_summary=sol[:1500], **common)
+            comment = render_triage_comment(ctx, **common)
+            (base / "triage-report.md").write_text(report)
+            (base / "triage-comment.md").write_text(comment)
+            return (f"Triage report ready (priority: {priority}). Wrote {base / 'triage-report.md'} "
+                    f"and {base / 'triage-comment.md'}. Paste the comment yourself; not posted anywhere.")
+        except Exception as exc:  # never raise into dispatch
+            return f"Error: triage_report failed: {exc}"
+
+    def _record_pick_list(self, **fields) -> str:
+        try:
+            source = fields.get("source", "backlog")
+            items = fields.get("items") or []
+            out = render_pick_list(source, items)
+            target = resolve_in_allowlist(Path(self.cwd) / "pick-list.md", self.allowed_roots)
+            target.write_text(out)
+            return f"Pick-list written to {target}. Not posted anywhere.\n\n{out}"
+        except Exception as exc:  # never raise into dispatch
+            return f"Error: record_pick_list failed: {exc}"
 
     def _record_repro_verdict(self, **fields) -> str:
         # **fields (not explicit kwargs) so an unexpected key from the model can
