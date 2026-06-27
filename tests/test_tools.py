@@ -910,3 +910,12 @@ def test_dispatch_skill_routes():
                         allowed_roots=[], cwd=Path("."), timeout=10, skill_fn=skill_fn)
     assert "loaded skill body" in out
     assert seen == {"name": "foo", "arguments": "x y"}
+
+
+def test_read_guidance_triage_present():
+    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    out = read_guidance("triage", sources=[BUNDLED_GUIDANCE_DIR]).lower()
+    assert "pick list" in out or "pick-list" in out
+    assert "never post" in out or "do not post" in out
+    assert "triage_report" in out
+    assert "single issue" in out and "collection" in out
