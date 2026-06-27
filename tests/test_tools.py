@@ -919,3 +919,24 @@ def test_read_guidance_triage_present():
     assert "never post" in out or "do not post" in out
     assert "triage_report" in out
     assert "single issue" in out and "collection" in out
+
+
+def test_triage_tools_root_only():
+    from heya.tools import build_tool_schemas
+    root = {t["function"]["name"] for t in build_tool_schemas(with_triage=True)}
+    child = {t["function"]["name"] for t in build_tool_schemas(with_triage=False)}
+    assert {"triage_report", "record_pick_list"} <= root
+    assert not ({"triage_report", "record_pick_list"} & child)
+
+
+def test_dispatch_triage_routes():
+    from heya.tools import dispatch_tool
+    seen = {}
+    out1 = dispatch_tool("triage_report", '{"slug": "WOO-1", "verdict": "reproduced", "priority": "high"}',
+                         allowed_roots=[], cwd=Path("."), timeout=10,
+                         triage_report_fn=lambda **f: seen.update(f) or "report ok")
+    out2 = dispatch_tool("record_pick_list", '{"source": "view", "items": []}',
+                         allowed_roots=[], cwd=Path("."), timeout=10,
+                         pick_list_fn=lambda **f: "pick ok")
+    assert "report ok" in out1 and "pick ok" in out2
+    assert seen["slug"] == "WOO-1"
