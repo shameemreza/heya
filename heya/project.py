@@ -35,14 +35,18 @@ def load_project_instructions(cwd, *, enabled: bool = True, max_up: int = 12) ->
     except Exception:
         return ""
     blocks = []
+    budget = _CAP  # a single combined budget across both files
     for name in _FILES:
+        if budget <= 0:
+            break
         try:
             f = _find(start, name, max_up)
             if f is None:
                 continue
-            text = f.read_text(encoding="utf-8", errors="replace")[:_CAP].strip()
+            text = f.read_text(encoding="utf-8", errors="replace")[:budget].strip()
             if text:
                 blocks.append((name, text))
+                budget -= len(text)
         except Exception:
             continue
     if not blocks:
