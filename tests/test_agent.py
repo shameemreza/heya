@@ -1458,3 +1458,16 @@ def test_write_file_diff_still_shows_for_in_allowlist_path(tmp_path):
     assert "ORIGINAL_CONTENT_99" in rendered, (
         "The approval diff must show the existing content for an in-allowlist file"
     )
+
+
+def test_system_prompt_has_scoped_minimalism_principle():
+    from heya.agent import SYSTEM_PROMPT
+    p = SYSTEM_PROMPT.lower()
+    # scoped to code, names the guidance, and keeps the safety carve-out
+    assert "smallest change" in p
+    assert "minimal-code" in p
+    assert "never minimize" in p
+    # the existing read_guidance convention is still present (no regression)
+    assert "read_guidance first" in p
+    # no em dash introduced
+    assert "—" not in SYSTEM_PROMPT
