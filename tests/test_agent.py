@@ -818,7 +818,7 @@ def test_review_changes_filters_by_focus(tmp_path, monkeypatch):
     assert captured["reviewers"][0][0] == "security-reviewer"
 
 
-def test_review_reviewers_panel_has_three(tmp_path):
+def test_review_reviewers_panel_has_four(tmp_path):
     agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
                   approval=_AllowAll(), self_review=False)
     labels = [r[0] for r in agent.REVIEW_REVIEWERS]
