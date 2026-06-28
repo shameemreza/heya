@@ -73,6 +73,19 @@ heya --profile cloud "hello"
 
 You can also pick a profile with the `HEYA_PROFILE` env var.
 
+### Which models work
+
+Heya talks to any endpoint that speaks the OpenAI chat API, so you are not tied
+to one provider:
+
+- Local, free and private: Ollama, LM Studio, or any local OpenAI-compatible server.
+- OpenRouter: one key reaches Claude, GPT, Gemini, Kimi, GLM, DeepSeek, Llama, and more. Set `model` to any id OpenRouter lists.
+- OpenAI directly: `base_url = "https://api.openai.com/v1"` and your model.
+- Anything else with an OpenAI-compatible API: point `base_url` at it.
+
+A bigger cloud model handles the hard problems; a local one is free and keeps
+your code on your machine. Switch between them in a session with `/model`.
+
 ## First runs
 
 Run a one-shot task:
