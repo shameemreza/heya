@@ -86,14 +86,14 @@ def _handle_slash(text: str, agent: Any, ui: UI) -> bool:
         return False
     if cmd == "/help":
         ui.note(
-            "/help      — show this list\n"
-            "/quit      — exit\n"
-            "/clear     — reset conversation (keep system message)\n"
-            "/compact   — compact conversation context\n"
-            "/cost      — show token usage\n"
-            "/skills    — list loaded skills\n"
-            "/agents    — list agent roles\n"
-            "/mcp       — list MCP tools"
+            "/help      : show this list\n"
+            "/quit      : exit\n"
+            "/clear     : reset conversation (keep system message)\n"
+            "/compact   : compact conversation context\n"
+            "/cost      : show token usage\n"
+            "/skills    : list loaded skills\n"
+            "/agents    : list agent roles\n"
+            "/mcp       : list MCP tools"
         )
         return True
     if cmd == "/clear":
@@ -112,7 +112,7 @@ def _handle_slash(text: str, agent: Any, ui: UI) -> bool:
     if cmd == "/cost":
         session = getattr(agent, "session_tokens", 0)
         weak = getattr(agent, "weak_tokens", 0)
-        ui.note(f"tokens — session: {session}  weak: {weak}")
+        ui.note(f"tokens, session: {session}  weak: {weak}")
         return True
     if cmd == "/skills":
         skills = getattr(agent, "skills", {})

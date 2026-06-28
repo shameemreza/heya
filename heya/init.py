@@ -5,12 +5,12 @@ so it is fully testable offline. Never installs Ollama; only pulls a model with
 explicit consent. A pasted key goes to the locked credentials store."""
 from __future__ import annotations
 
+import getpass
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
-from .config import Profile, default_config_path, write_config
+from .config import Profile, default_config_path, upsert_profile
 from .credentials import save_key
 from .llm_client import LLMClient
 
@@ -31,6 +31,17 @@ def _default_verify(profile: Profile, key: str) -> bool:
         return True
     except Exception:
         return False
+
+
+def _read_secret(stream, out, prompt: str) -> str:
+    """Read a secret value without echoing it when on a real interactive TTY."""
+    out(prompt)
+    if stream is sys.stdin and sys.stdin.isatty():
+        return getpass.getpass("").strip()
+    line = stream.readline()
+    if line == "":
+        raise EOFError
+    return line.strip()
 
 
 def run_init(*, stream=None, write=None, config_path: Path | None = None,
@@ -61,14 +72,10 @@ def run_init(*, stream=None, write=None, config_path: Path | None = None,
 
     if choice == "2":
         return _setup_local(ask, out, config_path, runner)
-    return _setup_cloud(ask, out, config_path, credentials_path, verify)
+    return _setup_cloud(stream, ask, out, config_path, credentials_path, verify)
 
 
-def _read_config(path: Path) -> dict:
-    return tomllib.loads(path.read_text()) if path.exists() else {}
-
-
-def _setup_cloud(ask, out, config_path, credentials_path, verify) -> int:
+def _setup_cloud(stream, ask, out, config_path, credentials_path, verify) -> int:
     out("\n  Which provider?\n")
     for i, (label, *_rest) in enumerate(_PROVIDERS, 1):
         out(f"  {i}) {label}\n")
@@ -82,7 +89,7 @@ def _setup_cloud(ask, out, config_path, credentials_path, verify) -> int:
     profile = Profile(name=name, base_url=base_url, model=model,
                       provider_type="api_key", api_key_env=env)
     while True:
-        key = ask("  Paste your API key: ")
+        key = _read_secret(stream, out, "  Paste your API key: ")
         if not key:
             out("  No key entered.\n")
             return 1
@@ -92,13 +99,10 @@ def _setup_cloud(ask, out, config_path, credentials_path, verify) -> int:
         out("  That key did not work. Try a different key, or press Enter to abort.\n")
 
     save_key(name, key, path=credentials_path)
-    data = _read_config(config_path)
-    data.setdefault("profiles", {})[name] = {
+    upsert_profile(config_path, name, {
         "base_url": base_url, "model": model,
         "provider_type": "api_key", "api_key_env": env,
-    }
-    data.setdefault("defaults", {})["profile"] = name
-    write_config(data, config_path)
+    })
     out(f"\n  You're ready. Using {label} ({model}).\n\n")
     return 0
 
@@ -111,11 +115,8 @@ def _setup_local(ask, out, config_path, runner) -> int:
         if code != 0:
             out("  The download did not finish. You can re-run `heya init` later.\n")
             return 1
-    data = _read_config(config_path)
-    data.setdefault("profiles", {})["local"] = {
+    upsert_profile(config_path, "local", {
         "base_url": _LOCAL_BASE_URL, "model": model, "provider_type": "local",
-    }
-    data.setdefault("defaults", {})["profile"] = "local"
-    write_config(data, config_path)
+    })
     out(f"\n  You're ready. Using local model {model}.\n\n")
     return 0

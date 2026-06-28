@@ -72,3 +72,60 @@ def test_existing_config_requires_confirm(tmp_path):
     code, out = _run("n\n", config_path=cfg)
     assert code == 1
     assert "n" not in tomllib.loads(cfg.read_text()).get("profiles", {})
+
+
+def test_cloud_init_preserves_mcp_section(tmp_path):
+    """Regression: heya init must not corrupt existing [mcp.servers.*] tables."""
+    cfg = tmp_path / "config.toml"
+    creds = tmp_path / "credentials.toml"
+    # Write a config that has a real MCP section with nested headers inline table
+    cfg.write_text(
+        '[mcp.servers.linear]\n'
+        'transport = "stdio"\n'
+        'command = "npx"\n'
+        'args = ["-y", "@linear/mcp-server"]\n'
+        '[mcp.servers.linear.headers]\n'
+        '"X-Tenant" = "acme"\n'
+    )
+    # y = update existing, 1 = cloud, 1 = OpenRouter, sk-test = key
+    code, out = _run(
+        "y\n1\n1\nsk-test\n",
+        config_path=cfg, credentials_path=creds,
+        verify=lambda profile, key: True,
+    )
+    assert code == 0
+    data = tomllib.loads(cfg.read_text())
+    # (a) MCP section survived intact
+    assert data["mcp"]["servers"]["linear"]["command"] == "npx"
+    assert data["mcp"]["servers"]["linear"]["headers"]["X-Tenant"] == "acme"
+    # (b) defaults and profile are present and correct
+    assert data["defaults"]["profile"] == "cloud"
+    assert data["profiles"]["cloud"]["provider_type"] == "api_key"
+    assert data["profiles"]["cloud"]["base_url"] == "https://openrouter.ai/api/v1"
+
+
+def test_local_init_preserves_mcp_section(tmp_path):
+    """Regression: heya init local path must not corrupt existing [mcp.servers.*] tables."""
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[mcp.servers.linear]\n'
+        'transport = "stdio"\n'
+        'command = "npx"\n'
+        'args = ["-y", "@linear/mcp-server"]\n'
+        '[mcp.servers.linear.headers]\n'
+        '"X-Tenant" = "acme"\n'
+    )
+    # y = update existing, 2 = local, blank model (use default), n = skip pull
+    code, out = _run(
+        "y\n2\n\nn\n",
+        config_path=cfg,
+        runner=lambda cmd: 0,
+    )
+    assert code == 0
+    data = tomllib.loads(cfg.read_text())
+    # MCP section survived
+    assert data["mcp"]["servers"]["linear"]["command"] == "npx"
+    assert data["mcp"]["servers"]["linear"]["headers"]["X-Tenant"] == "acme"
+    # Local profile is set
+    assert data["defaults"]["profile"] == "local"
+    assert data["profiles"]["local"]["provider_type"] == "local"

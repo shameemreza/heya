@@ -10,6 +10,8 @@ def _value(v) -> str:
         return "true" if v else "false"
     if isinstance(v, (int, float)):
         return str(v)
+    if isinstance(v, dict):
+        raise TypeError(f"tomlw cannot serialize dict value: {v!r}")
     if isinstance(v, list):
         return "[" + ", ".join(_value(x) for x in v) + "]"
     return '"' + str(v).replace("\\", "\\\\").replace('"', '\\"') + '"'

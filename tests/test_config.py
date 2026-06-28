@@ -704,3 +704,97 @@ def test_resolve_profile_uses_default_then_builtin(monkeypatch):
     assert resolve_profile(None, profiles=profiles, default="cloud-openrouter").name == "cloud-openrouter"
     assert resolve_profile(None, profiles=profiles, default=None).name == "local"
     assert resolve_profile("local", profiles=profiles, default="cloud-openrouter").name == "local"
+
+
+from heya.config import upsert_profile
+import tomllib as _tomllib
+
+
+def test_upsert_profile_creates_fresh_file(tmp_path):
+    cfg = tmp_path / "config.toml"
+    upsert_profile(cfg, "cloud", {
+        "base_url": "https://openrouter.ai/api/v1",
+        "model": "openrouter/auto",
+        "provider_type": "api_key",
+        "api_key_env": "OPENROUTER_API_KEY",
+    })
+    assert cfg.exists()
+    data = _tomllib.loads(cfg.read_text())
+    assert data["defaults"]["profile"] == "cloud"
+    assert data["profiles"]["cloud"]["base_url"] == "https://openrouter.ai/api/v1"
+    assert data["profiles"]["cloud"]["model"] == "openrouter/auto"
+    assert data["profiles"]["cloud"]["api_key_env"] == "OPENROUTER_API_KEY"
+
+
+def test_upsert_profile_creates_parent_dirs(tmp_path):
+    cfg = tmp_path / "sub" / "dir" / "config.toml"
+    upsert_profile(cfg, "local", {
+        "base_url": "http://localhost:11434/v1",
+        "model": "qwen2.5-coder:14b",
+        "provider_type": "local",
+    })
+    assert cfg.exists()
+    data = _tomllib.loads(cfg.read_text())
+    assert data["defaults"]["profile"] == "local"
+
+
+def test_upsert_profile_preserves_mcp_section(tmp_path):
+    cfg = tmp_path / "config.toml"
+    original = (
+        '[mcp.servers.linear]\n'
+        'transport = "stdio"\n'
+        'command = "npx"\n'
+        'args = ["-y", "@linear/mcp-server"]\n'
+        '[mcp.servers.linear.headers]\n'
+        '"X-Tenant" = "acme"\n'
+    )
+    cfg.write_text(original)
+    upsert_profile(cfg, "cloud", {
+        "base_url": "https://api.openai.com/v1",
+        "model": "gpt-4o-mini",
+        "provider_type": "api_key",
+        "api_key_env": "OPENAI_API_KEY",
+    })
+    data = _tomllib.loads(cfg.read_text())
+    # MCP section intact
+    assert data["mcp"]["servers"]["linear"]["command"] == "npx"
+    assert data["mcp"]["servers"]["linear"]["headers"]["X-Tenant"] == "acme"
+    # New profile is present
+    assert data["defaults"]["profile"] == "cloud"
+    assert data["profiles"]["cloud"]["provider_type"] == "api_key"
+
+
+def test_upsert_profile_replaces_existing_profile(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[defaults]\nprofile = "cloud"\n\n'
+        '[profiles.cloud]\n'
+        'base_url = "https://old.example.com/v1"\n'
+        'model = "old-model"\n'
+        'provider_type = "api_key"\n'
+        'api_key_env = "OLD_KEY"\n'
+    )
+    upsert_profile(cfg, "cloud", {
+        "base_url": "https://api.anthropic.com/v1",
+        "model": "claude-haiku-4-5",
+        "provider_type": "api_key",
+        "api_key_env": "ANTHROPIC_API_KEY",
+    })
+    data = _tomllib.loads(cfg.read_text())
+    assert data["profiles"]["cloud"]["base_url"] == "https://api.anthropic.com/v1"
+    assert data["profiles"]["cloud"]["model"] == "claude-haiku-4-5"
+    assert data["profiles"]["cloud"]["api_key_env"] == "ANTHROPIC_API_KEY"
+    # No stale values
+    assert "old-model" not in cfg.read_text()
+
+
+def test_upsert_profile_make_default_false_skips_defaults(tmp_path):
+    cfg = tmp_path / "config.toml"
+    upsert_profile(cfg, "cloud", {
+        "base_url": "https://api.openai.com/v1",
+        "model": "gpt-4o-mini",
+        "provider_type": "api_key",
+    }, make_default=False)
+    data = _tomllib.loads(cfg.read_text())
+    assert "defaults" not in data
+    assert data["profiles"]["cloud"]["model"] == "gpt-4o-mini"
