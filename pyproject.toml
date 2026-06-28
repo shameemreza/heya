@@ -29,7 +29,7 @@ Repository = "https://github.com/shameemreza/heya"
 [project.optional-dependencies]
 browser = ["playwright>=1.40"]
 mcp = ["mcp>=1.0"]
-test = ["pytest>=8", "mcp>=1.0"]
+test = ["pytest>=8", "mcp>=1.0", "trustme>=1.0"]
 
 [project.scripts]
 heya = "heya.main:main"

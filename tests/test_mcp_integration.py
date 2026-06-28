@@ -215,7 +215,7 @@ def test_real_http_bearer_auth(tmp_path):
 
 @pytest.mark.integration
 def test_real_http_custom_ca(tmp_path):
-    import trustme
+    trustme = pytest.importorskip("trustme")
 
     ca = trustme.CA()
     server_cert = ca.issue_cert("127.0.0.1")
@@ -291,7 +291,7 @@ def test_real_http_custom_ca(tmp_path):
 
 @pytest.mark.integration
 def test_real_http_ca_and_mtls(tmp_path):
-    import trustme
+    trustme = pytest.importorskip("trustme")
 
     ca = trustme.CA()
     server_cert = ca.issue_cert("127.0.0.1")
