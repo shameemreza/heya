@@ -388,3 +388,33 @@ def test_attachment_note_for_bad_path(tmp_path, capsys):
     content = main_mod._build_turn_content("see @/etc/shadow", agent, ui)
     assert content == "see @/etc/shadow"  # nothing attached
     assert "could not include" in capsys.readouterr().out.lower()
+
+
+def test_slash_model_no_profiles(capsys):
+    agent = _agent_with_state()
+    ui = main_mod.UI(plain=True)
+    main_mod._handle_slash("/model cloud", agent, ui, profiles={})
+    assert "no profiles loaded" in capsys.readouterr().out.lower()
+    assert agent.client.profile.name == "local"  # unchanged
+
+
+def test_slash_resume_bare_resumes_latest(tmp_path):
+    sessions_mod.save_session({"id": "newest", "updated": "2026-02-01",
+                               "messages": [{"role": "system", "content": "s"},
+                                            {"role": "user", "content": "latest one"}]},
+                              sessions_dir=tmp_path)
+    sessions_mod.save_session({"id": "older", "updated": "2026-01-01", "messages": []},
+                              sessions_dir=tmp_path)
+    agent = _agent_with_state()
+    ui = main_mod.UI(plain=True, write=lambda s: None)
+    main_mod._handle_slash("/resume", agent, ui, sessions_dir=tmp_path)
+    assert agent.session_id == "newest"
+
+
+def test_slash_resume_ignores_glued_token(tmp_path):
+    sessions_mod.save_session({"id": "abc", "messages": [{"role": "system", "content": "s"}]},
+                              sessions_dir=tmp_path)
+    agent = _agent_with_state()
+    ui = main_mod.UI(plain=True, write=lambda s: None)
+    main_mod._handle_slash("/resumeabc", agent, ui, sessions_dir=tmp_path)
+    assert agent.session_id == "sid1"  # not treated as a resume of "abc"
