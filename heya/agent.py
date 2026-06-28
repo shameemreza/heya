@@ -20,7 +20,7 @@ from . import review
 from .hooks import fire_hooks, hook_payload
 
 from .agent_defs import agent_roles_note
-from .approval import ApprovalPolicy
+from .approval import ApprovalPolicy, UiApprover, unified_file_diff
 from .reproduction import (
     parse_issue_context, repro_workdir, gate_verdict, render_report, render_comment,
 )
@@ -97,6 +97,7 @@ class Agent:
         system_prompt: str = SYSTEM_PROMPT,
         max_concurrent: int = 4,
         root_on_text: Callable[[str], None] | None = None,
+        on_tool: Callable[[str], None] | None = None,
         memory_store=None,
         skills=None,
         context_window: int = 32768,
@@ -133,6 +134,7 @@ class Agent:
         self.max_children = max_children
         self.tool_filter = tool_filter
         self.max_concurrent = max_concurrent
+        self._on_tool = on_tool
         self._root_on_text = root_on_text if root_on_text is not None else on_text
         self._labeled_stream = None
         self._children_spawned = 0
@@ -321,11 +323,28 @@ class Agent:
         detail = describe_call(call.name, call.arguments)
         if self.tool_filter is not None and call.name not in self.tool_filter:
             return f"Error: tool {call.name!r} is not available to the {self.label} sub-agent."
+        if call.name == "write_file" and isinstance(
+            getattr(self.approval, "_approver", None), UiApprover
+        ):
+            try:
+                args = json.loads(call.arguments) if call.arguments.strip() else {}
+                path = args.get("path", "")
+                resolve_in_allowlist(path, self.allowed_roots)  # raises if outside
+                diff = unified_file_diff(path, args.get("content", ""))
+                self.approval._approver.set_diff(diff or None)
+            except Exception:
+                pass
         if not self.approval.check(call.name, detail, label=self.label):
             return f"Declined by user: {detail}"
         pre = self._fire("PreToolUse", tool_name=call.name, tool_input=call.arguments)
         if pre is not None and pre.block:
             return f"Blocked by PreToolUse hook: {pre.message or '(no reason given)'}"
+        if self._on_tool is not None:
+            label = f"[{self.label}] " if self.label else ""
+            try:
+                self._on_tool(label + detail)
+            except Exception:
+                pass  # the trace is best-effort
         output = dispatch_tool(
             call.name,
             call.arguments,
@@ -422,6 +441,7 @@ class Agent:
             session_id=self.session_id,
             agent_roles=self.agent_roles,
             identity=self.identity,
+            on_tool=self._on_tool,
         )
         child._labeled_stream = stream
         return child

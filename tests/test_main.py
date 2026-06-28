@@ -1,7 +1,10 @@
 import io
 import sys
 
+import pytest
+
 from heya.main import build_parser, run_cli
+import heya.main as main_mod
 
 
 class FakeAgent:
@@ -96,3 +99,57 @@ def test_default_make_agent_wires_llm_into_runtime(monkeypatch):
         assert agent.mcp_runtime._callback_deps.llm_client is agent.client
     finally:
         agent.close()
+
+
+# ---------------------------------------------------------------------------
+# New tests: banner, slash commands, --version
+# ---------------------------------------------------------------------------
+
+class _FakeAgent:
+    def __init__(self):
+        self.messages = [{"role": "system", "content": "sys"}]
+        self.session_tokens = 0
+        self.weak_tokens = 0
+        self.skills = {"foo": object()}
+        self.agent_roles = {}
+        self.ran = []
+
+    def run(self, text):
+        self.ran.append(text)
+        return "ok"
+
+    def close(self):
+        pass
+
+
+def _run(stdin_text):
+    agent = _FakeAgent()
+    args = build_parser().parse_args([])
+    code = run_cli(args, make_agent=lambda a: agent, stdin=io.StringIO(stdin_text))
+    return code, agent
+
+
+def test_slash_quit_ends_loop():
+    code, agent = _run("/quit\n")
+    assert code == 0 and agent.ran == []
+
+
+def test_slash_help_lists_and_continues():
+    code, agent = _run("/help\nhello\n/quit\n")
+    assert "hello" in agent.ran
+
+
+def test_slash_clear_resets_messages():
+    code, agent = _run("/clear\n/quit\n")
+    assert len(agent.messages) == 1
+
+
+def test_normal_input_runs_agent():
+    code, agent = _run("do a thing\n/quit\n")
+    assert agent.ran == ["do a thing"]
+
+
+def test_version_flag():
+    with pytest.raises(SystemExit) as e:
+        main_mod.main(["--version"])
+    assert e.value.code == 0

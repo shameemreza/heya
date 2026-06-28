@@ -2,13 +2,19 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
-import uuid
 from pathlib import Path
 from typing import Any, Callable, TextIO
 
+try:
+    from importlib.metadata import version as _pkg_version
+    VERSION = _pkg_version("heya")
+except Exception:
+    VERSION = "0.0.1"
+
 from .agent import Agent, DEFAULT_MAX_ITERS
-from .approval import ApprovalPolicy, prompt_stdin
+from .approval import ApprovalPolicy, UiApprover, prompt_stdin
 from .config import (
     load_allowed_roots, load_approval_allow, load_browser_headless, load_context_config,
     load_guidance_paths, load_hooks_config, load_mcp_servers, load_memory_path, load_profiles,
@@ -28,13 +34,39 @@ from .tools_browser import BrowserSession
 from .tools_wp import PlaygroundSession
 from .tools_guidance import BUNDLED_GUIDANCE_DIR
 from .tools_web import build_search_provider
+from .ui import UI, should_plain
 
-EXIT_WORDS = frozenset({"exit", "quit"})
+import uuid
+
+
+def _git_branch() -> str:
+    """Return the current git branch, or empty string on failure."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=3,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return ""
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="heya", description="A local-first, tool-using AI agent.")
+    epilog = (
+        "examples:\n"
+        "  heya                     # interactive session\n"
+        "  heya 'fix the failing test'  # one-shot task\n"
+    )
+    parser = argparse.ArgumentParser(
+        prog="heya",
+        description="A local-first, tool-using AI agent.",
+        epilog=epilog,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("task", nargs="*", help="Task to run once. Omit for an interactive session.")
+    parser.add_argument("--version", action="version", version=f"heya {VERSION}")
     parser.add_argument("--profile", help="Model profile to use (default: resolved from config/env).")
     parser.add_argument("--auto-approve", action="store_true", help="Run write/command tools without prompting.")
     parser.add_argument("--allow", action="append", default=[], metavar="DIR",
@@ -44,7 +76,71 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _default_make_agent(args: argparse.Namespace) -> Agent:
+def _handle_slash(text: str, agent: Any, ui: UI) -> bool:
+    """Handle a slash command. Returns True to continue the loop, False to quit."""
+    cmd = text.strip()
+    if cmd == "/quit":
+        return False
+    if cmd == "/help":
+        ui.note(
+            "/help      — show this list\n"
+            "/quit      — exit\n"
+            "/clear     — reset conversation (keep system message)\n"
+            "/compact   — compact conversation context\n"
+            "/cost      — show token usage\n"
+            "/skills    — list loaded skills\n"
+            "/agents    — list agent roles\n"
+            "/mcp       — list MCP tools"
+        )
+        return True
+    if cmd == "/clear":
+        messages = getattr(agent, "messages", None)
+        if messages is not None:
+            agent.messages = messages[:1]
+        ui.note("conversation cleared.")
+        return True
+    if cmd == "/compact":
+        maybe_compact = getattr(agent, "_maybe_compact", None)
+        if callable(maybe_compact):
+            maybe_compact()
+        else:
+            ui.note("compact not available.")
+        return True
+    if cmd == "/cost":
+        session = getattr(agent, "session_tokens", 0)
+        weak = getattr(agent, "weak_tokens", 0)
+        ui.note(f"tokens — session: {session}  weak: {weak}")
+        return True
+    if cmd == "/skills":
+        skills = getattr(agent, "skills", {})
+        if skills:
+            ui.note("skills: " + ", ".join(sorted(skills)))
+        else:
+            ui.note("no skills loaded.")
+        return True
+    if cmd == "/agents":
+        roles = getattr(agent, "agent_roles", {})
+        if roles:
+            ui.note("agents: " + ", ".join(sorted(roles)))
+        else:
+            ui.note("no agent roles loaded.")
+        return True
+    if cmd == "/mcp":
+        mcp_runtime = getattr(agent, "mcp_runtime", None)
+        if mcp_runtime is not None:
+            tools = list(getattr(mcp_runtime, "_tools", {}).keys())
+            if tools:
+                ui.note("mcp tools: " + ", ".join(sorted(tools)))
+            else:
+                ui.note("no MCP tools connected.")
+        else:
+            ui.note("no MCP runtime.")
+        return True
+    ui.note(f"unknown command: {cmd}  (try /help)")
+    return True
+
+
+def _default_make_agent(args: argparse.Namespace, *, ui: "UI | None" = None) -> Agent:
     profiles = load_profiles()
     profile = resolve_profile(args.profile, profiles=profiles)
     weak_profile = resolve_weak_profile(load_routing_config(), profiles)
@@ -61,8 +157,9 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
         if weak_profile is not None and weak_profile.name != profile.name
         else None
     )
+    approver = UiApprover(ui) if ui is not None else prompt_stdin
     approval = ApprovalPolicy(
-        auto_approve=args.auto_approve, approver=prompt_stdin, allow=load_approval_allow()
+        auto_approve=args.auto_approve, approver=approver, allow=load_approval_allow()
     )
     mcp_runtime = MCPRuntime(
         load_mcp_servers(), allowed_roots=roots,
@@ -138,27 +235,56 @@ def run_cli(
     make_agent: Callable[[argparse.Namespace], Any] = _default_make_agent,
     stdin: TextIO | None = None,
 ) -> int:
-    agent = make_agent(args)
-    # The agent streams its reply live via on_text; run_cli only ends each
-    # turn's line, so the answer is printed once (not streamed and re-printed).
+    plain = should_plain() or (stdin is not None)
+    ui = UI(plain=plain, stream=stdin if stdin is not None else None)
+
+    # Pass the UI to the default agent builder so it can show a colored diff at
+    # write approval time.  Custom make_agent callables may not accept ui= and
+    # that's fine: we fall back gracefully.
+    try:
+        agent = make_agent(args, ui=ui)
+    except TypeError:
+        agent = make_agent(args)
+
+    # Wire agent output through the UI when we have a real agent.
+    if hasattr(agent, "on_text"):
+        agent.on_text = ui.stream_text
+    if hasattr(agent, "_on_tool"):
+        agent._on_tool = ui.tool_event
+
     try:
         if args.task:
             agent.run(" ".join(args.task))
             sys.stdout.write("\n")
             return 0
-        stream = stdin if stdin is not None else sys.stdin
+
+        # Show banner before the interactive loop.
+        model = getattr(getattr(agent, "client", None), "profile", None)
+        model_name = getattr(model, "model", "") if model is not None else ""
+        profile_name = getattr(model, "name", "") if model is not None else ""
+        ui.banner(
+            version=VERSION,
+            model=model_name,
+            profile=profile_name,
+            cwd=str(Path.cwd()),
+            branch=_git_branch(),
+        )
+
+        _exit_words = frozenset({"exit", "quit"})
         while True:
             try:
-                line = stream.readline()
-            except (EOFError, KeyboardInterrupt):
-                break
-            if line == "":  # EOF
+                line = ui.prompt()
+            except EOFError:
                 break
             text = line.strip()
             if not text:
                 continue
-            if text.lower() in EXIT_WORDS:
+            if text.lower() in _exit_words:
                 break
+            if text.startswith("/"):
+                if not _handle_slash(text, agent, ui):
+                    break
+                continue
             agent.run(text)
             sys.stdout.write("\n")
         return 0

@@ -1354,3 +1354,107 @@ def test_agent_identity_in_system_prompt(tmp_path):
 def test_agent_no_identity_no_line(tmp_path):
     agent, _ = make_agent(tmp_path, [ChatResult(content="x")])
     assert "You are assisting" not in agent.messages[0]["content"]
+
+
+def test_agent_on_tool_fires_with_describe(tmp_path):
+    from heya.llm_client import ToolCall
+    seen = []
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")], on_tool=seen.append)
+    call = ToolCall(id="1", name="read_file", arguments='{"path": "x"}')
+    agent._handle_call(call)
+    assert any("read_file" in s for s in seen)
+
+
+def test_agent_on_tool_raising_is_safe(tmp_path):
+    from heya.llm_client import ToolCall
+    def boom(s):
+        raise RuntimeError("ui broke")
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")], on_tool=boom)
+    call = ToolCall(id="1", name="read_file", arguments='{"path": "x"}')
+    out = agent._handle_call(call)  # must not raise
+    assert isinstance(out, str)
+
+
+# ---- security: approval-diff must not read outside the allowlist ----
+
+def test_write_file_diff_does_not_read_outside_allowlist(tmp_path, tmp_path_factory):
+    """write_file whose path is outside allowed_roots must NOT render that
+    file's contents in the approval diff preview (the file read itself is
+    the bypass — the write is also later blocked by the tool's own check)."""
+    from io import StringIO
+    from heya.approval import ApprovalPolicy, UiApprover
+    from heya.ui import UI
+    from heya.llm_client import ToolCall
+
+    # A second, distinct tmp directory that is NOT in allowed_roots.
+    outside_dir = tmp_path_factory.mktemp("outside")
+    secret_file = outside_dir / "secret.txt"
+    secret_file.write_text("SECRET_CONTENT_12345", encoding="utf-8")
+
+    # Capture everything the UI writes.
+    output = StringIO()
+    ui = UI(plain=True, write=output.write)
+    approver = UiApprover(ui)
+    # Auto-answer "n" to the approval prompt via a stream that yields "n\n".
+    ui.stream = StringIO("n\n")
+    policy = ApprovalPolicy(approver=approver)
+
+    client = FakeClient([ChatResult(content="ok")])
+    agent = Agent(
+        client,
+        allowed_roots=[tmp_path],
+        cwd=tmp_path,
+        approval=policy,
+        self_review=False,
+    )
+
+    call = ToolCall(
+        id="sec-1",
+        name="write_file",
+        arguments=f'{{"path": "{secret_file}", "content": "overwrite"}}',
+    )
+    agent._handle_call(call)
+
+    rendered = output.getvalue()
+    assert "SECRET_CONTENT_12345" not in rendered, (
+        "The approval diff must not expose contents of a file outside the allowlist"
+    )
+
+
+def test_write_file_diff_still_shows_for_in_allowlist_path(tmp_path):
+    """write_file to an in-allowlist path still shows the diff content."""
+    from io import StringIO
+    from heya.approval import ApprovalPolicy, UiApprover
+    from heya.ui import UI
+    from heya.llm_client import ToolCall
+
+    in_path = tmp_path / "notes.txt"
+    in_path.write_text("ORIGINAL_CONTENT_99", encoding="utf-8")
+
+    output = StringIO()
+    ui = UI(plain=True, write=output.write)
+    approver = UiApprover(ui)
+    ui.stream = StringIO("n\n")
+    policy = ApprovalPolicy(approver=approver)
+
+    client = FakeClient([ChatResult(content="ok")])
+    agent = Agent(
+        client,
+        allowed_roots=[tmp_path],
+        cwd=tmp_path,
+        approval=policy,
+        self_review=False,
+    )
+
+    call = ToolCall(
+        id="sec-2",
+        name="write_file",
+        arguments=f'{{"path": "{in_path}", "content": "new content"}}',
+    )
+    agent._handle_call(call)
+
+    rendered = output.getvalue()
+    # The old content appears as a removal in the diff.
+    assert "ORIGINAL_CONTENT_99" in rendered, (
+        "The approval diff must show the existing content for an in-allowlist file"
+    )

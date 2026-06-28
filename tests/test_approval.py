@@ -1,7 +1,7 @@
 import threading
 import time
 
-from heya.approval import ApprovalPolicy
+from heya.approval import ApprovalPolicy, unified_file_diff
 
 
 def test_reads_are_auto_approved():
@@ -176,3 +176,24 @@ def test_check_always_is_double_checked():
     assert policy.check("write_file", "write_file → a") is True
     assert policy.check("write_file", "write_file → b") is True
     assert len(calls) == 1  # second call short-circuits on _always
+
+
+def test_unified_file_diff_new_file(tmp_path):
+    p = tmp_path / "x.txt"
+    diff = unified_file_diff(p, "hello\n")
+    assert "+hello" in diff
+
+
+def test_unified_file_diff_existing_file(tmp_path):
+    p = tmp_path / "x.txt"
+    p.write_text("old line\n", encoding="utf-8")
+    diff = unified_file_diff(p, "new line\n")
+    assert "-old line" in diff
+    assert "+new line" in diff
+
+
+def test_unified_file_diff_no_change(tmp_path):
+    p = tmp_path / "x.txt"
+    p.write_text("same\n", encoding="utf-8")
+    diff = unified_file_diff(p, "same\n")
+    assert diff == ""
