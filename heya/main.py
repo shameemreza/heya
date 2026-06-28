@@ -15,6 +15,7 @@ except Exception:
     VERSION = "0.0.2"
 
 from .agent import Agent, DEFAULT_MAX_ITERS
+from .project import load_project_instructions
 from .approval import ApprovalPolicy, UiApprover, prompt_stdin
 from .config import (
     load_allowed_roots, load_approval_allow, load_browser_headless, load_context_config,
@@ -23,6 +24,7 @@ from .config import (
     resolve_weak_profile, load_plugin_paths, load_disabled_plugins,
     load_command_paths, load_agent_paths, load_identity,
     resolve_api_key, load_default_profile, default_config_path, model_supports_vision,
+    load_project_instructions_enabled,
 )
 from .init import run_init
 from .preflight import check_profile, OK
@@ -306,6 +308,8 @@ def _default_make_agent(args: argparse.Namespace, *, ui: "UI | None" = None) -> 
     hooks = collect_hooks([*hook_sources, *plugin_hook_files])
     session_id = uuid.uuid4().hex
     identity = load_identity()
+    project_instructions = load_project_instructions(
+        Path.cwd(), enabled=load_project_instructions_enabled())
 
     return Agent(
         client,
@@ -335,6 +339,7 @@ def _default_make_agent(args: argparse.Namespace, *, ui: "UI | None" = None) -> 
         hooks_enabled=hooks_enabled,
         session_id=session_id,
         identity=identity,
+        project_instructions=project_instructions,
     )
 
 

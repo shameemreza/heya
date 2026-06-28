@@ -6,6 +6,12 @@ All notable changes to Heya are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Read a project's `AGENTS.md` and `CLAUDE.md` as context, so Heya picks up the
+  conventions of the repo you run it in. Text only, never run, and it does not
+  override Heya's safety rules. Disable with `[project] read_instructions = false`.
+
 ### Fixed
 
 - Write the credentials file at mode 0o600 atomically, closing a brief window

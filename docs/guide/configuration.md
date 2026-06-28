@@ -120,3 +120,15 @@ Where Heya keeps its remembered facts.
 [memory]
 path = "~/.config/heya/memory"
 ```
+
+## Project instructions
+
+When you run Heya inside a project, it reads the nearest `AGENTS.md` and
+`CLAUDE.md` (walking up to the git root) and adds them to its context, so it
+follows that repo's conventions. They are text only, never run, and they do not
+override Heya's safety rules. Turn it off if you prefer:
+
+```toml
+[project]
+read_instructions = false
+```
