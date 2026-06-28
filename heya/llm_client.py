@@ -48,14 +48,17 @@ class ChatResult:
 
 
 class LLMClient:
-    def __init__(self, profile: Profile, *, client: httpx.Client | None = None) -> None:
+    def __init__(self, profile: Profile, *, client: httpx.Client | None = None,
+                 api_key: str | None = None) -> None:
         self.profile = profile
         self._client = client or httpx.Client(timeout=profile.timeout)
+        self._api_key_override = api_key
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
-        if self.profile.api_key:
-            headers["Authorization"] = f"Bearer {self.profile.api_key}"
+        key = self._api_key_override or self.profile.api_key
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
         return headers
 
     def chat(

@@ -20,6 +20,31 @@ except Exception:  # rich missing or broken
 
 _WORDMARK = "Heya"  # a flat fallback; the rich path styles it
 
+ART_GREEN = "#46B450"   # WordPress-family green for "HE"
+ART_PURPLE = "#7F54B3"  # WooCommerce purple for "YA"
+
+# Block-letter HEYA, split into a left "HE" half and a right "YA" half so each
+# half can be styled independently (rich styles per segment, not per cell).
+_HE_ROWS = [
+    "█   █ █████",
+    "█   █ █    ",
+    "█████ ████ ",
+    "█   █ █    ",
+    "█   █ █████",
+]
+_YA_ROWS = [
+    "█   █  ███ ",
+    " █ █  █   █",
+    "  █   █████",
+    "  █   █   █",
+    "  █   █   █",
+]
+
+
+def heya_art_rows() -> list[tuple[str, str]]:
+    """Return the 5 art rows as (he_segment, ya_segment) pairs."""
+    return list(zip(_HE_ROWS, _YA_ROWS))
+
 
 def should_plain(out=None) -> bool:
     """Plain when there is no rich, NO_COLOR is set, or stdout is not a TTY."""
@@ -52,11 +77,20 @@ class UI:
             self._write(f"{_WORDMARK} v{version}\n{model} · {profile} · {cwd}{tail}\n/help for commands\n\n")
             return
         try:
-            self.console.print(_WORDMARK, style="bold cyan")
+            self._render_art()
             self.console.print(status, style="dim")
             self.console.print("/help for commands\n", style="dim")
         except Exception:
             self._write(status + "\n")
+
+    def _render_art(self) -> None:
+        from rich.text import Text
+        for he, ya in heya_art_rows():
+            line = Text()
+            line.append(he, style=f"bold {ART_GREEN}")
+            line.append("  ")
+            line.append(ya, style=f"bold {ART_PURPLE}")
+            self.console.print(line)
 
     def stream_text(self, chunk: str):
         if self.plain or self.console is None:

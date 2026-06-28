@@ -11,6 +11,9 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from .credentials import load_key
+from .tomlw import dumps
+
 DEFAULT_TIMEOUT = 120.0
 DEFAULT_PROFILE = "local"
 
@@ -40,16 +43,120 @@ def resolve_profile(
     name: str | None = None,
     *,
     profiles: dict[str, Profile],
+    default: str | None = None,
 ) -> Profile:
     """Resolve the active profile.
 
-    Precedence: explicit name > HEYA_PROFILE env var > DEFAULT_PROFILE.
+    Precedence: explicit name > HEYA_PROFILE env var > default > DEFAULT_PROFILE.
     """
-    chosen = name or os.environ.get("HEYA_PROFILE") or DEFAULT_PROFILE
+    chosen = name or os.environ.get("HEYA_PROFILE") or default or DEFAULT_PROFILE
     if chosen not in profiles:
         available = ", ".join(sorted(profiles))
         raise ConfigError(f"Unknown profile {chosen!r}. Available: {available}")
     return profiles[chosen]
+
+
+def write_config(data: dict, path: Path) -> None:
+    """Write configuration data to a TOML file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(dumps(data))
+
+
+def upsert_profile(path: Path, profile_name: str, fields: dict, *, make_default: bool = True) -> None:
+    """Write or update a single profile in the config file without touching any other sections.
+
+    If the file does not exist, create it (parent dirs too) with only the
+    [defaults] block (when make_default) and the [profiles.<profile_name>] block.
+
+    If the file exists, read its raw text, remove the existing [defaults] and
+    [profiles.<profile_name>] blocks if present, then append the fresh blocks.
+    Every other line (comments, blank lines, other sections like [mcp.servers.*])
+    is preserved byte-for-byte.
+    """
+    from .tomlw import _value as _toml_value
+
+    def _build_profile_block(name: str, f: dict) -> str:
+        lines = [f"[profiles.{name}]"]
+        # Canonical order: base_url, model, provider_type, api_key_env
+        for key in ("base_url", "model", "provider_type", "api_key_env"):
+            if key in f:
+                lines.append(f"{key} = {_toml_value(f[key])}")
+        # Any remaining keys not in the canonical order
+        for key, val in f.items():
+            if key not in ("base_url", "model", "provider_type", "api_key_env"):
+                lines.append(f"{key} = {_toml_value(val)}")
+        return "\n".join(lines) + "\n"
+
+    def _build_defaults_block(name: str) -> str:
+        return f"[defaults]\nprofile = {_toml_value(name)}\n"
+
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        parts: list[str] = []
+        if make_default:
+            parts.append(_build_defaults_block(profile_name))
+        parts.append(_build_profile_block(profile_name, fields))
+        path.write_text("\n".join(parts))
+        return
+
+    # File exists: strip the target blocks, keep everything else.
+    import re
+    text = path.read_text()
+    lines = text.splitlines(keepends=True)
+
+    # Identify headers to remove: [defaults] and [profiles.<profile_name>]
+    headers_to_remove = {f"[defaults]", f"[profiles.{profile_name}]"}
+
+    def _is_section_header(line: str) -> bool:
+        return bool(re.match(r"^\s*\[", line))
+
+    kept: list[str] = []
+    skip = False
+    for line in lines:
+        if _is_section_header(line):
+            # Check if this header matches one we need to remove
+            stripped = line.strip()
+            if stripped in headers_to_remove:
+                skip = True
+                continue
+            else:
+                skip = False
+        if not skip:
+            kept.append(line)
+
+    # Rebuild: strip trailing blank lines then append the new blocks
+    result = "".join(kept).rstrip("\n")
+    if result:
+        result += "\n"
+
+    new_parts: list[str] = []
+    if make_default:
+        new_parts.append(_build_defaults_block(profile_name))
+    new_parts.append(_build_profile_block(profile_name, fields))
+
+    if result:
+        result += "\n" + "\n".join(new_parts)
+    else:
+        result = "\n".join(new_parts)
+
+    path.write_text(result)
+
+
+def load_default_profile(config_path: Path | None = None) -> str | None:
+    """Load the default profile name from config, or None if not set/file missing."""
+    path = config_path or default_config_path()
+    if not path.exists():
+        return None
+    data = tomllib.loads(path.read_text())
+    return data.get("defaults", {}).get("profile")
+
+
+def resolve_api_key(profile: "Profile", *, credentials_path: Path | None = None) -> str | None:
+    """Resolve a profile's key: env var first, then the locked credentials file."""
+    env_key = profile.api_key  # reads os.environ[profile.api_key_env] if set
+    if env_key:
+        return env_key
+    return load_key(profile.name, path=credentials_path)
 
 
 # Built-in presets. `local` is the reference default; users add or override
