@@ -52,7 +52,7 @@ PAGE = """<!doctype html>
 <div class="docs-layout">
   <aside class="docs-side">
     <input type="search" class="docs-search" id="docs-search" placeholder="Search docs" aria-label="Search docs" autocomplete="off">
-    <ul class="search-results" id="search-results" hidden></ul>
+    <ul class="search-results" id="search-results" role="status" aria-live="polite" hidden></ul>
     <nav class="docs-nav" aria-label="Documentation">{nav}</nav>
   </aside>
   <main class="docs-content">{content}</main>
@@ -78,6 +78,7 @@ class _Text(HTMLParser):
 def strip_text(html):
     p = _Text()
     p.feed(html)
+    p.close()
     return " ".join(" ".join(p.parts).split())
 
 

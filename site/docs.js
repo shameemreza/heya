@@ -17,7 +17,8 @@
     return s.split("&").join("&amp;")
             .split("<").join("&lt;")
             .split(">").join("&gt;")
-            .split('"').join("&quot;");
+            .split('"').join("&quot;")
+            .split("'").join("&#39;");
   }
 
   function snippet(text, q) {
@@ -43,7 +44,7 @@
       results.innerHTML = '<li class="no-hit">No matches.</li>';
     } else {
       results.innerHTML = hits.map(function (p) {
-        return '<li><a href="' + p.url + '">' +
+        return '<li><a href="' + escapeHtml(p.url) + '">' +
                '<span class="r-title">' + escapeHtml(p.title) + '</span>' +
                '<span class="r-snip">' + escapeHtml(snippet(p.text, q)) + '</span>' +
                '</a></li>';
