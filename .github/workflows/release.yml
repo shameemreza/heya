@@ -9,6 +9,10 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# Least privilege by default; the publish jobs opt into id-token below.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
