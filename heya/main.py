@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, TextIO
 
@@ -38,6 +39,7 @@ from .tools_wp import PlaygroundSession
 from .tools_guidance import BUNDLED_GUIDANCE_DIR
 from .tools_web import build_search_provider
 from .ui import UI, should_plain
+from . import sessions
 
 import uuid
 
@@ -54,6 +56,25 @@ def _git_branch() -> str:
     except Exception:
         pass
     return ""
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _session_snapshot(agent, *, profile_name, created, updated, title=None) -> dict:
+    messages = getattr(agent, "messages", [])
+    return {
+        "id": getattr(agent, "session_id", ""),
+        "title": title or sessions.derive_title(messages),
+        "created": created,
+        "updated": updated,
+        "profile": profile_name,
+        "cwd": str(getattr(agent, "cwd", "")),
+        "session_tokens": getattr(agent, "session_tokens", 0),
+        "weak_tokens": getattr(agent, "weak_tokens", 0),
+        "messages": messages,
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -76,10 +97,15 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Add an allowed folder (repeatable).")
     parser.add_argument("--no-self-review", action="store_true", help="Disable the scoped self-review pass.")
     parser.add_argument("--max-iters", type=int, default=DEFAULT_MAX_ITERS, help="Max tool-loop iterations per task.")
+    parser.add_argument("--continue", dest="continue_", action="store_true",
+                        help="Resume the most recent session.")
+    parser.add_argument("--resume", nargs="?", const="__latest__", default=None,
+                        metavar="ID", help="Resume a session by id (or the latest if omitted).")
     return parser
 
 
-def _handle_slash(text: str, agent: Any, ui: UI) -> bool:
+def _handle_slash(text: str, agent: Any, ui: UI, *, profiles=None,
+                  sessions_dir=None, created="", now=None) -> bool:
     """Handle a slash command. Returns True to continue the loop, False to quit."""
     cmd = text.strip()
     if cmd == "/quit":
@@ -93,7 +119,12 @@ def _handle_slash(text: str, agent: Any, ui: UI) -> bool:
             "/cost      : show token usage\n"
             "/skills    : list loaded skills\n"
             "/agents    : list agent roles\n"
-            "/mcp       : list MCP tools"
+            "/mcp       : list MCP tools\n"
+            "/model     : show or switch the model profile (/model <name>)\n"
+            "/sessions  : list saved sessions\n"
+            "/resume    : resume a session (/resume <id>)\n"
+            "/save      : save now, optionally name it (/save <title>)\n"
+            "/new       : start a fresh session\n"
         )
         return True
     if cmd == "/clear":
@@ -138,6 +169,57 @@ def _handle_slash(text: str, agent: Any, ui: UI) -> bool:
                 ui.note("no MCP tools connected.")
         else:
             ui.note("no MCP runtime.")
+        return True
+    if cmd == "/model" or cmd.startswith("/model "):
+        name = cmd[len("/model"):].strip()
+        prof = getattr(getattr(agent, "client", None), "profile", None)
+        if not name:
+            ui.note(f"model: {getattr(prof, 'name', '?')} ({getattr(prof, 'model', '?')})")
+            return True
+        profiles = profiles or {}
+        if name not in profiles:
+            ui.note("unknown profile. available: " + ", ".join(sorted(profiles)))
+            return True
+        target = profiles[name]
+        agent.client = LLMClient(target, api_key=resolve_api_key(target))
+        if hasattr(agent, "context_window"):
+            agent.context_window = target.context_window
+        ui.note(f"switched to {target.name} ({target.model}).")
+        return True
+    if cmd == "/new":
+        msgs = getattr(agent, "messages", None)
+        if msgs is not None:
+            agent.messages = msgs[:1]
+        agent.session_id = uuid.uuid4().hex
+        ui.note("started a new session.")
+        return True
+    if cmd == "/sessions":
+        items = sessions.list_sessions(sessions_dir=sessions_dir)
+        if not items:
+            ui.note("no saved sessions.")
+            return True
+        lines = [f"  {s['id'][:8]}  {s['title']}  ({s['messages']} msgs)" for s in items]
+        ui.note("sessions:\n" + "\n".join(lines))
+        return True
+    if cmd.startswith("/resume"):
+        sid = cmd[len("/resume"):].strip()
+        data = sessions.load_session(sid, sessions_dir=sessions_dir) if sid else None
+        if not data:
+            ui.note("no such session.")
+            return True
+        agent.messages = data.get("messages", getattr(agent, "messages", []))
+        agent.session_id = data.get("id", getattr(agent, "session_id", ""))
+        agent.session_tokens = data.get("session_tokens", 0)
+        agent.weak_tokens = data.get("weak_tokens", 0)
+        ui.note(f"resumed session {agent.session_id[:8]}.")
+        return True
+    if cmd == "/save" or cmd.startswith("/save "):
+        title = cmd[len("/save"):].strip() or None
+        prof = getattr(getattr(agent, "client", None), "profile", None)
+        snap = _session_snapshot(agent, profile_name=getattr(prof, "name", ""),
+                                 created=created, updated=(now or _now)(), title=title)
+        sessions.save_session(snap, sessions_dir=sessions_dir)
+        ui.note("saved.")
         return True
     ui.note(f"unknown command: {cmd}  (try /help)")
     return True
@@ -266,6 +348,20 @@ def run_cli(
     if hasattr(agent, "_on_tool"):
         agent._on_tool = ui.tool_event
 
+    want = getattr(args, "resume", None)
+    if getattr(args, "continue_", False) and want is None:
+        want = "__latest__"
+    if want is not None:
+        sid = sessions.latest_session_id() if want == "__latest__" else want
+        data = sessions.load_session(sid) if sid else None
+        if data:
+            agent.messages = data.get("messages", getattr(agent, "messages", []))
+            agent.session_id = data.get("id", getattr(agent, "session_id", ""))
+            agent.session_tokens = data.get("session_tokens", 0)
+            agent.weak_tokens = data.get("weak_tokens", 0)
+        else:
+            ui.note("no session to resume; starting fresh.")
+
     try:
         model = getattr(getattr(agent, "client", None), "profile", None)
         model_name = getattr(model, "model", "") if model is not None else ""
@@ -293,6 +389,10 @@ def run_cli(
         else:
             ui.error(HINT)
 
+        profiles = load_profiles()
+        sessions_dir = sessions.default_sessions_dir()
+        session_created = _now()
+
         _exit_words = frozenset({"exit", "quit"})
         while True:
             try:
@@ -305,11 +405,15 @@ def run_cli(
             if text.lower() in _exit_words:
                 break
             if text.startswith("/"):
-                if not _handle_slash(text, agent, ui):
+                if not _handle_slash(text, agent, ui, profiles=profiles,
+                                     sessions_dir=sessions_dir, created=session_created):
                     break
                 continue
             agent.run(text)
             sys.stdout.write("\n")
+            snap = _session_snapshot(agent, profile_name=profile_name,
+                                     created=session_created, updated=_now())
+            sessions.save_session(snap, sessions_dir=sessions_dir)
         return 0
     finally:
         close = getattr(agent, "close", None)
