@@ -49,3 +49,9 @@ def test_malformed_file_is_skipped(tmp_path):
 def test_load_missing_returns_none(tmp_path):
     assert sessions.load_session("nope", sessions_dir=tmp_path) is None
     assert sessions.latest_session_id(sessions_dir=tmp_path) is None
+
+
+def test_load_ambiguous_prefix_returns_none(tmp_path):
+    sessions.save_session({"id": "abcuno", "messages": _msgs()}, sessions_dir=tmp_path)
+    sessions.save_session({"id": "abcdos", "messages": _msgs()}, sessions_dir=tmp_path)
+    assert sessions.load_session("abc", sessions_dir=tmp_path) is None

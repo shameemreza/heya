@@ -3,6 +3,7 @@ the config dir, mode 0o600. Every function is best-effort and never raises."""
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 
@@ -35,8 +36,10 @@ def save_session(data: dict, *, sessions_dir: Path | None = None) -> Path | None
     try:
         d.mkdir(parents=True, exist_ok=True)
         path = d / f"{sid}.json"
-        path.write_text(json.dumps(data, ensure_ascii=False))
-        path.chmod(0o600)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(data, ensure_ascii=False))
+        os.chmod(path, 0o600)
         return path
     except Exception:
         return None
@@ -73,7 +76,7 @@ def list_sessions(*, sessions_dir: Path | None = None) -> list[dict]:
         return []
     for p in files:
         data = _read(p)
-        if not data:
+        if data is None:
             continue
         out.append({
             "id": data.get("id", p.stem),
