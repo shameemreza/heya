@@ -644,3 +644,12 @@ def test_build_identity_block_empty_and_set():
     block = build_identity_block(Identity(name="Sam", role="HE"))
     assert "Sam" in block and "HE" in block
     assert "writing-voice" in block  # nudges the default voice
+
+
+def test_config_example_parses():
+    import tomllib
+    from pathlib import Path
+    text = (Path(__file__).resolve().parents[1] / "config.example.toml").read_text()
+    data = tomllib.loads(text)
+    for block in ("identity", "skills", "plugins", "hooks", "context", "routing"):
+        assert block in data
