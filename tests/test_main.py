@@ -236,3 +236,82 @@ def test_one_shot_runs_when_model_ok(tmp_path, monkeypatch, capsys):
     code = run_cli(build_parser().parse_args(["say", "hi"]),
                    make_agent=lambda args: agent, stdin=io.StringIO(""))
     assert code == 0 and agent.prompts == ["say hi"]
+
+
+# ---------------------------------------------------------------------------
+# Task 2 tests: slash commands /model, /new, /sessions, /resume, /save
+# ---------------------------------------------------------------------------
+
+from heya import sessions as sessions_mod
+
+
+def _agent_with_state():
+    a = FakeAgent()
+    a.cwd = "/tmp/x"
+    a.session_id = "sid1"
+    a.session_tokens = 7
+    a.weak_tokens = 0
+    a.client = types.SimpleNamespace(profile=types.SimpleNamespace(model="m", name="local"))
+    a.context_window = 8192
+    return a
+
+
+def test_slash_model_switch(monkeypatch):
+    from heya.config import Profile
+    profiles = {"local": Profile(name="local", base_url="u", model="m", provider_type="local"),
+                "cloud": Profile(name="cloud", base_url="c", model="big", provider_type="api_key")}
+    agent = _agent_with_state()
+    ui = main_mod.UI(plain=True, write=lambda s: None)
+    cont = main_mod._handle_slash("/model cloud", agent, ui, profiles=profiles)
+    assert cont is True
+    assert agent.client.profile.name == "cloud" and agent.context_window == profiles["cloud"].context_window
+
+
+def test_slash_model_unknown_lists_and_keeps(capsys):
+    from heya.config import Profile
+    profiles = {"local": Profile(name="local", base_url="u", model="m", provider_type="local")}
+    agent = _agent_with_state()
+    ui = main_mod.UI(plain=True)
+    main_mod._handle_slash("/model nope", agent, ui, profiles=profiles)
+    assert agent.client.profile.name == "local"  # unchanged
+    assert "local" in capsys.readouterr().out
+
+
+def test_slash_new_resets_and_changes_id():
+    agent = _agent_with_state()
+    agent.messages = [{"role": "system", "content": "s"}, {"role": "user", "content": "x"}]
+    ui = main_mod.UI(plain=True, write=lambda s: None)
+    main_mod._handle_slash("/new", agent, ui)
+    assert agent.messages == [{"role": "system", "content": "s"}]
+    assert agent.session_id != "sid1"
+
+
+def test_slash_resume_loads_messages(tmp_path):
+    sessions_mod.save_session(
+        {"id": "old1", "messages": [{"role": "system", "content": "s"},
+                                    {"role": "user", "content": "earlier"}]},
+        sessions_dir=tmp_path)
+    agent = _agent_with_state()
+    ui = main_mod.UI(plain=True, write=lambda s: None)
+    main_mod._handle_slash("/resume old1", agent, ui, sessions_dir=tmp_path)
+    assert agent.session_id == "old1"
+    assert any(m.get("content") == "earlier" for m in agent.messages)
+
+
+def test_slash_sessions_lists(tmp_path, capsys):
+    sessions_mod.save_session({"id": "s1", "title": "first thing", "updated": "2026-01-01",
+                               "messages": []}, sessions_dir=tmp_path)
+    agent = _agent_with_state()
+    ui = main_mod.UI(plain=True)
+    main_mod._handle_slash("/sessions", agent, ui, sessions_dir=tmp_path)
+    assert "first thing" in capsys.readouterr().out
+
+
+def test_slash_save_writes_with_title(tmp_path):
+    agent = _agent_with_state()
+    agent.messages = [{"role": "system", "content": "s"}, {"role": "user", "content": "q"}]
+    ui = main_mod.UI(plain=True, write=lambda s: None)
+    main_mod._handle_slash("/save my title", agent, ui, sessions_dir=tmp_path,
+                           created="t0", now=lambda: "t1")
+    data = sessions_mod.load_session("sid1", sessions_dir=tmp_path)
+    assert data["title"] == "my title" and data["session_tokens"] == 7
