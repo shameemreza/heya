@@ -178,7 +178,7 @@ class Agent:
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": system_content}]
         self._mutated = False
 
-    def run(self, user_message: str) -> str:
+    def run(self, user_message: "str | list") -> str:
         """Run one task to a final answer, with optional scoped self-review."""
         self._fire("SessionStart")
         self.messages.append({"role": "user", "content": user_message})
