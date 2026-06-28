@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "heya"
 version = "0.0.1"
@@ -11,7 +15,6 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.13",
     "Topic :: Utilities",
 ]
@@ -33,3 +36,9 @@ markers = [
     "integration: hits a live model endpoint or external CLI/subprocess (run with: pytest -m integration)",
 ]
 testpaths = ["tests"]
+
+[tool.setuptools]
+packages = ["heya"]
+
+[tool.setuptools.package-data]
+heya = ["guidance/*.md"]
