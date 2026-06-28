@@ -95,3 +95,29 @@ def test_banner_color_path_does_not_raise():
     ui = UI(plain=False)  # builds a real rich Console
     # Should render the art + status without raising even though we don't assert pixels.
     ui.banner(version="0.1.0", model="qwen", profile="local", cwd="/x", branch="main")
+
+
+def test_prompt_stream_and_plain_unchanged():
+    import io
+    from heya.ui import UI
+    assert UI(plain=True, stream=io.StringIO("hi\n")).prompt() == "hi\n"
+
+
+def test_at_path_completer_yields_after_at(tmp_path):
+    # the completer should offer path completions for the fragment after '@'
+    pytest = __import__("pytest")
+    pytest.importorskip("prompt_toolkit")
+    from prompt_toolkit.document import Document
+    from heya.ui import _AtPathCompleter
+    (tmp_path / "alpha.txt").write_text("x")
+    doc = Document(f"see @{tmp_path}/")
+    comps = list(_AtPathCompleter().get_completions(doc, None))
+    assert any("alpha.txt" in c.text for c in comps)
+
+
+def test_prompt_session_never_raises():
+    from heya.ui import UI
+    ui = UI(plain=False)
+    # building/returning the session must not raise even if prompt_toolkit is odd
+    ui._prompt_session()
+    ui._prompt_session()  # cached second call

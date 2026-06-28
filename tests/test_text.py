@@ -49,3 +49,12 @@ def test_total_length_capped_with_middle_truncation():
 def test_per_line_cap_applied_before_total_cap():
     out = truncate_output("a" * 100 + "\n" + "b" * 100, max_chars=500, max_line=10)
     assert "… [line truncated]" in out
+
+
+def test_estimate_handles_list_content():
+    msgs = [{"role": "user", "content": [
+        {"type": "text", "text": "hello there"},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}},
+    ]}]
+    n = estimate_messages_tokens(msgs)
+    assert isinstance(n, int) and n > 0  # does not raise; image adds rough cost

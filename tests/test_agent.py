@@ -49,6 +49,26 @@ def test_returns_plain_answer_without_tools(tmp_path):
     assert agent.run("hi") == "hello"
 
 
+def test_run_accepts_list_content(tmp_path):
+    class CaptureClient:
+        def __init__(self):
+            self.profile = type("P", (), {"model": "m", "name": "local"})()
+            self.seen = None
+
+        def chat_stream(self, messages, tools=None, on_text=None):
+            self.seen = [dict(m) for m in messages]
+            return ChatResult(content="ok", tool_calls=[])
+
+    client = CaptureClient()
+    agent = Agent(client, allowed_roots=[tmp_path], cwd=tmp_path,
+                  approval=_AllowAll(), self_review=False)
+    content = [{"type": "text", "text": "see this"},
+               {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}]
+    agent.run(content)
+    user_msgs = [m for m in client.seen if m.get("role") == "user"]
+    assert user_msgs and user_msgs[-1]["content"] == content
+
+
 def test_runs_a_tool_then_returns_answer(tmp_path):
     (tmp_path / "a.txt").write_text("file body")
     scripted = [

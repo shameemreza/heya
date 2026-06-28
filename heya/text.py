@@ -33,12 +33,26 @@ def estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
+def _content_text(content) -> str:
+    """Extract text from content (str or multimodal list), handling image costs."""
+    if isinstance(content, list):
+        parts = []
+        for p in content:
+            if isinstance(p, dict):
+                if p.get("type") == "text":
+                    parts.append(p.get("text") or "")
+                elif p.get("type") == "image_url":
+                    parts.append("x" * 1000)  # rough fixed cost for an image (~250 tokens)
+        return " ".join(parts)
+    return content or ""
+
+
 def estimate_messages_tokens(messages: list[dict]) -> int:
     """Estimate the token size of an OpenAI-style message list (content + tool-call
     arguments + a small per-message envelope)."""
     total = 0
     for m in messages:
-        total += estimate_tokens(m.get("content") or "")
+        total += estimate_tokens(_content_text(m.get("content")))
         total += 4  # per-message envelope
         for call in m.get("tool_calls") or []:
             fn = call.get("function") or {}

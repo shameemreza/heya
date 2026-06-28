@@ -798,3 +798,13 @@ def test_upsert_profile_make_default_false_skips_defaults(tmp_path):
     data = _tomllib.loads(cfg.read_text())
     assert "defaults" not in data
     assert data["profiles"]["cloud"]["model"] == "gpt-4o-mini"
+
+
+def test_model_supports_vision():
+    from heya.config import Profile, model_supports_vision
+    assert model_supports_vision(Profile(name="c", base_url="u", model="gpt-4o")) is True
+    assert model_supports_vision(Profile(name="c", base_url="u", model="claude-haiku-4-5")) is True
+    assert model_supports_vision(Profile(name="l", base_url="u", model="llama3.2-vision")) is True
+    assert model_supports_vision(Profile(name="l", base_url="u", model="qwen2.5-coder:14b")) is False
+    # explicit flag overrides the heuristic
+    assert model_supports_vision(Profile(name="l", base_url="u", model="mystery", vision=True)) is True

@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import sys
 from contextlib import contextmanager
+from pathlib import Path
 
 try:
     from rich.console import Console
@@ -17,6 +18,29 @@ try:
 except Exception:  # rich missing or broken
     Console = None
     _RICH = False
+
+try:
+    from prompt_toolkit.completion import Completer, Completion, PathCompleter
+    from prompt_toolkit.document import Document
+
+    class _AtPathCompleter(Completer):
+        """Complete filesystem paths for the fragment after the last '@'."""
+        def __init__(self):
+            self._paths = PathCompleter(expanduser=True)
+
+        def get_completions(self, document, complete_event):
+            text = document.text_before_cursor
+            at = text.rfind("@")
+            if at == -1:
+                return
+            frag = text[at + 1:]
+            if " " in frag:
+                return
+            sub = Document(frag, len(frag))
+            for c in self._paths.get_completions(sub, complete_event):
+                yield c
+except Exception:  # prompt_toolkit missing
+    _AtPathCompleter = None
 
 _WORDMARK = "Heya"  # a flat fallback; the rich path styles it
 
@@ -138,6 +162,21 @@ class UI:
             yield
 
     # --- input --------------------------------------------------------------
+    def _prompt_session(self):
+        if hasattr(self, "_pt"):
+            return self._pt
+        self._pt = None
+        try:
+            from prompt_toolkit import PromptSession
+            from prompt_toolkit.history import FileHistory
+            hist = Path.home() / ".config" / "heya" / "history"
+            hist.parent.mkdir(parents=True, exist_ok=True)
+            completer = _AtPathCompleter() if _AtPathCompleter is not None else None
+            self._pt = PromptSession(history=FileHistory(str(hist)), completer=completer)
+        except Exception:
+            self._pt = None
+        return self._pt
+
     def prompt(self, label: str = "you") -> str:
         if self.stream is not None:
             line = self.stream.readline()
@@ -146,6 +185,14 @@ class UI:
             return line
         if self.plain or self.console is None:
             return input(f"{label} > ")
+        pt = self._prompt_session()
+        if pt is not None:
+            try:
+                return pt.prompt(f"{label} > ")
+            except EOFError:
+                raise
+            except Exception:
+                pass
         try:
             from rich.prompt import Prompt
             return Prompt.ask(f"[bold green]{label} ›[/]", console=self.console)

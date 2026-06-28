@@ -31,12 +31,23 @@ class Profile:
     api_key_env: str | None = None  # env var NAME holding the key, never the key itself
     timeout: float = DEFAULT_TIMEOUT
     context_window: int = 32768
+    vision: bool = False
 
     @property
     def api_key(self) -> str | None:
         if self.api_key_env is None:
             return None
         return os.environ.get(self.api_key_env)
+
+
+_VISION_HINTS = ("gpt-4o", "gpt-4.1", "claude", "vision", "llava", "-vl", "gemini", "pixtral")
+
+
+def model_supports_vision(profile: "Profile") -> bool:
+    if getattr(profile, "vision", False):
+        return True
+    model = (getattr(profile, "model", "") or "").lower()
+    return any(h in model for h in _VISION_HINTS)
 
 
 def resolve_profile(
@@ -77,13 +88,13 @@ def upsert_profile(path: Path, profile_name: str, fields: dict, *, make_default:
 
     def _build_profile_block(name: str, f: dict) -> str:
         lines = [f"[profiles.{name}]"]
-        # Canonical order: base_url, model, provider_type, api_key_env
-        for key in ("base_url", "model", "provider_type", "api_key_env"):
+        # Canonical order: base_url, model, provider_type, api_key_env, context_window, vision
+        for key in ("base_url", "model", "provider_type", "api_key_env", "context_window", "vision"):
             if key in f:
                 lines.append(f"{key} = {_toml_value(f[key])}")
         # Any remaining keys not in the canonical order
         for key, val in f.items():
-            if key not in ("base_url", "model", "provider_type", "api_key_env"):
+            if key not in ("base_url", "model", "provider_type", "api_key_env", "context_window", "vision"):
                 lines.append(f"{key} = {_toml_value(val)}")
         return "\n".join(lines) + "\n"
 

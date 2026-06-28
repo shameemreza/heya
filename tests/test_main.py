@@ -359,3 +359,32 @@ def test_resume_unknown_id_starts_fresh(tmp_path, monkeypatch, capsys):
                    make_agent=lambda args: agent, stdin=io.StringIO(""))
     assert code == 0
     assert agent.session_id == "sid1"  # unchanged, fresh
+
+
+# ---------------------------------------------------------------------------
+# Task 4 tests: attachment handling and vision model warnings
+# ---------------------------------------------------------------------------
+
+
+def test_attachment_image_warns_non_vision(tmp_path, monkeypatch, capsys):
+    img = tmp_path / "s.png"
+    img.write_bytes(b"\x89PNGFAKE")
+    agent = _agent_with_state()           # model "m" -> not vision
+    agent.allowed_roots = [tmp_path]
+    agent.cwd = tmp_path
+    captured = {}
+    agent.run = lambda content: captured.update(content=content) or "ok"
+    ui = main_mod.UI(plain=True)
+    content = main_mod._build_turn_content("see @s.png", agent, ui)
+    assert isinstance(content, list) and any(b.get("type") == "image_url" for b in content)
+    assert "cannot see images" in capsys.readouterr().out.lower()
+
+
+def test_attachment_note_for_bad_path(tmp_path, capsys):
+    agent = _agent_with_state()
+    agent.allowed_roots = [tmp_path]
+    agent.cwd = tmp_path
+    ui = main_mod.UI(plain=True)
+    content = main_mod._build_turn_content("see @/etc/shadow", agent, ui)
+    assert content == "see @/etc/shadow"  # nothing attached
+    assert "could not include" in capsys.readouterr().out.lower()
