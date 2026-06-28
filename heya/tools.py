@@ -17,7 +17,7 @@ from .reproduction import VERDICTS
 from .triage import PRIORITIES
 from .subagents import ROLES as _ROLES
 from .text import truncate_output
-from .tools_files import ToolError, read_file, resolve_in_allowlist, run_command, search_files, write_file
+from .tools_files import ToolError, read_file, resolve_in_allowlist, run_command, search_files, list_files, write_file
 from .tools_guidance import read_guidance as _read_guidance
 from .tools_mcp import MCP_PREFIX, build_reverse_map, mcp_tool_name, parse_mcp_name, _MAX_DESC
 from .tools_web import web_fetch, web_search
@@ -368,6 +368,12 @@ TOOL_SCHEMAS: list[dict] = [
             "query": {"type": "string", "description": "Literal substring to find."},
             "path": {"type": "string", "description": "Optional folder to search under (default: working dir)."},
         }, "required": ["query"]}}},
+    {"type": "function", "function": {
+        "name": "list_files",
+        "description": "Map the project structure: a read-only indented tree of files and folders under a path (default: working dir). Use it to get oriented before reading. Skips noise like .git and node_modules.",
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string", "description": "Optional folder to map (default: working dir)."},
+        }, "required": []}}},
     {
         "type": "function",
         "function": {
@@ -606,6 +612,8 @@ def dispatch_tool(
         if name == "search_files":
             return truncate_output(search_files(
                 args["query"], allowed_roots=allowed_roots, cwd=cwd, path=args.get("path")))
+        if name == "list_files":
+            return list_files(args.get("path"), allowed_roots=allowed_roots, cwd=cwd)
         if name == "write_file":
             n = write_file(args["path"], args["content"], allowed_roots=allowed_roots)
             return f"Wrote {n} bytes to {args['path']}."
@@ -761,6 +769,8 @@ def describe_call(name: str, arguments: str) -> str:
         return f"read_file → {args.get('path', '?')}"
     if name == "search_files":
         return f"search_files → {args.get('query', '?')}"
+    if name == "list_files":
+        return f"list_files → {args.get('path') or 'working dir'}"
     if name == "read_guidance":
         return f"read_guidance → {args.get('name') or '(list)'}"
     if name == "web_search":

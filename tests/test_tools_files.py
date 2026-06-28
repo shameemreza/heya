@@ -200,3 +200,37 @@ def test_search_files_skips_symlink_escaping_allowlist(tmp_path):
     out = search_files("TOPSECRET", allowed_roots=[root], cwd=root)
     assert "leak.txt" not in out       # escaping symlink target not read
     assert "1:" not in out             # no line results (only "No matches" echo is allowed)
+
+
+def test_list_files_tree(tmp_path):
+    from heya.tools_files import list_files
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("x")
+    (tmp_path / "README.md").write_text("y")
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "HEAD").write_text("ref")
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "dep.js").write_text("z")
+    out = list_files(str(tmp_path), allowed_roots=[tmp_path], cwd=tmp_path)
+    assert "src/" in out and "app.py" in out and "README.md" in out
+    assert ".git" not in out and "node_modules" not in out  # noise skipped
+
+
+def test_list_files_depth_and_cap(tmp_path):
+    from heya.tools_files import list_files
+    deep = tmp_path / "a" / "b" / "c" / "d"
+    deep.mkdir(parents=True)
+    (deep / "deep.txt").write_text("x")
+    out = list_files(str(tmp_path), allowed_roots=[tmp_path], cwd=tmp_path, max_depth=2)
+    assert "deep.txt" not in out  # past max_depth
+    # cap
+    for i in range(10):
+        (tmp_path / f"f{i}.txt").write_text("x")
+    capped = list_files(str(tmp_path), allowed_roots=[tmp_path], cwd=tmp_path, max_entries=3)
+    assert "truncated" in capped
+
+
+def test_list_files_bad_path_returns_error(tmp_path):
+    from heya.tools_files import list_files
+    out = list_files("/etc", allowed_roots=[tmp_path], cwd=tmp_path)
+    assert out.startswith("Error:")
