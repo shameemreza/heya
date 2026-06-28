@@ -86,6 +86,7 @@
       <div class="tabs" role="tablist" aria-label="Examples">
         <button class="tab is-active" role="tab" aria-selected="true" aria-controls="ex-bug" id="tab-bug">Diagnose a bug</button>
         <button class="tab" role="tab" aria-selected="false" aria-controls="ex-plugin" id="tab-plugin">Read a plugin</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="ex-build" id="tab-build">Write a plugin</button>
         <button class="tab" role="tab" aria-selected="false" aria-controls="ex-reply" id="tab-reply">Start a reply</button>
       </div>
 
@@ -107,6 +108,16 @@
 <span class="t-dim">· review: security, standards, correctness, over-building</span>
 <span class="t-warn">issue</span> an unsanitized $_GET['date'] reaches a SQL query in class-calendar.php:88
 <span class="t-key">fix</span> sanitize with absint() and run it through $wpdb->prepare()</pre>
+      </div>
+
+      <div class="terminal panel" id="ex-build" role="tabpanel" aria-labelledby="tab-build">
+        <div class="term-bar"><span></span><span></span><span></span></div>
+        <pre class="term-body"><span class="t-you">you ›</span> scaffold a WooCommerce extension: a gift-note field at checkout
+<span class="t-dim">· writing gift-note.php with the plugin header</span>
+<span class="t-dim">· hooking woocommerce_after_order_notes and the order save</span>
+<span class="t-dim">· review: security, standards</span>
+<span class="t-warn">caught</span> the field needs sanitize_text_field() and a nonce, the label needs __()
+<span class="t-ok">fixed</span> added the guards, escaped on output, made the string translatable</pre>
       </div>
 
       <div class="terminal panel" id="ex-reply" role="tabpanel" aria-labelledby="tab-reply">
