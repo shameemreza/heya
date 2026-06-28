@@ -730,6 +730,18 @@ def load_identity(config_path: Path | None = None) -> Identity:
     return Identity(name=str(data.get("name", "")).strip(), role=str(data.get("role", "")).strip())
 
 
+def load_project_instructions_enabled(config_path: Path | None = None) -> bool:
+    """Whether to read a project's AGENTS.md / CLAUDE.md into the prompt (default on)."""
+    path = config_path or default_config_path()
+    if not path.exists():
+        return True
+    try:
+        data = tomllib.loads(path.read_text())
+    except Exception:
+        return True
+    return bool(data.get("project", {}).get("read_instructions", True))
+
+
 def build_identity_block(identity: Identity) -> str:
     if not identity.name and not identity.role:
         return ""

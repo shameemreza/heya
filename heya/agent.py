@@ -113,6 +113,7 @@ class Agent:
         session_id="",
         agent_roles=None,
         identity=None,
+        project_instructions: str = "",
     ) -> None:
         self.client = client
         self.weak_client = weak_client if weak_client is not None else client
@@ -176,6 +177,8 @@ class Agent:
             line = build_identity_block(self.identity)
             if line:
                 system_content = system_content + "\n\n" + line
+        if project_instructions:
+            system_content = system_content + "\n\n" + project_instructions
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": system_content}]
         self._mutated = False
 
