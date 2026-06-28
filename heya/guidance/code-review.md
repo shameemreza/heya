@@ -15,3 +15,5 @@ Review the change, not the whole file. Focus on what this diff adds.
 - Scope: nothing built that wasn't needed; nothing half-built left behind.
 
 Say plainly whether it's ready. If not, name the specific thing to fix.
+
+For over-building (unneeded abstractions, a library where the standard library or a native feature works, a plugin where a snippet works), also consult `read_guidance('minimal-code')`.

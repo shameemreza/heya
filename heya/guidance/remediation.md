@@ -65,3 +65,5 @@ weak check hides a fix that broke something else.
 
 Write the solution either way: the verified fix with its evidence, or the best
 attempt with an honest not-verified note and what is still failing.
+
+When the fix involves writing code, also follow `read_guidance('minimal-code')`: prefer the smallest change that fully solves the problem, and never minimize validation or security.
