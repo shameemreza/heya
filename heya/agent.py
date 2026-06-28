@@ -109,6 +109,7 @@ class Agent:
         hooks_enabled=False,
         session_id="",
         agent_roles=None,
+        identity=None,
     ) -> None:
         self.client = client
         self.weak_client = weak_client if weak_client is not None else client
@@ -165,6 +166,12 @@ class Agent:
             note = agent_roles_note(self.agent_roles)
             if note:
                 system_content = system_content + "\n\n" + note
+        self.identity = identity
+        if self.identity is not None:
+            from .config import build_identity_block
+            line = build_identity_block(self.identity)
+            if line:
+                system_content = system_content + "\n\n" + line
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": system_content}]
         self._mutated = False
 
@@ -414,6 +421,7 @@ class Agent:
             hooks_enabled=self.hooks_enabled,
             session_id=self.session_id,
             agent_roles=self.agent_roles,
+            identity=self.identity,
         )
         child._labeled_stream = stream
         return child

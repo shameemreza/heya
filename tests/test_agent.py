@@ -1341,3 +1341,16 @@ def test_agent_record_pick_list_writes(tmp_path):
          "reason": "clear", "action": "go"}])
     assert "A" in out
     assert (tmp_path / "pick-list.md").is_file()
+
+
+def test_agent_identity_in_system_prompt(tmp_path):
+    from heya.config import Identity
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")], identity=Identity(name="Sam", role="HE"))
+    assert "Sam" in agent.messages[0]["content"]
+    child = agent._make_child(None, None)
+    assert "Sam" in child.messages[0]["content"]  # inherited
+
+
+def test_agent_no_identity_no_line(tmp_path):
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")])
+    assert "You are assisting" not in agent.messages[0]["content"]

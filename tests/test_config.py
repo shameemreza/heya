@@ -623,3 +623,24 @@ def test_load_agent_paths_disabled(tmp_path):
     p = tmp_path / "c.toml"
     p.write_text("[agents]\nenabled = false\n")
     assert load_agent_paths(p) == ()
+
+
+from heya.config import Identity, load_identity, build_identity_block
+
+
+def test_load_identity_absent(tmp_path):
+    assert load_identity(tmp_path / "nope.toml") == Identity()
+
+
+def test_load_identity_reads_block(tmp_path):
+    p = tmp_path / "c.toml"
+    p.write_text('[identity]\nname = "Shameem Reza"\nrole = "WooCommerce Happiness Engineer"\n')
+    ident = load_identity(p)
+    assert ident.name == "Shameem Reza" and ident.role == "WooCommerce Happiness Engineer"
+
+
+def test_build_identity_block_empty_and_set():
+    assert build_identity_block(Identity()) == ""
+    block = build_identity_block(Identity(name="Sam", role="HE"))
+    assert "Sam" in block and "HE" in block
+    assert "writing-voice" in block  # nudges the default voice

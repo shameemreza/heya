@@ -14,7 +14,7 @@ from .config import (
     load_guidance_paths, load_hooks_config, load_mcp_servers, load_memory_path, load_profiles,
     load_routing_config, load_search_config, load_skill_paths, load_wp_path, resolve_profile,
     resolve_weak_profile, load_plugin_paths, load_disabled_plugins,
-    load_command_paths, load_agent_paths,
+    load_command_paths, load_agent_paths, load_identity,
 )
 from .hooks import collect_hooks
 from .plugins import discover_plugins, collect_plugin_skills
@@ -99,6 +99,7 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
     plugin_hook_files = [p.root / "hooks" / "hooks.json" for p in plugins.values()]
     hooks = collect_hooks([*hook_sources, *plugin_hook_files])
     session_id = uuid.uuid4().hex
+    identity = load_identity()
 
     return Agent(
         client,
@@ -127,6 +128,7 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
         hooks=hooks,
         hooks_enabled=hooks_enabled,
         session_id=session_id,
+        identity=identity,
     )
 
 
