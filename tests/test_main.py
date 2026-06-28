@@ -68,7 +68,7 @@ def test_run_cli_closes_agent(capsys):
 def test_default_make_agent_builds_with_wp_wiring(monkeypatch, tmp_path):
     import heya.main as main_mod
     # avoid a real LLM client/network: stub it
-    monkeypatch.setattr(main_mod, "LLMClient", lambda profile: object())
+    monkeypatch.setattr(main_mod, "LLMClient", lambda profile, **kw: object())
     args = main_mod.build_parser().parse_args(["hi"])
     agent = main_mod._default_make_agent(args)
     assert agent.process_registry is not None
@@ -78,7 +78,7 @@ def test_default_make_agent_builds_with_wp_wiring(monkeypatch, tmp_path):
 
 def test_default_make_agent_wires_mcp_runtime(monkeypatch):
     import heya.main as main_mod
-    monkeypatch.setattr(main_mod, "LLMClient", lambda profile: object())
+    monkeypatch.setattr(main_mod, "LLMClient", lambda profile, **kw: object())
     monkeypatch.setattr(main_mod, "load_mcp_servers", lambda *a, **k: ())
     args = main_mod.build_parser().parse_args([])
     agent = main_mod._default_make_agent(args)
@@ -90,7 +90,7 @@ def test_default_make_agent_wires_mcp_runtime(monkeypatch):
 
 def test_default_make_agent_wires_llm_into_runtime(monkeypatch):
     import heya.main as main_mod
-    monkeypatch.setattr(main_mod, "LLMClient", lambda profile: object())
+    monkeypatch.setattr(main_mod, "LLMClient", lambda profile, **kw: object())
     monkeypatch.setattr(main_mod, "load_mcp_servers", lambda *a, **k: ())
     args = main_mod.build_parser().parse_args([])
     agent = main_mod._default_make_agent(args)
@@ -153,3 +153,86 @@ def test_version_flag():
     with pytest.raises(SystemExit) as e:
         main_mod.main(["--version"])
     assert e.value.code == 0
+
+
+# ---------------------------------------------------------------------------
+# Task-6 tests: first-run wizard routing and preflight gating
+# ---------------------------------------------------------------------------
+
+import types
+
+
+def _agent_with_profile():
+    """A FakeAgent that also exposes .client.profile, so preflight runs."""
+    a = FakeAgent()
+    a.client = types.SimpleNamespace(
+        profile=types.SimpleNamespace(model="m", name="local"))
+    return a
+
+
+def test_init_token_routes_to_wizard(capsys):
+    called = {"n": 0}
+
+    def fake_init(**kw):
+        called["n"] += 1
+        return 0
+
+    code = run_cli(build_parser().parse_args(["init"]),
+                   make_agent=lambda args: FakeAgent(),
+                   stdin=io.StringIO(""), init_fn=fake_init)
+    assert code == 0 and called["n"] == 1
+
+
+def test_fresh_install_launches_wizard(tmp_path, monkeypatch, capsys):
+    # point config at a non-existent path so it's a "fresh install"
+    monkeypatch.setattr(main_mod, "default_config_path", lambda: tmp_path / "none.toml")
+    called = {"n": 0}
+
+    def fake_init(**kw):
+        called["n"] += 1
+        return 0
+
+    agent = FakeAgent()
+    # no task, fresh config, auto_init on -> wizard runs, then REPL reads EOF
+    code = run_cli(build_parser().parse_args([]),
+                   make_agent=lambda args: agent,
+                   stdin=io.StringIO(""), init_fn=fake_init, auto_init=True)
+    assert called["n"] == 1
+
+
+def test_no_auto_init_without_flag(tmp_path, monkeypatch):
+    # the default (auto_init off) must NOT launch the wizard, even on a fresh
+    # config -- this is what keeps the existing interactive tests valid.
+    monkeypatch.setattr(main_mod, "default_config_path", lambda: tmp_path / "none.toml")
+    called = {"n": 0}
+    agent = FakeAgent()
+    run_cli(build_parser().parse_args([]),
+            make_agent=lambda args: agent, stdin=io.StringIO("hi\n"),
+            init_fn=lambda **kw: called.__setitem__("n", called["n"] + 1) or 0)
+    assert called["n"] == 0
+    assert agent.prompts == ["hi"]
+
+
+def test_one_shot_no_model_prints_hint_and_exits(tmp_path, monkeypatch, capsys):
+    # a real, existing config so the fresh-install path is NOT taken
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('[defaults]\nprofile = "local"\n')
+    monkeypatch.setattr(main_mod, "default_config_path", lambda: cfg)
+    monkeypatch.setattr(main_mod, "check_profile", lambda *a, **k: "unreachable")
+    agent = _agent_with_profile()  # has .client.profile, so preflight is consulted
+    code = run_cli(build_parser().parse_args(["do", "thing"]),
+                   make_agent=lambda args: agent, stdin=io.StringIO(""))
+    assert code == 1
+    assert agent.prompts == []  # never ran the task
+    assert "model" in capsys.readouterr().out.lower()
+
+
+def test_one_shot_runs_when_model_ok(tmp_path, monkeypatch, capsys):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('[defaults]\nprofile = "local"\n')
+    monkeypatch.setattr(main_mod, "default_config_path", lambda: cfg)
+    monkeypatch.setattr(main_mod, "check_profile", lambda *a, **k: "ok")
+    agent = _agent_with_profile()
+    code = run_cli(build_parser().parse_args(["say", "hi"]),
+                   make_agent=lambda args: agent, stdin=io.StringIO(""))
+    assert code == 0 and agent.prompts == ["say hi"]

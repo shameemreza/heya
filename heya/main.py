@@ -21,7 +21,10 @@ from .config import (
     load_routing_config, load_search_config, load_skill_paths, load_wp_path, resolve_profile,
     resolve_weak_profile, load_plugin_paths, load_disabled_plugins,
     load_command_paths, load_agent_paths, load_identity,
+    resolve_api_key, load_default_profile, default_config_path,
 )
+from .init import run_init
+from .preflight import check_profile, OK
 from .hooks import collect_hooks
 from .plugins import discover_plugins, collect_plugin_skills
 from .skills import collect_skills, collect_commands
@@ -142,7 +145,7 @@ def _handle_slash(text: str, agent: Any, ui: UI) -> bool:
 
 def _default_make_agent(args: argparse.Namespace, *, ui: "UI | None" = None) -> Agent:
     profiles = load_profiles()
-    profile = resolve_profile(args.profile, profiles=profiles)
+    profile = resolve_profile(args.profile, profiles=profiles, default=load_default_profile())
     weak_profile = resolve_weak_profile(load_routing_config(), profiles)
     roots = list(load_allowed_roots()) + [Path(p).expanduser().resolve() for p in args.allow]
     guidance_sources = (BUNDLED_GUIDANCE_DIR, *load_guidance_paths())
@@ -151,9 +154,9 @@ def _default_make_agent(args: argparse.Namespace, *, ui: "UI | None" = None) -> 
     process_registry = ProcessRegistry()
     playground_session = PlaygroundSession(process_registry, cwd=Path.cwd(), allowed_roots=roots)
     wp_default_root = load_wp_path()
-    client = LLMClient(profile)
+    client = LLMClient(profile, api_key=resolve_api_key(profile))
     weak_client = (
-        LLMClient(weak_profile)
+        LLMClient(weak_profile, api_key=resolve_api_key(weak_profile))
         if weak_profile is not None and weak_profile.name != profile.name
         else None
     )
@@ -234,7 +237,18 @@ def run_cli(
     *,
     make_agent: Callable[[argparse.Namespace], Any] = _default_make_agent,
     stdin: TextIO | None = None,
+    init_fn: Callable[..., int] = run_init,
+    auto_init: bool = False,
 ) -> int:
+    # `heya init` runs the setup wizard, not a task.
+    if args.task == ["init"]:
+        return init_fn(stream=stdin)
+    # Fresh install with no config and no task: greet and set up first.
+    # Gated by auto_init so only the real entrypoint (main) triggers it; tests
+    # that drive run_cli with injected stdin keep auto_init off and are unaffected.
+    if auto_init and not args.task and not default_config_path().exists():
+        init_fn(stream=stdin)
+
     plain = should_plain() or (stdin is not None)
     ui = UI(plain=plain, stream=stdin if stdin is not None else None)
 
@@ -253,22 +267,31 @@ def run_cli(
         agent._on_tool = ui.tool_event
 
     try:
+        model = getattr(getattr(agent, "client", None), "profile", None)
+        model_name = getattr(model, "model", "") if model is not None else ""
+        profile_name = getattr(model, "name", "") if model is not None else ""
+        status = check_profile(model) if model is not None else OK
+        HINT = f"Heya v{VERSION} - no model ready. Run `heya init` to set one up."
+
         if args.task:
+            if status != OK:
+                ui.error(HINT)
+                return 1
             agent.run(" ".join(args.task))
             sys.stdout.write("\n")
             return 0
 
         # Show banner before the interactive loop.
-        model = getattr(getattr(agent, "client", None), "profile", None)
-        model_name = getattr(model, "model", "") if model is not None else ""
-        profile_name = getattr(model, "name", "") if model is not None else ""
-        ui.banner(
-            version=VERSION,
-            model=model_name,
-            profile=profile_name,
-            cwd=str(Path.cwd()),
-            branch=_git_branch(),
-        )
+        if status == OK:
+            ui.banner(
+                version=VERSION,
+                model=model_name,
+                profile=profile_name,
+                cwd=str(Path.cwd()),
+                branch=_git_branch(),
+            )
+        else:
+            ui.error(HINT)
 
         _exit_words = frozenset({"exit", "quit"})
         while True:
@@ -295,7 +318,7 @@ def run_cli(
 
 
 def main(argv: list[str] | None = None) -> int:
-    return run_cli(build_parser().parse_args(argv))
+    return run_cli(build_parser().parse_args(argv), auto_init=True)
 
 
 if __name__ == "__main__":
