@@ -9,7 +9,7 @@ from typing import Any, Callable, TextIO
 
 try:
     from importlib.metadata import version as _pkg_version
-    VERSION = _pkg_version("heya")
+    VERSION = _pkg_version("heya-agent")
 except Exception:
     VERSION = "0.0.1"
 
