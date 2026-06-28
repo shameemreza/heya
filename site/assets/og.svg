@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#0d1117"/>
+  <rect x="1" y="1" width="1198" height="628" fill="none" stroke="#232a35" stroke-width="2"/>
+  <text x="84" y="290" font-family="ui-monospace, Menlo, monospace" font-size="150" font-weight="800" letter-spacing="-4">
+    <tspan fill="#46b450">he</tspan><tspan fill="#7f54b3">ya</tspan>
+  </text>
+  <text x="90" y="372" font-family="ui-sans-serif, system-ui, sans-serif" font-size="40" fill="#d6dee7">An AI agent that runs on your machine.</text>
+  <rect x="88" y="430" width="430" height="64" rx="10" fill="#0a0e14" stroke="#232a35" stroke-width="2"/>
+  <text x="112" y="471" font-family="ui-monospace, Menlo, monospace" font-size="28" fill="#e6edf3"><tspan fill="#46b450">$ </tspan>pipx install heya-agent</text>
+  <text x="90" y="560" font-family="ui-monospace, Menlo, monospace" font-size="24" fill="#8b949e">local-first.  model-agnostic.  yours.</text>
+</svg>

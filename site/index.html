@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Heya: a local-first AI agent for your terminal</title>
+  <meta name="description" content="Heya is a local-first, model-agnostic AI agent for your terminal. It reads your code, reproduces bugs, and writes the fix, with any model, on your machine.">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <meta property="og:title" content="Heya: a local-first AI agent for your terminal">
+  <meta property="og:description" content="Reads your code, reproduces bugs, and writes the fix. Any model, on your machine.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://shameemreza.github.io/heya/">
+  <meta property="og:image" content="assets/og.svg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#top" aria-label="Heya home">
+      <span class="brand-he">heya</span><span class="brand-cursor" aria-hidden="true">_</span>
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#start">Quickstart</a>
+      <a href="#docs">Docs</a>
+      <a class="nav-ext" href="https://github.com/shameemreza/heya">GitHub</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <h1>An AI agent that runs on your machine.</h1>
+          <p class="lede">
+            Heya works in your terminal with any model, local or cloud. It reads
+            your code, reproduces bugs, and writes the fix, without sending your
+            project anywhere you didn't choose.
+          </p>
+          <div class="install" data-copy="pipx install heya-agent">
+            <code><span class="prompt-sign">$</span> pipx install heya-agent</code>
+            <button class="copy-btn" type="button" aria-label="Copy install command">Copy</button>
+          </div>
+          <div class="cta-row">
+            <a class="btn btn-primary" href="#start">Get started</a>
+            <a class="btn" href="https://github.com/shameemreza/heya">GitHub</a>
+            <a class="btn" href="https://pypi.org/project/heya-agent/">PyPI</a>
+          </div>
+          <p class="tagline">local-first. model-agnostic. yours.</p>
+        </div>
+
+        <div class="terminal" id="hero-term" role="img"
+             aria-label="A terminal showing Heya reproduce a WooCommerce checkout bug and find its root cause.">
+          <div class="term-bar"><span></span><span></span><span></span></div>
+          <pre class="term-body"><span class="t-banner" aria-hidden="true"><span class="he">██   ██ ███████</span>  <span class="ya">██   ██  █████ </span>
+<span class="he">██   ██ ██     </span>  <span class="ya"> ██ ██  ██   ██</span>
+<span class="he">███████ █████  </span>  <span class="ya">  ███   ███████</span>
+<span class="he">██   ██ ██     </span>  <span class="ya">   █    ██   ██</span>
+<span class="he">██   ██ ███████</span>  <span class="ya">   █    ██   ██</span></span>
+<span class="t-dim">heya v0.0.1 · qwen2.5-coder:14b · local</span>
+
+<span class="t-you">you ›</span> triage: variation coupons apply to the parent price at checkout, WP 6.5 / WC 8.7
+<span class="t-dim">· booting a clean WordPress 6.5 with WooCommerce 8.7</span>
+<span class="t-dim">· added a variable product, a 10% coupon, ran checkout</span>
+<span class="t-ok">ok</span> reproduced. the coupon discounts the parent price, not the variation
+<span class="t-key">root cause</span> get_price() returns the parent in the cart-total filter
+<span class="t-key">fix</span> hook woocommerce_get_cart_item_from_session and use the variation id</pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="what">
+      <p class="what">
+        I built Heya for the work I actually do. Reproducing a WooCommerce bug,
+        reading a plugin's code, drafting a support reply that sounds like me. It
+        runs in the terminal, talks to whatever model you point it at, and keeps
+        your code on your machine. No account to create, no cloud to trust.
+      </p>
+    </section>
+
+    <section class="how" id="how">
+      <h2>See it work</h2>
+      <div class="tabs" role="tablist" aria-label="Examples">
+        <button class="tab is-active" role="tab" aria-selected="true" aria-controls="ex-bug" id="tab-bug">Diagnose a bug</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="ex-plugin" id="tab-plugin">Read a plugin</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="ex-reply" id="tab-reply">Draft a reply</button>
+      </div>
+
+      <div class="terminal panel" id="ex-bug" role="tabpanel" aria-labelledby="tab-bug">
+        <div class="term-bar"><span></span><span></span><span></span></div>
+        <pre class="term-body"><span class="t-you">you ›</span> why does the cart total ignore my variation coupon on WC 8.7?
+<span class="t-dim">· read_log: tailing wp-content/debug.log</span>
+<span class="t-dim">· search_files: woocommerce_get_cart_item_from_session</span>
+<span class="t-ok">found</span> the coupon resolves against the parent product, not the variation
+<span class="t-key">where</span> class-wc-cart.php pulls get_price() before the variation is set
+<span class="t-key">fix</span> a 6-line snippet on the cart-item filter, verified on a clean install</pre>
+      </div>
+
+      <div class="terminal panel is-hidden" id="ex-plugin" role="tabpanel" aria-labelledby="tab-plugin" hidden>
+        <div class="term-bar"><span></span><span></span><span></span></div>
+        <pre class="term-body"><span class="t-you">you ›</span> is the acme-bookings plugin safe to run?
+<span class="t-dim">· list_files: mapping the project</span>
+<span class="t-dim">· acme-bookings/acme-bookings.php is the main file</span>
+<span class="t-dim">· review: security, standards, correctness, over-building</span>
+<span class="t-warn">issue</span> an unsanitized $_GET['date'] reaches a SQL query in class-calendar.php:88
+<span class="t-key">fix</span> sanitize with absint() and run it through $wpdb->prepare()</pre>
+      </div>
+
+      <div class="terminal panel is-hidden" id="ex-reply" role="tabpanel" aria-labelledby="tab-reply" hidden>
+        <div class="term-bar"><span></span><span></span><span></span></div>
+        <pre class="term-body"><span class="t-you">you ›</span> draft a reply: coupons stopped working after the 8.7 update
+<span class="t-dim">· reading my support-reply and writing-voice guidance</span>
+
+Hi there,
+
+Thanks for the detail. This lines up with a change in 8.7 in how coupons
+apply to variations. Can you confirm the coupon is set to the specific
+variation, not the parent product? If you send me the coupon settings and
+a screenshot of the cart, I can reproduce it and tell you the exact fix.</pre>
+      </div>
+    </section>
+
+    <section class="features" id="features">
+      <h2>What you get</h2>
+
+      <div class="feature">
+        <div class="feature-text">
+          <h3>Runs on your machine</h3>
+          <p>Point Heya at a local model and nothing leaves your laptop. No account, no telemetry, no project upload. Your code is yours.</p>
+        </div>
+        <pre class="feature-snippet"><span class="t-dim"># config.toml</span>
+[profiles.local]
+base_url = "http://localhost:11434/v1"
+model = "qwen2.5-coder:14b"</pre>
+      </div>
+
+      <div class="feature">
+        <div class="feature-text">
+          <h3>Any model, swapped mid-task</h3>
+          <p>Run a small local model for the everyday work, then switch to a cloud one for the hard problem, in the same conversation.</p>
+        </div>
+        <pre class="feature-snippet"><span class="t-you">you ›</span> /model cloud-openrouter
+<span class="t-dim">switched to cloud-openrouter (claude)</span></pre>
+      </div>
+
+      <div class="feature">
+        <div class="feature-text">
+          <h3>Reproduce, diagnose, fix</h3>
+          <p>Heya boots a clean WordPress, reproduces the bug, finds the root cause, and verifies the fix against a real run before it says the word "done".</p>
+        </div>
+        <pre class="feature-snippet"><span class="t-dim">· wp_playground: clean WP 6.5 / WC 8.7</span>
+<span class="t-ok">verified</span> repro passes, regression passes</pre>
+      </div>
+
+      <div class="feature">
+        <div class="feature-text">
+          <h3>Brings your own tools</h3>
+          <p>Drop your Claude skills, plugins, and MCP servers in. Heya reads them and uses them, no rewrite. Your setup, in a new agent.</p>
+        </div>
+        <pre class="feature-snippet"><span class="t-you">you ›</span> /skills
+<span class="t-dim">writing-voice, support-reply, wp-security ...</span></pre>
+      </div>
+
+      <div class="feature">
+        <div class="feature-text">
+          <h3>Reviews its own work</h3>
+          <p>Before a change is called done, it runs through a panel: correctness, security, WordPress standards, and over-building. The weak findings get thrown out.</p>
+        </div>
+        <pre class="feature-snippet"><span class="t-you">you ›</span> review_changes
+<span class="t-ok">nothing blocks</span> 1 minor, 0 security</pre>
+      </div>
+    </section>
+
+    <section class="start" id="start">
+      <h2>Quickstart</h2>
+      <ol class="steps">
+        <li>
+          <span class="step-n">1</span>
+          <div>
+            <p>Install it. The package is heya-agent, the command is heya.</p>
+            <pre class="step-code">pipx install heya-agent</pre>
+          </div>
+        </li>
+        <li>
+          <span class="step-n">2</span>
+          <div>
+            <p>Set up a model. The wizard walks you through local or cloud.</p>
+            <pre class="step-code">heya init</pre>
+          </div>
+        </li>
+        <li>
+          <span class="step-n">3</span>
+          <div>
+            <p>Ask it something real.</p>
+            <pre class="step-code">heya "triage this: checkout 500s on WP 6.5 / WC 8.7"</pre>
+          </div>
+        </li>
+      </ol>
+      <p class="needs">Needs Python 3.11 or newer. A local model needs <a href="https://ollama.com">Ollama</a>; a cloud model needs a key.</p>
+    </section>
+
+    <section class="docs" id="docs">
+      <h2>Read the docs</h2>
+      <div class="doc-grid">
+        <a class="doc" href="https://github.com/shameemreza/heya/blob/main/docs/guide/getting-started.md">
+          <span class="doc-t">Getting started</span>
+          <span class="doc-d">Install, point it at a model, first runs.</span>
+        </a>
+        <a class="doc" href="https://github.com/shameemreza/heya/blob/main/docs/guide/configuration.md">
+          <span class="doc-t">Configuration</span>
+          <span class="doc-d">Every config block: profiles, workspace, context.</span>
+        </a>
+        <a class="doc" href="https://github.com/shameemreza/heya/blob/main/docs/guide/diagnostic-workflow.md">
+          <span class="doc-t">Diagnostic workflow</span>
+          <span class="doc-d">Reproduce, diagnose, remediate, triage.</span>
+        </a>
+        <a class="doc" href="https://github.com/shameemreza/heya/blob/main/docs/guide/mcp.md">
+          <span class="doc-t">Connect MCP servers</span>
+          <span class="doc-d">Add your own tools over stdio or http.</span>
+        </a>
+        <a class="doc" href="https://github.com/shameemreza/heya/blob/main/docs/guide/hosting-claude-ecosystem.md">
+          <span class="doc-t">Host your Claude skills</span>
+          <span class="doc-d">Use your skills, plugins, and sub-agents.</span>
+        </a>
+        <a class="doc" href="https://github.com/shameemreza/heya/blob/main/docs/guide/tools-and-safety.md">
+          <span class="doc-t">Tools and safety</span>
+          <span class="doc-d">What runs, what asks first, what is off by default.</span>
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="foot-row">
+      <span class="foot-brand">heya</span>
+      <nav class="foot-nav" aria-label="Footer">
+        <a href="https://github.com/shameemreza/heya">GitHub</a>
+        <a href="https://pypi.org/project/heya-agent/">PyPI</a>
+        <a href="https://github.com/shameemreza/heya/blob/main/LICENSE">MIT license</a>
+      </nav>
+    </div>
+    <p class="foot-by">Built by Shameem Reza.</p>
+  </footer>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
