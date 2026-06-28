@@ -940,3 +940,12 @@ def test_dispatch_triage_routes():
                          pick_list_fn=lambda **f: "pick ok")
     assert "report ok" in out1 and "pick ok" in out2
     assert seen["slug"] == "WOO-1"
+
+
+def test_bundled_voice_guidance_present():
+    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    for name in ("writing-voice", "banned-words", "support-reply"):
+        out = read_guidance(name, sources=[BUNDLED_GUIDANCE_DIR])
+        assert out.strip() and "No guidance" not in out
+        assert "—" not in out  # no em dashes in bundled voice docs
+    assert "Shameem Reza" not in read_guidance("writing-voice", sources=[BUNDLED_GUIDANCE_DIR])
