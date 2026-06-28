@@ -147,6 +147,17 @@ model = "qwen2.5-coder:14b"</pre>
 
       <div class="feature">
         <div class="feature-text">
+          <h3>Works from what you have</h3>
+          <p>Drop in a screenshot of the error, a debug log, or any file. With a vision model, Heya reads the screenshot itself, so you skip retyping a stack trace or describing what you see.</p>
+        </div>
+        <pre class="feature-snippet"><span class="t-you">you ›</span> what is failing here? @checkout-error.png @debug.log
+<span class="t-dim">· reading checkout-error.png (image)</span>
+<span class="t-dim">· reading debug.log</span>
+<span class="t-ok">found</span> a fatal in class-wc-checkout.php:412</pre>
+      </div>
+
+      <div class="feature">
+        <div class="feature-text">
           <h3>Reproduce, diagnose, fix</h3>
           <p>Heya boots a clean WordPress, reproduces the bug, finds the root cause, and verifies the fix against a real run before it says the word "done".</p>
         </div>
