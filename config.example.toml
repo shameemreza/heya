@@ -1,0 +1,89 @@
+# Heya configuration example.
+#
+# Copy this to ~/.config/heya/config.toml and edit. Every block is optional;
+# Heya runs with sensible defaults if the file is missing. Uncomment what you need.
+
+# --- Models ------------------------------------------------------------------
+# A profile fully describes how to reach one model. Add as many as you like and
+# switch with `heya --profile <name>` or the HEYA_PROFILE env var. "local" is the
+# default. provider_type is "local" | "api_key" | "oauth"; api keys are read from
+# the named env var, never stored here.
+[profiles.local]
+base_url = "http://localhost:11434/v1"   # Ollama, vLLM, LM Studio, or any OpenAI-compatible endpoint
+model = "qwen2.5-coder:14b"
+provider_type = "local"
+context_window = 32768                    # the model's context window, used for compaction
+
+# [profiles.cloud]
+# base_url = "https://openrouter.ai/api/v1"
+# model = "anthropic/claude-sonnet-4-6"
+# provider_type = "api_key"
+# api_key_env = "OPENROUTER_API_KEY"      # the NAME of the env var holding the key
+
+# --- Cheaper secondary model (optional) --------------------------------------
+# Route compaction summaries and explicitly-marked sub-agent tasks to a cheaper
+# profile. Names another profile above. Unset = off.
+[routing]
+# weak_profile = "local-small"
+
+# --- Context management -------------------------------------------------------
+[context]
+threshold = 0.85            # compact at this fraction of the window
+reserve_tokens = 2048       # headroom for the reply
+keep_recent_tokens = 4096   # verbatim recent-tail budget
+task_token_budget = 200000  # per-task ceiling; 0 = unlimited
+
+# --- Where Heya may read and write -------------------------------------------
+[workspace]
+allowed_roots = ["~/projects"]   # file and command tools are confined to these
+
+# --- Identity (optional) ------------------------------------------------------
+# The persona Heya writes as. Leave unset for the generic default voice. The
+# writing style is bundled either way (read_guidance writing-voice / banned-words).
+[identity]
+# name = "Your Name"
+# role = "WooCommerce Happiness Engineer"
+
+# --- Web search ---------------------------------------------------------------
+[search]
+provider = "duckduckgo"     # duckduckgo (keyless) | brave | tavily
+# api_key_env = "BRAVE_API_KEY"
+
+# --- Hosting your Claude skills, plugins, and tools --------------------------
+# Heya reads your existing Claude directories by default. Override the paths or
+# turn discovery off here.
+[skills]
+enabled = true
+# paths = ["~/.claude/skills"]
+
+[plugins]
+enabled = true
+# paths = ["~/.claude/plugins/cache"]
+# disabled = ["plugin-name"]
+
+[commands]
+enabled = true
+# paths = ["~/.claude/commands"]
+
+[agents]
+enabled = true
+# paths = ["~/.claude/agents"]
+
+# Lifecycle hooks run shell, so they are OFF by default. Turn on only if you
+# trust the hook configs in the sources.
+[hooks]
+enabled = false
+# sources = ["~/.claude/settings.json"]
+
+# --- Browser ------------------------------------------------------------------
+[browser]
+headless = true             # set false to watch the browser drive a reproduction
+
+# --- WordPress / WooCommerce --------------------------------------------------
+# A default local WordPress path for the wp-cli and log tools.
+[wordpress]
+# path = "~/sites/my-store"
+
+# --- Memory -------------------------------------------------------------------
+[memory]
+# path = "~/.config/heya/memory"

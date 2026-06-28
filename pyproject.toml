@@ -1,9 +1,25 @@
 [project]
 name = "heya"
 version = "0.0.1"
-description = "A single, local-first, tool-using AI agent."
+description = "A single, local-first, model-agnostic, tool-using AI agent."
 requires-python = ">=3.13"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Shameem Reza" }]
+keywords = ["ai", "agent", "cli", "local-first", "woocommerce", "wordpress", "support"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Utilities",
+]
 dependencies = ["httpx>=0.27", "beautifulsoup4>=4.12"]
+
+[project.urls]
+Homepage = "https://github.com/shameemreza/heya"
+Repository = "https://github.com/shameemreza/heya"
 
 [project.optional-dependencies]
 browser = ["playwright>=1.40"]

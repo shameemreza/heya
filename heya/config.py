@@ -59,7 +59,7 @@ BUILTIN_PROFILES: dict[str, Profile] = {
     "local": Profile(
         name="local",
         base_url="http://localhost:11434/v1",
-        model="gemma4:12b",
+        model="qwen2.5-coder:14b",
         provider_type="local",
     ),
     "cloud-openrouter": Profile(
@@ -595,6 +595,33 @@ def load_hooks_config(config_path: Path | None = None) -> tuple[bool, tuple[Path
     else:
         sources = default_sources
     return (enabled, sources)
+
+
+@dataclass(frozen=True)
+class Identity:
+    name: str = ""
+    role: str = ""
+
+
+def load_identity(config_path: Path | None = None) -> Identity:
+    """The optional persona Heya writes as. Default empty (generic voice)."""
+    path = config_path or default_config_path()
+    if not path.exists():
+        return Identity()
+    data = tomllib.loads(path.read_text()).get("identity", {})
+    return Identity(name=str(data.get("name", "")).strip(), role=str(data.get("role", "")).strip())
+
+
+def build_identity_block(identity: Identity) -> str:
+    if not identity.name and not identity.role:
+        return ""
+    who = identity.name or "the user"
+    role = f", a {identity.role}" if identity.role else ""
+    return (
+        f"You are assisting {who}{role}. When you compose messages, replies, or docs on "
+        f"their behalf, write in the first person as them, following Heya's default writing "
+        f"voice — call read_guidance('writing-voice') and read_guidance('banned-words') first."
+    )
 
 
 def load_profiles(config_path: Path | None = None) -> dict[str, Profile]:
