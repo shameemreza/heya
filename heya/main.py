@@ -12,7 +12,7 @@ try:
     from importlib.metadata import version as _pkg_version
     VERSION = _pkg_version("heya-agent")
 except Exception:
-    VERSION = "0.0.1"
+    VERSION = "0.0.2"
 
 from .agent import Agent, DEFAULT_MAX_ITERS
 from .approval import ApprovalPolicy, UiApprover, prompt_stdin
@@ -196,6 +196,9 @@ def _handle_slash(text: str, agent: Any, ui: UI, *, profiles=None,
             ui.note(f"model: {getattr(prof, 'name', '?')} ({getattr(prof, 'model', '?')})")
             return True
         profiles = profiles or {}
+        if not profiles:
+            ui.note("no profiles loaded.")
+            return True
         if name not in profiles:
             ui.note("unknown profile. available: " + ", ".join(sorted(profiles)))
             return True
@@ -217,11 +220,13 @@ def _handle_slash(text: str, agent: Any, ui: UI, *, profiles=None,
         if not items:
             ui.note("no saved sessions.")
             return True
-        lines = [f"  {s['id'][:8]}  {s['title']}  ({s['messages']} msgs)" for s in items]
+        lines = [f"  {s.get('id','')[:8]}  {s.get('title','')}  ({s.get('messages',0)} msgs)" for s in items]
         ui.note("sessions:\n" + "\n".join(lines))
         return True
-    if cmd.startswith("/resume"):
+    if cmd == "/resume" or cmd.startswith("/resume "):
         sid = cmd[len("/resume"):].strip()
+        if not sid:
+            sid = sessions.latest_session_id(sessions_dir=sessions_dir)
         data = sessions.load_session(sid, sessions_dir=sessions_dir) if sid else None
         if not data:
             ui.note("no such session.")

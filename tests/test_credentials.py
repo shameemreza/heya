@@ -36,3 +36,13 @@ def test_save_key_preserves_other_profiles(tmp_path):
 
 def test_load_key_absent_returns_none(tmp_path):
     assert load_key("nope", path=tmp_path / "credentials.toml") is None
+
+
+def test_save_key_tightens_preexisting_loose_file(tmp_path):
+    p = tmp_path / "credentials.toml"
+    p.write_text('[old]\napi_key = "x"\n')
+    p.chmod(0o644)
+    save_key("cloud", "sk-new", path=p)
+    assert (p.stat().st_mode & 0o777) == 0o600
+    assert load_key("cloud", path=p) == "sk-new"
+    assert load_key("old", path=p) == "x"  # other entries preserved

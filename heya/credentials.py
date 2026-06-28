@@ -3,6 +3,7 @@
 Keys live here, never in config.toml, code, or logs. File mode is 0o600."""
 from __future__ import annotations
 
+import os
 import tomllib
 from pathlib import Path
 
@@ -26,8 +27,12 @@ def save_key(profile_name: str, key: str, *, path: Path | None = None) -> None:
     entry["api_key"] = key
     data[profile_name] = entry
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(dumps(data))
-    path.chmod(0o600)
+    # Create at 0o600 so the key is never briefly world-readable between the
+    # write and a chmod. chmod after too, to tighten a pre-existing looser file.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(dumps(data))
+    os.chmod(path, 0o600)
 
 
 def load_key(profile_name: str, *, path: Path | None = None) -> str | None:

@@ -6,6 +6,14 @@ All notable changes to Heya are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Write the credentials file at mode 0o600 atomically, closing a brief window
+  where it could be world-readable between the write and the chmod.
+- `/resume` no longer matches a glued token like `/resumeabc`, and a bare
+  `/resume` resumes the most recent session, matching `--resume`.
+- `/model` says "no profiles loaded" instead of printing an empty list.
+
 ## [0.0.1] - 2026-06-28
 
 First public release.
