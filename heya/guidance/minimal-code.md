@@ -59,7 +59,10 @@ without its check is unfinished.
 - No unrequested abstractions, dependencies, or boilerplate.
 - Deletion over addition. Plain over clever. The fewest files that do the job.
 - The shortest working diff wins, once you understand the problem.
+- Stay in scope. Fix what was asked and nothing else. Do not reformat, rename,
+  or refactor unrelated code in the same change.
+- When you deliberately take the simpler path and it has a known limit, leave a
+  short comment naming the trade-off and what to do when the limit is reached,
+  so the next reader sees it was a choice, not an oversight.
 - When a request sounds complex, ask what it actually needs before building to
   the full ask.
-
-Adapted from the Ponytail project (MIT).

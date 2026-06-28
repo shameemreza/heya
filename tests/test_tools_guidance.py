@@ -87,6 +87,6 @@ def test_minimal_code_guidance_is_readable():
     # the ladder and the safety carve-out are both present
     assert "ladder" in text.lower()
     assert "never minimize" in text.lower()
-    assert "Ponytail" in text  # MIT credit retained
+    assert "stay in scope" in text.lower()  # no unrelated edits while fixing
     # no em dashes in the bundled copy
     assert "—" not in text
