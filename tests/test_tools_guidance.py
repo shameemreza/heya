@@ -90,3 +90,11 @@ def test_minimal_code_guidance_is_readable():
     assert "stay in scope" in text.lower()  # no unrelated edits while fixing
     # no em dashes in the bundled copy
     assert "—" not in text
+
+
+def test_environment_guidance_is_readable():
+    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    text = read_guidance("environment", sources=[BUNDLED_GUIDANCE_DIR])
+    assert "do not assume" in text.lower() or "check, do not guess" in text.lower()
+    assert "uname" in text and "version" in text.lower()
+    assert "—" not in text

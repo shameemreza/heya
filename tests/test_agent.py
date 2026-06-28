@@ -1511,3 +1511,11 @@ def test_review_panel_focus_selects_minimalism():
     assert len(panel) == 1 and panel[0][1] == "minimalism"
     # 'all' still returns the whole panel including minimalism
     assert any(r[1] == "minimalism" for r in a._review_panel("all"))
+
+
+def test_system_prompt_has_environment_nudge():
+    from heya.agent import SYSTEM_PROMPT
+    p = SYSTEM_PROMPT.lower()
+    assert "environment" in p and "rather than assuming" in p
+    assert "read_guidance('environment')" in SYSTEM_PROMPT
+    assert "—" not in SYSTEM_PROMPT
