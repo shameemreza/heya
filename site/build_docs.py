@@ -8,6 +8,8 @@ site with no duplicate content. Run it locally to preview:
     python site/build_docs.py
     cd site && python3 -m http.server 8080   # open /docs/
 """
+import json
+from html.parser import HTMLParser
 from pathlib import Path
 
 import markdown
@@ -49,16 +51,34 @@ PAGE = """<!doctype html>
 </header>
 <div class="docs-layout">
   <aside class="docs-side">
-    <nav aria-label="Documentation">{nav}</nav>
+    <input type="search" class="docs-search" id="docs-search" placeholder="Search docs" aria-label="Search docs" autocomplete="off">
+    <ul class="search-results" id="search-results" hidden></ul>
+    <nav class="docs-nav" aria-label="Documentation">{nav}</nav>
   </aside>
   <main class="docs-content">{content}</main>
 </div>
 <footer class="footer">
   <p class="foot-by">Built by <a href="https://shameemreza.com">Shameem Reza</a>.</p>
 </footer>
+<script src="../docs.js" defer></script>
 </body>
 </html>
 """
+
+
+class _Text(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.parts = []
+
+    def handle_data(self, data):
+        self.parts.append(data)
+
+
+def strip_text(html):
+    p = _Text()
+    p.feed(html)
+    return " ".join(" ".join(p.parts).split())
 
 
 def nav_html(active):
@@ -70,7 +90,9 @@ def nav_html(active):
 
 
 def render(md_text):
-    md = markdown.Markdown(extensions=["fenced_code", "tables", "toc", "sane_lists"])
+    md = markdown.Markdown(
+        extensions=["fenced_code", "codehilite", "tables", "toc", "sane_lists"],
+        extension_configs={"codehilite": {"guess_lang": False}})
     html = md.convert(md_text)
     # Links between guides are written as `name.md`; point them at the built pages.
     return html.replace('.md"', '.html"')
@@ -79,6 +101,7 @@ def render(md_text):
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     built = []
+    search_index = []
     for slug, title, desc in PAGES:
         src = SRC / f"{slug}.md"
         if not src.exists():
@@ -87,6 +110,11 @@ def main():
         (OUT / f"{slug}.html").write_text(
             PAGE.format(title=title, nav=nav_html(slug), content=body))
         built.append((slug, title, desc))
+        search_index.append({
+            "url": f"{slug}.html",
+            "title": title,
+            "text": strip_text(body)[:6000],
+        })
 
     cards = "".join(
         f'<a class="doc" href="{slug}.html"><span class="doc-t">{title}</span>'
@@ -100,7 +128,9 @@ def main():
     (OUT / "index.html").write_text(
         PAGE.format(title="Documentation", nav=nav_html(None), content=index))
 
-    print(f"built {len(built)} guides + index into {OUT}")
+    (OUT / "search-index.json").write_text(json.dumps(search_index, ensure_ascii=False))
+
+    print(f"built {len(built)} guides + index + search into {OUT}")
 
 
 if __name__ == "__main__":
