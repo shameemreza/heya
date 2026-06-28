@@ -12,7 +12,7 @@ into the system prompt, and Heya loads the full skill on demand with a `Skill`
 tool when it matches the task.
 
 ```bash
-.venv/bin/heya "use my writing-support skill to draft a reply to this ticket: ..."
+heya "use my writing-support skill to draft a reply to this ticket: ..."
 ```
 
 Tool names are translated, so a skill that asks for `Read`, `Edit`, or `Bash`
@@ -37,7 +37,7 @@ Claude agent definitions (`agents/*.md`) become Heya roles. Their tools and
 system prompt carry over, and you can delegate to one:
 
 ```bash
-.venv/bin/heya "spawn the security-reviewer agent to check this diff"
+heya "spawn the security-reviewer agent to check this diff"
 ```
 
 A discovered agent only sets a child's system prompt and tool allow-list. It

@@ -28,7 +28,7 @@ Heya runs four stages, each gated on evidence:
 Give Heya the report, a ticket reference, or a log:
 
 ```bash
-.venv/bin/heya "triage WOO-1234: variation coupons apply to the parent price at checkout, WP 6.5, WC 8.7"
+heya "triage WOO-1234: variation coupons apply to the parent price at checkout, WP 6.5, WC 8.7"
 ```
 
 Heya intakes the issue (it can fetch a Linear or GitHub ticket through an MCP
