@@ -76,6 +76,13 @@ python -m playwright install chromium
 Heya runs fine without them. The browser tools just return an install hint until
 you do.
 
+Connecting MCP servers (hosting other tools over the Model Context Protocol)
+needs the `mcp` extra:
+
+```bash
+pipx install "heya-agent[mcp]"
+```
+
 ### From source (for contributors)
 
 ```bash

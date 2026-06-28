@@ -1,5 +1,9 @@
 import asyncio
 
+import pytest
+
+pytest.importorskip("mcp")  # the MCP SDK is an optional extra (heya-agent[mcp])
+
 from mcp.types import (
     CreateMessageRequestParams, CreateMessageResult, SamplingMessage, TextContent, ErrorData,
     ElicitResult, ElicitRequestFormParams, ElicitRequestURLParams, LoggingMessageNotificationParams,
