@@ -46,7 +46,8 @@ h1, h2, h3 { line-height: 1.2; letter-spacing: -0.01em; }
 }
 .brand { font-family: var(--mono); font-weight: 700; font-size: 1.1rem; }
 .brand-he { color: var(--green); }
-.brand-cursor { color: var(--purple); }
+.brand-cursor { color: var(--purple); animation: softblink 1.1s ease-in-out infinite; }
+@keyframes softblink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 .nav { display: flex; gap: clamp(0.6rem, 2vw, 1.4rem); align-items: center; }
 .nav a { color: var(--dim); font-size: 0.92rem; }
 .nav a:hover { color: var(--text); }
@@ -192,6 +193,6 @@ section { padding: clamp(2.5rem, 6vw, 5rem) clamp(1rem, 4vw, 2rem); }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .term-cursor { animation: none; }
+  .term-cursor, .brand-cursor { animation: none; }
   * { transition: none !important; }
 }
