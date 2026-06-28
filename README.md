@@ -1,21 +1,56 @@
 # Heya
 
-Heya is a single, local-first AI agent that runs in your terminal. One model, one agent, a toolbox. It reads a request, decides what to do, calls tools, and loops until the task is done.
+Heya is a single, local-first AI agent that runs in your terminal. One model,
+one agent, a toolbox. It reads a request, decides what to do, calls tools, and
+loops until the task is done.
 
-The model is a configuration choice, not part of the design. The same loop runs against a small local model through Ollama or a frontier cloud model through OpenAI, OpenRouter, or anything that speaks the OpenAI chat API. Point it at whatever you have.
+The model is a configuration choice, not part of the design. The same loop runs
+against a small local model through Ollama or a frontier cloud model through
+OpenRouter, OpenAI, LM Studio, or anything that speaks the OpenAI chat API. Point
+it at whatever you have. Your prompts and your data stay on your machine.
 
-I'm building it in plain Python with no agent framework, so I can see exactly what every part does.
+It is built in plain Python with no agent framework, so you can see exactly what
+every part does.
+
+## Why you might use it
+
+Most agents are general. Heya is general too, but it carries a real specialty: a
+WordPress and WooCommerce diagnostic assistant that takes a bug from a ticket to
+a proven answer. And because it is model-agnostic and local-first, you run all of
+that on your own models, with no vendor lock-in and nothing leaving your machine.
+
+It also hosts the Claude Code ecosystem. Your existing Claude skills, plugins,
+hooks, commands, and sub-agents work in Heya with no re-install, so you bring
+what you already have.
 
 ## What it can do
 
-Heya has a small set of tools on one streaming function-calling loop:
-
-- **Files and shell:** `read_file`, `write_file`, and `run_command`, all confined to an allow-list of folders with a required timeout on commands.
-- **Guidance:** `read_guidance` reads internal guidance, a bundled baseline plus your own folders, so answers follow your standards and voice.
-- **Web:** `web_search` (DuckDuckGo by default, or Brave/Tavily with your own key) and `web_fetch` (a page returned as readable text).
-- **Browser:** a real headless Chromium through Playwright. Navigate, click, type, screenshot, and pull console and network errors to reproduce a bug.
-
-Writes, shell commands, and browser clicks ask before they run. Reads run on their own.
+- **Diagnostic assistant.** Give Heya a bug report, a ticket, or a log. It
+  reproduces the issue on a disposable WordPress Playground (or a dev site),
+  finds the root cause, proposes and verifies a fix, and hands you a paste-ready
+  triage comment with a verdict, impact, suggested priority, evidence, and a
+  one-click repro link. Every stage is evidence-gated: no evidence, no verdict.
+  It can also rank a backlog into a pick-list so you know what to work on.
+- **Hosts your Claude ecosystem.** Discovers your `~/.claude` skills and plugins
+  and makes them available through a `Skill` tool, runs lifecycle hooks (off by
+  default), and turns Claude sub-agent and command definitions into Heya roles
+  and commands.
+- **Sub-agents.** Delegate a self-contained task to a fresh, context-isolated
+  child agent, or fan several read-only children out in parallel and synthesize
+  their reports.
+- **MCP client.** Connect Model Context Protocol servers over stdio or HTTP, with
+  OAuth, sampling, elicitation, and logging.
+- **Memory.** Heya remembers facts across sessions in plain markdown files you
+  can read and edit.
+- **Code review.** A deterministic gather, fan-out, adversarially-verify,
+  synthesize pipeline that reports real issues and says "nothing blocks" rather
+  than inventing findings.
+- **Cost and context controls.** An optional cheaper model for forgiving work,
+  a per-task token budget, and context compaction so long sessions keep working
+  on small-window local models.
+- **Files, shell, web, and a real browser.** All writes, shell commands, and
+  browser clicks ask before they run. Reads run on their own. Everything is
+  confined to an allow-list of folders.
 
 ## Install
 
@@ -28,60 +63,62 @@ python3.13 -m venv .venv
 .venv/bin/pip install -e .
 ```
 
-The browser tools are optional, since they pull in Playwright and a Chromium binary. Add them when you want them:
+The browser tools are optional, since they pull in Playwright and a Chromium
+binary. Add them when you want them:
 
 ```bash
 .venv/bin/pip install -e ".[browser]"
 .venv/bin/python -m playwright install chromium
 ```
 
-Heya runs fine without them. The browser tools just return an install hint until you do.
+Heya runs fine without them. The browser tools just return an install hint until
+you do.
+
+## Point it at a model
+
+Copy the example config and edit it:
+
+```bash
+mkdir -p ~/.config/heya
+cp config.example.toml ~/.config/heya/config.toml
+```
+
+For a local model with Ollama:
+
+```bash
+ollama pull qwen2.5-coder:14b
+```
+
+The default profile already points at `http://localhost:11434/v1`. For a cloud
+model, add a profile with your endpoint and set the env var that holds your key.
+See [docs/guide/getting-started.md](docs/guide/getting-started.md).
 
 ## Run it
 
-The built-in default points at a local model through Ollama on the standard port. With a model running:
+```bash
+.venv/bin/heya "summarize what changed in the last 3 commits"
+```
+
+Triage a bug end to end:
 
 ```bash
-heya "read the files in this folder and tell me what this project does"
+.venv/bin/heya "triage this: variation coupons apply to the parent price at checkout on WP 6.5 / WC 8.7"
 ```
 
-Or open an interactive session and keep the conversation going:
+Use a skill you already have:
 
 ```bash
-heya
+.venv/bin/heya "use my support-reply skill to draft a response to this ticket: ..."
 ```
 
-A task on the command line runs once and exits. Bare `heya` stays open until you type `exit` or `quit`.
+## Docs
 
-Useful flags: `--profile` to pick a model, `--auto-approve` to skip the write/command prompts, `--allow DIR` to add an allowed folder, `--no-self-review` to skip the review pass.
+- [Getting started](docs/guide/getting-started.md)
+- [Configuration reference](docs/guide/configuration.md)
+- [The diagnostic workflow](docs/guide/diagnostic-workflow.md)
+- [Hosting your Claude skills, plugins, and tools](docs/guide/hosting-claude-ecosystem.md)
+- [Tools and safety](docs/guide/tools-and-safety.md)
 
-## Configure
+## License
 
-Heya reads `~/.config/heya/config.toml`. Everything has a default, so the file is optional.
-
-```toml
-[profiles.my-cloud]
-base_url = "https://openrouter.ai/api/v1"
-model = "some/model-id"
-provider_type = "api_key"
-api_key_env = "OPENROUTER_API_KEY"
-
-[search]
-provider = "brave"
-api_key_env = "BRAVE_API_KEY"
-
-[guidance]
-paths = ["~/path/to/your/skills"]
-
-[workspace]
-allowed_roots = ["~/projects"]
-
-[browser]
-headless = false
-```
-
-API keys never live in the config file or the repo. You name the environment variable that holds the key, and Heya reads it at runtime. Pick a profile with `--profile` or the `HEYA_PROFILE` environment variable.
-
-## Status
-
-Heya is in active development. The core loop and every tool group above work and are covered by tests. Still to come: a first-run setup that detects local models, OS keychain support for keys, and direct adapters for the Anthropic and Codex APIs.
+MIT. See [LICENSE](LICENSE).

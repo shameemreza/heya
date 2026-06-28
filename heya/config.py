@@ -59,7 +59,7 @@ BUILTIN_PROFILES: dict[str, Profile] = {
     "local": Profile(
         name="local",
         base_url="http://localhost:11434/v1",
-        model="gemma4:12b",
+        model="qwen2.5-coder:14b",
         provider_type="local",
     ),
     "cloud-openrouter": Profile(
