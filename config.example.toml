@@ -87,3 +87,13 @@ headless = true             # set false to watch the browser drive a reproductio
 # --- Memory -------------------------------------------------------------------
 [memory]
 # path = "~/.config/heya/memory"
+
+# Connect your own MCP servers to add tools. See docs/guide/mcp.md.
+# A stdio server runs a local command (here npx, which needs Node.js installed):
+# [mcp.servers.example]
+# transport = "stdio"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-everything"]
+# env_keys = ["SOME_TOKEN"]   # env var NAMES only; the value is injected at spawn, never stored
+# enabled = true
+# tools = ["*"]               # "*" = all tools, or list specific tool names

@@ -28,3 +28,15 @@ def test_triage_render_path_offline():
         version_results=[("6.5", "reproduced")],
     )
     assert "reproduced" in out and "WOO-1" in out
+
+
+def test_mcp_guide_and_example_present():
+    import tomllib
+    from pathlib import Path
+    guide = Path("docs/guide/mcp.md").read_text()
+    assert "[mcp.servers" in guide and "npx" in guide and "env_keys" in guide
+    assert "—" not in guide  # no em dashes in the guide
+    # the example config still parses as valid TOML and mentions mcp in a comment
+    cfg = Path("config.example.toml").read_text()
+    tomllib.loads(cfg)  # must not raise
+    assert "mcp.servers" in cfg

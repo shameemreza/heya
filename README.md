@@ -133,6 +133,7 @@ heya "use my support-reply skill to draft a response to this ticket: ..."
 - [The diagnostic workflow](docs/guide/diagnostic-workflow.md)
 - [Hosting your Claude skills, plugins, and tools](docs/guide/hosting-claude-ecosystem.md)
 - [Tools and safety](docs/guide/tools-and-safety.md)
+- [Connect your own MCP servers](docs/guide/mcp.md)
 
 ## License
 

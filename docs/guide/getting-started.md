@@ -107,3 +107,4 @@ heya --allow ~/sites/my-store "read the latest WordPress debug log and tell me t
 - [The diagnostic workflow](diagnostic-workflow.md) to triage a bug or a backlog.
 - [Hosting your Claude skills, plugins, and tools](hosting-claude-ecosystem.md).
 - [Tools and safety](tools-and-safety.md) for what runs without asking.
+- [Connect your own MCP servers](mcp.md) to add tools.
