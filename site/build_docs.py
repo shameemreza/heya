@@ -20,6 +20,7 @@ OUT = ROOT / "site" / "docs"
 # docs index cards.
 PAGES = [
     ("getting-started", "Getting started", "Install, point it at a model, first runs."),
+    ("commands", "Commands and usage", "Slash commands, CLI flags, and how to run it."),
     ("configuration", "Configuration", "Every config block: profiles, workspace, context."),
     ("diagnostic-workflow", "Diagnostic workflow", "Reproduce, diagnose, remediate, triage."),
     ("mcp", "Connect MCP servers", "Add your own tools over stdio or http."),
