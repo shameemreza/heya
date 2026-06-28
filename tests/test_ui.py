@@ -67,3 +67,31 @@ def test_approval_shows_diff_through_ui():
     ans = ui.approval("write to x.txt", diff="+ new line\n- old line")
     assert ans == "y"
     assert "new line" in buf.getvalue()
+
+
+def test_heya_art_rows_shape():
+    from heya.ui import heya_art_rows, ART_GREEN, ART_PURPLE
+    rows = heya_art_rows()
+    assert len(rows) == 5
+    assert all(len(r) == 2 for r in rows)
+    # block char present in both halves of at least one row
+    assert any("█" in he and "█" in ya for he, ya in rows)
+    assert ART_GREEN == "#46B450" and ART_PURPLE == "#7F54B3"
+
+
+def test_banner_plain_unchanged():
+    import io
+    from heya.ui import UI
+    buf = io.StringIO()
+    ui = UI(plain=True, write=buf.write)
+    ui.banner(version="0.1.0", model="qwen", profile="local", cwd="/x", branch="main")
+    out = buf.getvalue()
+    assert "Heya v0.1.0" in out and "qwen" in out and "local" in out and "main" in out
+    assert "/help" in out
+
+
+def test_banner_color_path_does_not_raise():
+    from heya.ui import UI
+    ui = UI(plain=False)  # builds a real rich Console
+    # Should render the art + status without raising even though we don't assert pixels.
+    ui.banner(version="0.1.0", model="qwen", profile="local", cwd="/x", branch="main")
