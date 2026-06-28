@@ -328,7 +328,9 @@ class Agent:
         ):
             try:
                 args = json.loads(call.arguments) if call.arguments.strip() else {}
-                diff = unified_file_diff(args.get("path", ""), args.get("content", ""))
+                path = args.get("path", "")
+                resolve_in_allowlist(path, self.allowed_roots)  # raises if outside
+                diff = unified_file_diff(path, args.get("content", ""))
                 self.approval._approver.set_diff(diff or None)
             except Exception:
                 pass
