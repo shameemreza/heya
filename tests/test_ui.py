@@ -60,3 +60,10 @@ def test_ui_never_raises_without_tty():
     ui = UI(plain=True, write=io.StringIO().write)
     ui.note("note"); ui.error("err"); ui.tool_event("t"); ui.banner(
         version="0", model="m", profile="p", cwd="/", branch="")
+
+
+def test_approval_shows_diff_through_ui():
+    ui = UI(plain=True, stream=io.StringIO("y\n"), write=(buf := io.StringIO()).write)
+    ans = ui.approval("write to x.txt", diff="+ new line\n- old line")
+    assert ans == "y"
+    assert "new line" in buf.getvalue()

@@ -20,7 +20,7 @@ from . import review
 from .hooks import fire_hooks, hook_payload
 
 from .agent_defs import agent_roles_note
-from .approval import ApprovalPolicy
+from .approval import ApprovalPolicy, UiApprover, unified_file_diff
 from .reproduction import (
     parse_issue_context, repro_workdir, gate_verdict, render_report, render_comment,
 )
@@ -323,6 +323,15 @@ class Agent:
         detail = describe_call(call.name, call.arguments)
         if self.tool_filter is not None and call.name not in self.tool_filter:
             return f"Error: tool {call.name!r} is not available to the {self.label} sub-agent."
+        if call.name == "write_file" and isinstance(
+            getattr(self.approval, "_approver", None), UiApprover
+        ):
+            try:
+                args = json.loads(call.arguments) if call.arguments.strip() else {}
+                diff = unified_file_diff(args.get("path", ""), args.get("content", ""))
+                self.approval._approver.set_diff(diff or None)
+            except Exception:
+                pass
         if not self.approval.check(call.name, detail, label=self.label):
             return f"Declined by user: {detail}"
         pre = self._fire("PreToolUse", tool_name=call.name, tool_input=call.arguments)

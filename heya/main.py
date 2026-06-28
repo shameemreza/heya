@@ -14,7 +14,7 @@ except Exception:
     VERSION = "0.0.1"
 
 from .agent import Agent, DEFAULT_MAX_ITERS
-from .approval import ApprovalPolicy, prompt_stdin
+from .approval import ApprovalPolicy, UiApprover, prompt_stdin
 from .config import (
     load_allowed_roots, load_approval_allow, load_browser_headless, load_context_config,
     load_guidance_paths, load_hooks_config, load_mcp_servers, load_memory_path, load_profiles,
@@ -140,7 +140,7 @@ def _handle_slash(text: str, agent: Any, ui: UI) -> bool:
     return True
 
 
-def _default_make_agent(args: argparse.Namespace) -> Agent:
+def _default_make_agent(args: argparse.Namespace, *, ui: "UI | None" = None) -> Agent:
     profiles = load_profiles()
     profile = resolve_profile(args.profile, profiles=profiles)
     weak_profile = resolve_weak_profile(load_routing_config(), profiles)
@@ -157,8 +157,9 @@ def _default_make_agent(args: argparse.Namespace) -> Agent:
         if weak_profile is not None and weak_profile.name != profile.name
         else None
     )
+    approver = UiApprover(ui) if ui is not None else prompt_stdin
     approval = ApprovalPolicy(
-        auto_approve=args.auto_approve, approver=prompt_stdin, allow=load_approval_allow()
+        auto_approve=args.auto_approve, approver=approver, allow=load_approval_allow()
     )
     mcp_runtime = MCPRuntime(
         load_mcp_servers(), allowed_roots=roots,
@@ -234,9 +235,16 @@ def run_cli(
     make_agent: Callable[[argparse.Namespace], Any] = _default_make_agent,
     stdin: TextIO | None = None,
 ) -> int:
-    agent = make_agent(args)
     plain = should_plain() or (stdin is not None)
     ui = UI(plain=plain, stream=stdin if stdin is not None else None)
+
+    # Pass the UI to the default agent builder so it can show a colored diff at
+    # write approval time.  Custom make_agent callables may not accept ui= and
+    # that's fine: we fall back gracefully.
+    try:
+        agent = make_agent(args, ui=ui)
+    except TypeError:
+        agent = make_agent(args)
 
     # Wire agent output through the UI when we have a real agent.
     if hasattr(agent, "on_text"):
