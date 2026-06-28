@@ -796,7 +796,7 @@ def test_review_panel_focus(tmp_path):
     agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
                   approval=_AllowAll(), self_review=False)
     full = agent._review_panel("all")
-    assert len(full) == 3
+    assert len(full) == 4
     sec = agent._review_panel("security")
     assert len(sec) == 1 and sec[0][0] == "security-reviewer"
     corr = agent._review_panel("correctness")
@@ -822,7 +822,7 @@ def test_review_reviewers_panel_has_three(tmp_path):
     agent = Agent(FakeClient([]), allowed_roots=[tmp_path], cwd=tmp_path,
                   approval=_AllowAll(), self_review=False)
     labels = [r[0] for r in agent.REVIEW_REVIEWERS]
-    assert labels == ["code-reviewer", "security-reviewer", "standards-reviewer"]
+    assert labels == ["code-reviewer", "security-reviewer", "standards-reviewer", "minimalism-reviewer"]
     # the security reviewer carries the taint methodology (4-tuple)
     sec = next(r for r in agent.REVIEW_REVIEWERS if r[0] == "security-reviewer")
     assert "wp_verify_nonce" in sec[3]
@@ -1471,3 +1471,23 @@ def test_system_prompt_has_scoped_minimalism_principle():
     assert "read_guidance first" in p
     # no em dash introduced
     assert "—" not in SYSTEM_PROMPT
+
+
+def test_review_panel_includes_minimalism():
+    from heya.agent import Agent
+    labels = [r[1] for r in Agent.REVIEW_REVIEWERS]
+    assert "minimalism" in labels
+    # the minimalism reviewer reads the minimal-code guidance
+    mini = [r for r in Agent.REVIEW_REVIEWERS if r[1] == "minimalism"][0]
+    assert mini[2] == "minimal-code"
+
+
+def test_review_panel_focus_selects_minimalism():
+    from heya.agent import Agent
+    # _review_panel is a plain method using only REVIEW_REVIEWERS; call it on a
+    # bare instance via __new__ to avoid constructing the whole Agent.
+    a = Agent.__new__(Agent)
+    panel = a._review_panel("minimalism")
+    assert len(panel) == 1 and panel[0][1] == "minimalism"
+    # 'all' still returns the whole panel including minimalism
+    assert any(r[1] == "minimalism" for r in a._review_panel("all"))

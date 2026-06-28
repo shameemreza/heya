@@ -561,6 +561,7 @@ class Agent:
         ("code-reviewer", "correctness and quality", "code-review", ""),
         ("security-reviewer", "security", "wp-security", review.WP_SECURITY_METHODOLOGY),
         ("standards-reviewer", "standards", "woocommerce-code-review", review.WP_STANDARDS_METHODOLOGY),
+        ("minimalism-reviewer", "minimalism", "minimal-code", review.MINIMALISM_METHODOLOGY),
     ]
 
     def _review_panel(self, focus):
