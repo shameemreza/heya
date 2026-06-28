@@ -16,14 +16,15 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "docs" / "guide"
 OUT = ROOT / "site" / "docs"
 
-# Order and display titles for the nav. Slug is the markdown file name.
+# Slug (the markdown file name), nav title, and a one-line description for the
+# docs index cards.
 PAGES = [
-    ("getting-started", "Getting started"),
-    ("configuration", "Configuration"),
-    ("diagnostic-workflow", "Diagnostic workflow"),
-    ("mcp", "Connect MCP servers"),
-    ("hosting-claude-ecosystem", "Host your Claude skills"),
-    ("tools-and-safety", "Tools and safety"),
+    ("getting-started", "Getting started", "Install, point it at a model, first runs."),
+    ("configuration", "Configuration", "Every config block: profiles, workspace, context."),
+    ("diagnostic-workflow", "Diagnostic workflow", "Reproduce, diagnose, remediate, triage."),
+    ("mcp", "Connect MCP servers", "Add your own tools over stdio or http."),
+    ("hosting-claude-ecosystem", "Host your Claude skills", "Use your skills, plugins, and sub-agents."),
+    ("tools-and-safety", "Tools and safety", "What runs, what asks first, what is off by default."),
 ]
 
 PAGE = """<!doctype html>
@@ -61,7 +62,7 @@ PAGE = """<!doctype html>
 
 def nav_html(active):
     rows = []
-    for slug, title in PAGES:
+    for slug, title, _desc in PAGES:
         cls = ' class="is-active"' if slug == active else ""
         rows.append(f'<li><a href="{slug}.html"{cls}>{title}</a></li>')
     return "<ul>" + "".join(rows) + "</ul>"
@@ -76,17 +77,20 @@ def render(md_text):
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    for slug, title in PAGES:
+    built = []
+    for slug, title, desc in PAGES:
         src = SRC / f"{slug}.md"
         if not src.exists():
             continue
         body = render(src.read_text())
         (OUT / f"{slug}.html").write_text(
             PAGE.format(title=title, nav=nav_html(slug), content=body))
+        built.append((slug, title, desc))
 
     cards = "".join(
-        f'<a class="doc" href="{slug}.html"><span class="doc-t">{title}</span></a>'
-        for slug, title in PAGES)
+        f'<a class="doc" href="{slug}.html"><span class="doc-t">{title}</span>'
+        f'<span class="doc-d">{desc}</span></a>'
+        for slug, title, desc in built)
     index = (
         '<h1>Documentation</h1>'
         '<p class="docs-intro">Everything you need to install Heya, point it at a '
@@ -95,7 +99,7 @@ def main():
     (OUT / "index.html").write_text(
         PAGE.format(title="Documentation", nav=nav_html(None), content=index))
 
-    print(f"built {len(PAGES)} guides + index into {OUT}")
+    print(f"built {len(built)} guides + index into {OUT}")
 
 
 if __name__ == "__main__":
