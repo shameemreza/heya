@@ -97,6 +97,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Add an allowed folder (repeatable).")
     parser.add_argument("--no-self-review", action="store_true", help="Disable the scoped self-review pass.")
     parser.add_argument("--max-iters", type=int, default=DEFAULT_MAX_ITERS, help="Max tool-loop iterations per task.")
+    parser.add_argument("--continue", dest="continue_", action="store_true",
+                        help="Resume the most recent session.")
+    parser.add_argument("--resume", nargs="?", const="__latest__", default=None,
+                        metavar="ID", help="Resume a session by id (or the latest if omitted).")
     return parser
 
 
@@ -344,6 +348,20 @@ def run_cli(
     if hasattr(agent, "_on_tool"):
         agent._on_tool = ui.tool_event
 
+    want = getattr(args, "resume", None)
+    if getattr(args, "continue_", False) and want is None:
+        want = "__latest__"
+    if want is not None:
+        sid = sessions.latest_session_id() if want == "__latest__" else want
+        data = sessions.load_session(sid) if sid else None
+        if data:
+            agent.messages = data.get("messages", getattr(agent, "messages", []))
+            agent.session_id = data.get("id", getattr(agent, "session_id", ""))
+            agent.session_tokens = data.get("session_tokens", 0)
+            agent.weak_tokens = data.get("weak_tokens", 0)
+        else:
+            ui.note("no session to resume; starting fresh.")
+
     try:
         model = getattr(getattr(agent, "client", None), "profile", None)
         model_name = getattr(model, "model", "") if model is not None else ""
@@ -393,6 +411,9 @@ def run_cli(
                 continue
             agent.run(text)
             sys.stdout.write("\n")
+            snap = _session_snapshot(agent, profile_name=profile_name,
+                                     created=session_created, updated=_now())
+            sessions.save_session(snap, sessions_dir=sessions_dir)
         return 0
     finally:
         close = getattr(agent, "close", None)

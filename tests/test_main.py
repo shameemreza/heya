@@ -246,12 +246,14 @@ from heya import sessions as sessions_mod
 
 
 def _agent_with_state():
+    from heya.config import Profile
     a = FakeAgent()
     a.cwd = "/tmp/x"
     a.session_id = "sid1"
     a.session_tokens = 7
     a.weak_tokens = 0
-    a.client = types.SimpleNamespace(profile=types.SimpleNamespace(model="m", name="local"))
+    profile = Profile(name="local", base_url="u", model="m", provider_type="local")
+    a.client = types.SimpleNamespace(profile=profile)
     a.context_window = 8192
     return a
 
@@ -315,3 +317,45 @@ def test_slash_save_writes_with_title(tmp_path):
                            created="t0", now=lambda: "t1")
     data = sessions_mod.load_session("sid1", sessions_dir=tmp_path)
     assert data["title"] == "my title" and data["session_tokens"] == 7
+
+
+# ---------------------------------------------------------------------------
+# Task 3 tests: auto-save and --continue/--resume flags
+# ---------------------------------------------------------------------------
+
+
+def test_autosave_after_turn(tmp_path, monkeypatch):
+    monkeypatch.setattr(sessions_mod, "default_sessions_dir", lambda: tmp_path)
+    monkeypatch.setattr(main_mod, "check_profile", lambda *a, **k: "ok")
+    agent = _agent_with_state()
+    agent.messages = [{"role": "system", "content": "s"}]
+    run_cli(build_parser().parse_args([]), make_agent=lambda args: agent,
+            stdin=io.StringIO("hello\n"))
+    files = list(tmp_path.glob("*.json"))
+    assert files, "a session file should be written after the turn"
+    data = sessions_mod.load_session("sid1", sessions_dir=tmp_path)
+    assert any(m.get("content") == "hello" for m in data["messages"]) or agent.prompts == ["hello"]
+
+
+def test_continue_loads_latest(tmp_path, monkeypatch):
+    monkeypatch.setattr(sessions_mod, "default_sessions_dir", lambda: tmp_path)
+    monkeypatch.setattr(main_mod, "check_profile", lambda *a, **k: "ok")
+    sessions_mod.save_session({"id": "prev", "updated": "2026-01-01",
+                               "messages": [{"role": "system", "content": "s"},
+                                            {"role": "user", "content": "earlier"}]},
+                              sessions_dir=tmp_path)
+    agent = _agent_with_state()
+    run_cli(build_parser().parse_args(["--continue"]), make_agent=lambda args: agent,
+            stdin=io.StringIO(""))
+    assert agent.session_id == "prev"
+    assert any(m.get("content") == "earlier" for m in agent.messages)
+
+
+def test_resume_unknown_id_starts_fresh(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(sessions_mod, "default_sessions_dir", lambda: tmp_path)
+    monkeypatch.setattr(main_mod, "check_profile", lambda *a, **k: "ok")
+    agent = _agent_with_state()
+    code = run_cli(build_parser().parse_args(["--resume", "ghost"]),
+                   make_agent=lambda args: agent, stdin=io.StringIO(""))
+    assert code == 0
+    assert agent.session_id == "sid1"  # unchanged, fresh
