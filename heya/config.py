@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .credentials import load_key
+from .tomlw import dumps
 
 DEFAULT_TIMEOUT = 120.0
 DEFAULT_PROFILE = "local"
@@ -42,16 +43,32 @@ def resolve_profile(
     name: str | None = None,
     *,
     profiles: dict[str, Profile],
+    default: str | None = None,
 ) -> Profile:
     """Resolve the active profile.
 
-    Precedence: explicit name > HEYA_PROFILE env var > DEFAULT_PROFILE.
+    Precedence: explicit name > HEYA_PROFILE env var > default > DEFAULT_PROFILE.
     """
-    chosen = name or os.environ.get("HEYA_PROFILE") or DEFAULT_PROFILE
+    chosen = name or os.environ.get("HEYA_PROFILE") or default or DEFAULT_PROFILE
     if chosen not in profiles:
         available = ", ".join(sorted(profiles))
         raise ConfigError(f"Unknown profile {chosen!r}. Available: {available}")
     return profiles[chosen]
+
+
+def write_config(data: dict, path: Path) -> None:
+    """Write configuration data to a TOML file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(dumps(data))
+
+
+def load_default_profile(config_path: Path | None = None) -> str | None:
+    """Load the default profile name from config, or None if not set/file missing."""
+    path = config_path or default_config_path()
+    if not path.exists():
+        return None
+    data = tomllib.loads(path.read_text())
+    return data.get("defaults", {}).get("profile")
 
 
 def resolve_api_key(profile: "Profile", *, credentials_path: Path | None = None) -> str | None:

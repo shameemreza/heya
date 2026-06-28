@@ -677,3 +677,30 @@ def test_resolve_api_key_none_when_nothing(tmp_path, monkeypatch):
     prof = Profile(name="cloud", base_url="u", model="m",
                    provider_type="api_key", api_key_env="HEYA_TEST_KEY")
     assert resolve_api_key(prof, credentials_path=tmp_path / "x.toml") is None
+
+
+def test_write_config_roundtrips(tmp_path):
+    import tomllib
+    from heya.config import write_config
+    p = tmp_path / "config.toml"
+    data = {"defaults": {"profile": "cloud"},
+            "profiles": {"cloud": {"base_url": "u", "model": "m", "provider_type": "api_key"}}}
+    write_config(data, p)
+    assert tomllib.loads(p.read_text()) == data
+
+
+def test_load_default_profile(tmp_path):
+    from heya.config import write_config, load_default_profile
+    p = tmp_path / "config.toml"
+    write_config({"defaults": {"profile": "cloud"}}, p)
+    assert load_default_profile(p) == "cloud"
+    assert load_default_profile(tmp_path / "missing.toml") is None
+
+
+def test_resolve_profile_uses_default_then_builtin(monkeypatch):
+    from heya.config import resolve_profile, BUILTIN_PROFILES
+    monkeypatch.delenv("HEYA_PROFILE", raising=False)
+    profiles = dict(BUILTIN_PROFILES)
+    assert resolve_profile(None, profiles=profiles, default="cloud-openrouter").name == "cloud-openrouter"
+    assert resolve_profile(None, profiles=profiles, default=None).name == "local"
+    assert resolve_profile("local", profiles=profiles, default="cloud-openrouter").name == "local"
