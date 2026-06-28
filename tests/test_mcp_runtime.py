@@ -580,7 +580,7 @@ def test_client_kwargs_default_verify_true():
 
 def test_client_kwargs_ca_cert_path(tmp_path):
     import ssl
-    import trustme
+    trustme = pytest.importorskip("trustme")
     ca = trustme.CA()
     ca_file = tmp_path / "ca.pem"
     ca.cert_pem.write_to_path(str(ca_file))
@@ -597,7 +597,7 @@ def test_client_kwargs_mtls_folds_into_context(tmp_path):
     # mTLS: the client cert+key are loaded INTO the SSLContext, never returned
     # as a separate cert tuple (httpx deprecated cert=, dropping it breaks mTLS).
     import ssl
-    import trustme
+    trustme = pytest.importorskip("trustme")
     ca = trustme.CA()
     client_cert = ca.issue_cert("client@canary")
     cert_file = tmp_path / "client.pem"
