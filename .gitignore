@@ -22,3 +22,6 @@ build/
 
 # Credentials
 credentials.toml
+
+# generated docs site (built from docs/guide markdown at deploy time)
+site/docs/
