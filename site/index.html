@@ -72,10 +72,12 @@
 
     <section class="band" id="what">
       <p class="what">
-        I built Heya for the work I actually do. Reproducing a WooCommerce bug,
-        reading a plugin's code, drafting a support reply that sounds like me. It
-        runs in the terminal, talks to whatever model you point it at, and keeps
-        your code on your machine. No account to create, no cloud to trust.
+        I built Heya for the parts of my job that eat time but don't need my
+        judgment. Reproducing a WooCommerce bug on a clean install, reading a
+        plugin to find the one line that matters, checking a fix before I trust
+        it. It does the legwork in your terminal, with whatever model you point
+        it at, and keeps your code on your machine. I still make the call on what
+        ships.
       </p>
     </section>
 
@@ -84,7 +86,7 @@
       <div class="tabs" role="tablist" aria-label="Examples">
         <button class="tab is-active" role="tab" aria-selected="true" aria-controls="ex-bug" id="tab-bug">Diagnose a bug</button>
         <button class="tab" role="tab" aria-selected="false" aria-controls="ex-plugin" id="tab-plugin">Read a plugin</button>
-        <button class="tab" role="tab" aria-selected="false" aria-controls="ex-reply" id="tab-reply">Draft a reply</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="ex-reply" id="tab-reply">Start a reply</button>
       </div>
 
       <div class="terminal panel" id="ex-bug" role="tabpanel" aria-labelledby="tab-bug">
@@ -97,7 +99,7 @@
 <span class="t-key">fix</span> a 6-line snippet on the cart-item filter, verified on a clean install</pre>
       </div>
 
-      <div class="terminal panel is-hidden" id="ex-plugin" role="tabpanel" aria-labelledby="tab-plugin" hidden>
+      <div class="terminal panel" id="ex-plugin" role="tabpanel" aria-labelledby="tab-plugin">
         <div class="term-bar"><span></span><span></span><span></span></div>
         <pre class="term-body"><span class="t-you">you ›</span> is the acme-bookings plugin safe to run?
 <span class="t-dim">· list_files: mapping the project</span>
@@ -107,17 +109,16 @@
 <span class="t-key">fix</span> sanitize with absint() and run it through $wpdb->prepare()</pre>
       </div>
 
-      <div class="terminal panel is-hidden" id="ex-reply" role="tabpanel" aria-labelledby="tab-reply" hidden>
+      <div class="terminal panel" id="ex-reply" role="tabpanel" aria-labelledby="tab-reply">
         <div class="term-bar"><span></span><span></span><span></span></div>
-        <pre class="term-body"><span class="t-you">you ›</span> draft a reply: coupons stopped working after the 8.7 update
-<span class="t-dim">· reading my support-reply and writing-voice guidance</span>
+        <pre class="term-body"><span class="t-you">you ›</span> give me a first pass: coupons stopped working after the 8.7 update
+<span class="t-dim">· checking the WooCommerce 8.7 changelog</span>
+<span class="t-dim">· pulling the repro I just ran</span>
+<span class="t-key">a starting point, in my voice. I take it from here:</span>
 
-Hi there,
-
-Thanks for the detail. This lines up with a change in 8.7 in how coupons
-apply to variations. Can you confirm the coupon is set to the specific
-variation, not the parent product? If you send me the coupon settings and
-a screenshot of the cart, I can reproduce it and tell you the exact fix.</pre>
+Hi there, thanks for the detail. This lines up with a change in 8.7 in how
+coupons apply to variations. Can you confirm the coupon targets the specific
+variation, not the parent product?</pre>
       </div>
     </section>
 
@@ -240,7 +241,7 @@ model = "qwen2.5-coder:14b"</pre>
         <a href="https://github.com/shameemreza/heya/blob/main/LICENSE">MIT license</a>
       </nav>
     </div>
-    <p class="foot-by">Built by Shameem Reza.</p>
+    <p class="foot-by">Built by <a href="https://shameemreza.com">Shameem Reza</a>.</p>
   </footer>
 
   <script src="app.js" defer></script>

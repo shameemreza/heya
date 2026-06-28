@@ -21,7 +21,15 @@
     });
   });
 
-  // Example tabs.
+  // Example tabs. The panels all start visible in the HTML, so with JS off the
+  // three examples stack and stay readable. On load, hide all but the first.
+  document.querySelectorAll(".panel").forEach(function (p, idx) {
+    if (idx !== 0) {
+      p.classList.add("is-hidden");
+      p.hidden = true;
+    }
+  });
+
   var tabs = Array.prototype.slice.call(document.querySelectorAll(".tab"));
   tabs.forEach(function (tab) {
     tab.addEventListener("click", function () {
