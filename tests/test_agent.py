@@ -1354,3 +1354,22 @@ def test_agent_identity_in_system_prompt(tmp_path):
 def test_agent_no_identity_no_line(tmp_path):
     agent, _ = make_agent(tmp_path, [ChatResult(content="x")])
     assert "You are assisting" not in agent.messages[0]["content"]
+
+
+def test_agent_on_tool_fires_with_describe(tmp_path):
+    from heya.llm_client import ToolCall
+    seen = []
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")], on_tool=seen.append)
+    call = ToolCall(id="1", name="read_file", arguments='{"path": "x"}')
+    agent._handle_call(call)
+    assert any("read_file" in s for s in seen)
+
+
+def test_agent_on_tool_raising_is_safe(tmp_path):
+    from heya.llm_client import ToolCall
+    def boom(s):
+        raise RuntimeError("ui broke")
+    agent, _ = make_agent(tmp_path, [ChatResult(content="x")], on_tool=boom)
+    call = ToolCall(id="1", name="read_file", arguments='{"path": "x"}')
+    out = agent._handle_call(call)  # must not raise
+    assert isinstance(out, str)

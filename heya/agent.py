@@ -97,6 +97,7 @@ class Agent:
         system_prompt: str = SYSTEM_PROMPT,
         max_concurrent: int = 4,
         root_on_text: Callable[[str], None] | None = None,
+        on_tool: Callable[[str], None] | None = None,
         memory_store=None,
         skills=None,
         context_window: int = 32768,
@@ -133,6 +134,7 @@ class Agent:
         self.max_children = max_children
         self.tool_filter = tool_filter
         self.max_concurrent = max_concurrent
+        self._on_tool = on_tool
         self._root_on_text = root_on_text if root_on_text is not None else on_text
         self._labeled_stream = None
         self._children_spawned = 0
@@ -326,6 +328,12 @@ class Agent:
         pre = self._fire("PreToolUse", tool_name=call.name, tool_input=call.arguments)
         if pre is not None and pre.block:
             return f"Blocked by PreToolUse hook: {pre.message or '(no reason given)'}"
+        if self._on_tool is not None:
+            label = f"[{self.label}] " if self.label else ""
+            try:
+                self._on_tool(label + detail)
+            except Exception:
+                pass  # the trace is best-effort
         output = dispatch_tool(
             call.name,
             call.arguments,
@@ -422,6 +430,7 @@ class Agent:
             session_id=self.session_id,
             agent_roles=self.agent_roles,
             identity=self.identity,
+            on_tool=self._on_tool,
         )
         child._labeled_stream = stream
         return child
