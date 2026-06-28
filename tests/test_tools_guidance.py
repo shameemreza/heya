@@ -98,3 +98,11 @@ def test_environment_guidance_is_readable():
     assert "do not assume" in text.lower() or "check, do not guess" in text.lower()
     assert "uname" in text and "version" in text.lower()
     assert "—" not in text
+
+
+def test_explore_guidance_is_readable():
+    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    text = read_guidance("explore", sources=[BUNDLED_GUIDANCE_DIR])
+    assert "list_files" in text and "search_files" in text
+    assert "plugin name" in text.lower() or "plugin file" in text.lower()
+    assert "—" not in text
