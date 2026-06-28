@@ -54,61 +54,69 @@ what you already have.
 
 ## Install
 
-You need Python 3.13.
+You need Python 3.11 or newer. The package is `heya-agent`; the command is
+`heya`.
 
 ```bash
-git clone git@github.com:shameemreza/heya.git
-cd heya
-python3.13 -m venv .venv
-.venv/bin/pip install -e .
+pipx install heya-agent
 ```
+
+[pipx](https://pipx.pypa.io) installs it into its own isolated environment and
+puts `heya` on your PATH. If you do not have pipx, `pip install heya-agent`
+works too. Then run `heya init` to set up a model.
 
 The browser tools are optional, since they pull in Playwright and a Chromium
 binary. Add them when you want them:
 
 ```bash
-.venv/bin/pip install -e ".[browser]"
-.venv/bin/python -m playwright install chromium
+pipx install "heya-agent[browser]"
+python -m playwright install chromium
 ```
 
 Heya runs fine without them. The browser tools just return an install hint until
 you do.
 
+### From source (for contributors)
+
+```bash
+git clone git@github.com:shameemreza/heya.git
+cd heya
+python3 -m venv .venv
+.venv/bin/pip install -e ".[test]"
+.venv/bin/python -m pytest
+```
+
 ## Point it at a model
 
-Copy the example config and edit it:
+Run the setup wizard. It walks you through a local (Ollama) or cloud model and
+writes the config for you:
 
 ```bash
-mkdir -p ~/.config/heya
-cp config.example.toml ~/.config/heya/config.toml
+heya init
 ```
 
-For a local model with Ollama:
-
-```bash
-ollama pull qwen2.5-coder:14b
-```
-
-The default profile already points at `http://localhost:11434/v1`. For a cloud
-model, add a profile with your endpoint and set the env var that holds your key.
-See [docs/guide/getting-started.md](docs/guide/getting-started.md).
+A pasted cloud key is stored in a locked credentials file, never in the config.
+On the local path the wizard offers to download a model for you. If you would
+rather configure by hand, copy `config.example.toml` to
+`~/.config/heya/config.toml` and edit it. See
+[docs/guide/getting-started.md](docs/guide/getting-started.md).
 
 ## Run it
 
 ```bash
-.venv/bin/heya "summarize what changed in the last 3 commits"
+heya "summarize what changed in the last 3 commits"
 ```
 
 Triage a bug end to end:
 
 ```bash
-.venv/bin/heya "triage this: variation coupons apply to the parent price at checkout on WP 6.5 / WC 8.7"
+heya "triage this: variation coupons apply to the parent price at checkout on WP 6.5 / WC 8.7"
 ```
 
 Use a skill you already have:
 
 ```bash
-.venv/bin/heya "use my support-reply skill to draft a response to this ticket: ..."
+heya "use my support-reply skill to draft a response to this ticket: ..."
 ```
 
 ## Docs

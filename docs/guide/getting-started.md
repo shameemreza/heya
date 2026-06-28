@@ -4,26 +4,35 @@ This walks you from a clone to your first useful run.
 
 ## Install
 
-You need Python 3.13.
+You need Python 3.11 or newer. The package is `heya-agent`; the command is
+`heya`.
 
 ```bash
-git clone git@github.com:shameemreza/heya.git
-cd heya
-python3.13 -m venv .venv
-.venv/bin/pip install -e .
+pipx install heya-agent
 ```
 
-That gives you a `heya` command inside the virtualenv. The browser tools are
+[pipx](https://pipx.pypa.io) puts `heya` on your PATH in its own isolated
+environment. Plain `pip install heya-agent` also works. The browser tools are
 optional and pull in Playwright plus a Chromium binary:
 
 ```bash
-.venv/bin/pip install -e ".[browser]"
-.venv/bin/python -m playwright install chromium
+pipx install "heya-agent[browser]"
+python -m playwright install chromium
 ```
 
 ## Point it at a model
 
-Heya talks to any OpenAI-compatible chat endpoint. Copy the example config:
+The fastest way is the setup wizard:
+
+```bash
+heya init
+```
+
+It walks you through a local or cloud model and writes the config for you. A
+pasted cloud key goes into a locked credentials file, never into the config.
+
+If you would rather configure by hand, Heya talks to any OpenAI-compatible chat
+endpoint. Copy the example config:
 
 ```bash
 mkdir -p ~/.config/heya
@@ -44,8 +53,10 @@ If you use a different model, set the name in your config under
 
 ### A cloud model
 
-Add a profile and set the env var that holds your key. Heya reads keys from the
-named env var, it never stores them.
+The wizard stores your key for you. To configure by hand instead, add a profile
+and either let the wizard save the key or set the env var that holds it. Heya
+resolves a key from the named env var first, then from the locked credentials
+file.
 
 ```toml
 [profiles.cloud]
@@ -57,7 +68,7 @@ api_key_env = "OPENROUTER_API_KEY"
 
 ```bash
 export OPENROUTER_API_KEY=sk-...
-.venv/bin/heya --profile cloud "hello"
+heya --profile cloud "hello"
 ```
 
 You can also pick a profile with the `HEYA_PROFILE` env var.
@@ -67,19 +78,19 @@ You can also pick a profile with the `HEYA_PROFILE` env var.
 Run a one-shot task:
 
 ```bash
-.venv/bin/heya "list the python files in this repo and what each does"
+heya "list the python files in this repo and what each does"
 ```
 
 Start an interactive session by omitting the task:
 
 ```bash
-.venv/bin/heya
+heya
 ```
 
 Add a working folder so the file and command tools can reach it:
 
 ```bash
-.venv/bin/heya --allow ~/sites/my-store "read the latest WordPress debug log and tell me the last fatal"
+heya --allow ~/sites/my-store "read the latest WordPress debug log and tell me the last fatal"
 ```
 
 ## Common flags
