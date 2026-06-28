@@ -316,3 +316,20 @@ def test_git_diff_all_base_refs_fail(tmp_path):
     ])
     out = git_diff("branch", allowed_roots=[tmp_path], cwd=tmp_path, runner=runner)
     assert "could not get a diff" in out.lower()
+
+
+def test_minimalism_methodology_exists_and_is_focused():
+    from heya.review import MINIMALISM_METHODOLOGY
+    m = MINIMALISM_METHODOLOGY.lower()
+    assert m  # non-empty
+    assert "over-build" in m or "over build" in m
+    # it must refuse to treat missing safety as over-build
+    assert "do not flag" in m and "safety" in m
+
+
+def test_reviewer_prompt_includes_minimalism_methodology():
+    from heya.review import REVIEWER_PROMPT, MINIMALISM_METHODOLOGY
+    prompt = REVIEWER_PROMPT("diff", "minimalism", "minimal-code", "",
+                             MINIMALISM_METHODOLOGY)
+    assert MINIMALISM_METHODOLOGY.strip() in prompt
+    assert "read_guidance('minimal-code')" in prompt

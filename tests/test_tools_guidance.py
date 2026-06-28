@@ -79,3 +79,14 @@ def test_bundled_guidance_is_discoverable():
     assert "code-review" in items
     assert items["writing-voice"].description  # non-empty description
     assert "voice" in items["writing-voice"].read().lower()
+
+
+def test_minimal_code_guidance_is_readable():
+    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    text = read_guidance("minimal-code", sources=[BUNDLED_GUIDANCE_DIR])
+    # the ladder and the safety carve-out are both present
+    assert "ladder" in text.lower()
+    assert "never minimize" in text.lower()
+    assert "Ponytail" in text  # MIT credit retained
+    # no em dashes in the bundled copy
+    assert "—" not in text

@@ -51,13 +51,14 @@ SYSTEM_PROMPT = (
     "use. Prefer reading before writing. Use tools to get real answers rather than "
     "guessing. Keep replies clear and direct, in natural human prose. When a task is "
     "done, give a short, plain final answer."
-    " When a task involves writing, code review, debugging, or following standards, call read_guidance first to consult relevant internal guidance and follow it — it is the source of truth for standards and voice."
+    " When a task involves writing, code review, debugging, or following standards, call read_guidance first to consult relevant internal guidance and follow it: it is the source of truth for standards and voice."
+    " When writing or changing code, prefer the smallest change that fully solves the problem. Reuse what exists, the standard library, or a native feature before new code, and a snippet before a plugin. Use read_guidance('minimal-code') for the ladder. Never minimize understanding, input validation, security, or error handling."
     " You can search the web (web_search) and read pages (web_fetch) when a task needs current or external information; note that these send the query or URL to a third party."
     " You can drive a real browser to reproduce issues: browser_navigate, browser_snapshot, browser_click, browser_type, browser_screenshot, and browser_evidence (console and network errors). Take a snapshot after each action to see the result."
     " For WordPress work you can tail a site's error log (read_log), run WP-CLI (run_wp_cli), and boot a disposable clean WordPress to reproduce on (wp_playground). Each takes the site's root directory as `path`; if you cannot tell which site is meant, ask the user rather than guessing. Use dev/staging sites only, never production, and back up before destructive WP-CLI ops (db reset, site empty)."
     " For long-lived commands (a dev server, a watcher), run_command with background=true returns a process id; read its output with check_command and stop it with kill_command."
     " You may also have MCP tools from servers the user configured (names like mcp__<server>__<tool>); these reach external systems and are approval-gated, and the user controls which servers are connected."
-    " To work faster on independent read-only subtasks, spawn_agents runs several sub-agents in parallel — each read-only (research, review, analysis) — and returns all their reports at once for you to synthesize; use spawn_agent for a single task or anything that writes files or drives the browser."
+    " To work faster on independent read-only subtasks, spawn_agents runs several sub-agents in parallel (each read-only for research, review, analysis) and returns all their reports at once for you to synthesize; use spawn_agent for a single task or anything that writes files or drives the browser."
 )
 
 SELF_REVIEW_NUDGE = (
@@ -560,6 +561,7 @@ class Agent:
         ("code-reviewer", "correctness and quality", "code-review", ""),
         ("security-reviewer", "security", "wp-security", review.WP_SECURITY_METHODOLOGY),
         ("standards-reviewer", "standards", "woocommerce-code-review", review.WP_STANDARDS_METHODOLOGY),
+        ("minimalism-reviewer", "minimalism", "minimal-code", review.MINIMALISM_METHODOLOGY),
     ]
 
     def _review_panel(self, focus):

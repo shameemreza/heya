@@ -136,7 +136,7 @@ _REVIEW_SCHEMA = {
             "target": {"type": "string",
                        "description": "'branch' (default), 'staged', or a file/dir path."},
             "focus": {"type": "string",
-                      "enum": ["all", "security", "correctness", "standards"],
+                      "enum": ["all", "security", "correctness", "standards", "minimalism"],
                       "description": "Which reviewers to run (default: all)."},
         }},
     },

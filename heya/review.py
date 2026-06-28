@@ -187,6 +187,19 @@ WP_STANDARDS_METHODOLOGY = (
     "a real bug. Report concrete violations naming the standard they break; do not invent style nits."
 )
 
+MINIMALISM_METHODOLOGY = (
+    "MINIMALISM REVIEW — flag over-building: code that does more than the task "
+    "needs. Look for: unrequested abstractions or configurability; a new "
+    "dependency where the standard library or a native platform feature would "
+    "do; a plugin where a hook or a small snippet would do; speculative, "
+    "unused, or dead code; duplication that should reuse an existing helper. "
+    "For each, name the simpler alternative concretely. Severities are mostly "
+    "Nit or Medium unless the over-build causes a real bug. Do not flag a "
+    "missing safety check, validation, sanitization, or test as over-build. "
+    "That is the correctness and security reviewers' job and is the opposite "
+    "concern. Do not invent nits where the structure is appropriate for the task."
+)
+
 
 def REVIEWER_PROMPT(diff: str, dimension: str, guidance_name: str, standards: str,
                     methodology: str = "") -> str:
