@@ -11,6 +11,8 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from .credentials import load_key
+
 DEFAULT_TIMEOUT = 120.0
 DEFAULT_PROFILE = "local"
 
@@ -50,6 +52,14 @@ def resolve_profile(
         available = ", ".join(sorted(profiles))
         raise ConfigError(f"Unknown profile {chosen!r}. Available: {available}")
     return profiles[chosen]
+
+
+def resolve_api_key(profile: "Profile", *, credentials_path: Path | None = None) -> str | None:
+    """Resolve a profile's key: env var first, then the locked credentials file."""
+    env_key = profile.api_key  # reads os.environ[profile.api_key_env] if set
+    if env_key:
+        return env_key
+    return load_key(profile.name, path=credentials_path)
 
 
 # Built-in presets. `local` is the reference default; users add or override

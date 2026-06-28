@@ -262,3 +262,11 @@ def test_chat_stream_sends_include_usage():
     LLMClient(profile, client=httpx.Client(transport=httpx.MockTransport(handler))).chat_stream(
         [{"role": "user", "content": "hi"}])
     assert captured["body"]["stream_options"] == {"include_usage": True}
+
+
+def test_api_key_override_sets_auth_header():
+    from heya.config import Profile
+    from heya.llm_client import LLMClient
+    prof = Profile(name="c", base_url="u", model="m", provider_type="api_key")
+    client = LLMClient(prof, api_key="override-key")
+    assert client._headers()["Authorization"] == "Bearer override-key"

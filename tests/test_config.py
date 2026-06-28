@@ -653,3 +653,27 @@ def test_config_example_parses():
     data = tomllib.loads(text)
     for block in ("identity", "skills", "plugins", "hooks", "context", "routing"):
         assert block in data
+
+
+def test_resolve_api_key_prefers_env_then_file(tmp_path, monkeypatch):
+    from heya.config import resolve_api_key
+    from heya.config import Profile
+    from heya.credentials import save_key
+    creds = tmp_path / "credentials.toml"
+    prof = Profile(name="cloud", base_url="u", model="m",
+                   provider_type="api_key", api_key_env="HEYA_TEST_KEY")
+    # file only
+    save_key("cloud", "from-file", path=creds)
+    monkeypatch.delenv("HEYA_TEST_KEY", raising=False)
+    assert resolve_api_key(prof, credentials_path=creds) == "from-file"
+    # env wins
+    monkeypatch.setenv("HEYA_TEST_KEY", "from-env")
+    assert resolve_api_key(prof, credentials_path=creds) == "from-env"
+
+
+def test_resolve_api_key_none_when_nothing(tmp_path, monkeypatch):
+    from heya.config import resolve_api_key, Profile
+    monkeypatch.delenv("HEYA_TEST_KEY", raising=False)
+    prof = Profile(name="cloud", base_url="u", model="m",
+                   provider_type="api_key", api_key_env="HEYA_TEST_KEY")
+    assert resolve_api_key(prof, credentials_path=tmp_path / "x.toml") is None
