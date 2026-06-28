@@ -43,6 +43,10 @@ def read_file(path: Path | str, *, allowed_roots: Sequence[Path]) -> str:
         raise ToolError(f"Is a directory, not a file: {resolved}") from exc
 
 
+_NOISE_DIRS = {".git", "node_modules", "vendor", ".venv", "__pycache__",
+               "dist", "build", ".idea", ".vscode"}
+
+
 def search_files(
     query: str,
     *,
@@ -81,6 +85,36 @@ def search_files(
     if not hits:
         return f"No matches for {query!r}."
     return "\n".join(hits)
+
+
+def list_files(path=None, *, allowed_roots, cwd, max_depth: int = 4,
+               max_entries: int = 400) -> str:
+    """Read-only indented tree of a folder, confined to the allow-list."""
+    try:
+        root = resolve_in_allowlist(path or cwd, allowed_roots)
+    except ToolError as e:
+        return f"Error: {e}"
+    base = root if root.is_dir() else root.parent
+    lines: list[str] = []
+    for entry in sorted(base.rglob("*")):
+        rel_parts = entry.relative_to(base).parts
+        if any(p in _NOISE_DIRS for p in rel_parts):
+            continue
+        depth = len(rel_parts) - 1
+        if depth >= max_depth:
+            continue
+        try:
+            resolve_in_allowlist(entry, allowed_roots)  # reject symlink escapes
+        except ToolError:
+            continue
+        name = rel_parts[-1] + ("/" if entry.is_dir() else "")
+        lines.append("  " * depth + name)
+        if len(lines) >= max_entries:
+            lines.append(f"…(truncated at {max_entries} entries)")
+            break
+    if not lines:
+        return "No files found."
+    return "\n".join(lines)
 
 
 def write_file(path: Path | str, content: str, *, allowed_roots: Sequence[Path]) -> int:

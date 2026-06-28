@@ -949,3 +949,13 @@ def test_bundled_voice_guidance_present():
         assert out.strip() and "No guidance" not in out
         assert "—" not in out  # no em dashes in bundled voice docs
     assert "Shameem Reza" not in read_guidance("writing-voice", sources=[BUNDLED_GUIDANCE_DIR])
+
+
+def test_list_files_is_registered_and_dispatched(tmp_path):
+    from heya.tools import TOOL_SCHEMAS, dispatch_tool
+    names = [t["function"]["name"] for t in TOOL_SCHEMAS if t.get("type") == "function"]
+    assert "list_files" in names
+    (tmp_path / "x.py").write_text("hi")
+    out = dispatch_tool("list_files", json.dumps({"path": str(tmp_path)}),
+                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10)
+    assert "x.py" in out
