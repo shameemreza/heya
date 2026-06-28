@@ -22,7 +22,7 @@ from .config import (
     load_routing_config, load_search_config, load_skill_paths, load_wp_path, resolve_profile,
     resolve_weak_profile, load_plugin_paths, load_disabled_plugins,
     load_command_paths, load_agent_paths, load_identity,
-    resolve_api_key, load_default_profile, default_config_path,
+    resolve_api_key, load_default_profile, default_config_path, model_supports_vision,
 )
 from .init import run_init
 from .preflight import check_profile, OK
@@ -40,8 +40,27 @@ from .tools_guidance import BUNDLED_GUIDANCE_DIR
 from .tools_web import build_search_provider
 from .ui import UI, should_plain
 from . import sessions
+from . import attachments
 
 import uuid
+
+
+def _build_turn_content(text, agent, ui):
+    """Build message content from @mentions: text files inlined, images as base64.
+
+    Returns either a plain string (no mentions) or a list of content blocks.
+    Shows warnings for read failures and non-vision model image attachments.
+    """
+    content, info = attachments.build_user_content(
+        text, allowed_roots=getattr(agent, "allowed_roots", []),
+        cwd=getattr(agent, "cwd", "."))
+    for note in info.get("notes", []):
+        ui.note(note)
+    if info.get("has_image"):
+        prof = getattr(getattr(agent, "client", None), "profile", None)
+        if prof is not None and not model_supports_vision(prof):
+            ui.note("this model cannot see images. switch to a vision model with /model.")
+    return content
 
 
 def _git_branch() -> str:
@@ -373,7 +392,7 @@ def run_cli(
             if status != OK:
                 ui.error(HINT)
                 return 1
-            agent.run(" ".join(args.task))
+            agent.run(_build_turn_content(" ".join(args.task), agent, ui))
             sys.stdout.write("\n")
             return 0
 
@@ -409,7 +428,7 @@ def run_cli(
                                      sessions_dir=sessions_dir, created=session_created):
                     break
                 continue
-            agent.run(text)
+            agent.run(_build_turn_content(text, agent, ui))
             sys.stdout.write("\n")
             snap = _session_snapshot(agent, profile_name=profile_name,
                                      created=session_created, updated=_now())
