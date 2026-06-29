@@ -9,14 +9,16 @@ site with no duplicate content. Run it locally to preview:
     cd site && python3 -m http.server 8080   # open /docs/
 """
 import json
+import re
+import tomllib
 from html.parser import HTMLParser
 from pathlib import Path
-
-import markdown
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "docs" / "guide"
 OUT = ROOT / "site" / "docs"
+SITE_INDEX = ROOT / "site" / "index.html"
+PYPROJECT = ROOT / "pyproject.toml"
 
 # Slug (the markdown file name), nav title, and a one-line description for the
 # docs index cards.
@@ -91,7 +93,25 @@ def nav_html(active):
     return "<ul>" + "".join(rows) + "</ul>"
 
 
+def read_version():
+    """The package version from pyproject.toml, the single source of truth."""
+    data = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+    return data["project"]["version"]
+
+
+def stamp_version(html, version):
+    """Rewrite the hero version line so the site always shows the real version."""
+    return re.sub(r"heya v[0-9][^\s·<]*", f"heya v{version}", html)
+
+
+def stamp_site_index(version):
+    """Stamp the current version into the landing page hero, in place."""
+    html = SITE_INDEX.read_text(encoding="utf-8")
+    SITE_INDEX.write_text(stamp_version(html, version), encoding="utf-8")
+
+
 def render(md_text):
+    import markdown
     md = markdown.Markdown(
         extensions=["fenced_code", "codehilite", "tables", "toc", "sane_lists"],
         extension_configs={"codehilite": {"guess_lang": False}})
@@ -132,7 +152,9 @@ def main():
 
     (OUT / "search-index.json").write_text(json.dumps(search_index, ensure_ascii=False))
 
-    print(f"built {len(built)} guides + index + search into {OUT}")
+    version = read_version()
+    stamp_site_index(version)
+    print(f"built {len(built)} guides + index + search into {OUT}; stamped hero to v{version}")
 
 
 if __name__ == "__main__":
