@@ -8,6 +8,10 @@ All notable changes to Heya are recorded here. The format follows
 
 ### Added
 
+- A `heya update` command that upgrades Heya in place (pipx or pip), and an
+  optional startup notice when a newer version is on PyPI. The check is
+  throttled, off the main thread, silent when offline, and disabled with
+  `[update] check = false`.
 - Background agents: launch sub-agents that run in the background while you keep
   working, for parallel audits, research, and building plugins or themes. They
   can write and run commands within a folder they lease exclusively, authorized

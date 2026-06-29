@@ -24,8 +24,9 @@ from .config import (
     resolve_weak_profile, load_plugin_paths, load_disabled_plugins,
     load_command_paths, load_agent_paths, load_identity,
     resolve_api_key, load_default_profile, default_config_path, model_supports_vision,
-    load_project_instructions_enabled, load_agent_config,
+    load_project_instructions_enabled, load_agent_config, load_update_config,
 )
+from .update import run_update, update_notice
 from .init import run_init
 from .preflight import check_profile, OK
 from .hooks import collect_hooks
@@ -357,11 +358,15 @@ def run_cli(
     make_agent: Callable[[argparse.Namespace], Any] = _default_make_agent,
     stdin: TextIO | None = None,
     init_fn: Callable[..., int] = run_init,
+    update_fn: Callable[..., int] = run_update,
     auto_init: bool = False,
 ) -> int:
     # `heya init` runs the setup wizard, not a task.
     if args.task == ["init"]:
         return init_fn(stream=stdin)
+    # `heya update` upgrades the installed package.
+    if args.task == ["update"]:
+        return update_fn()
     # Fresh install with no config and no task: greet and set up first.
     # Gated by auto_init so only the real entrypoint (main) triggers it; tests
     # that drive run_cli with injected stdin keep auto_init off and are unaffected.
@@ -423,6 +428,12 @@ def run_cli(
                 cwd=str(Path.cwd()),
                 branch=_git_branch(),
             )
+            try:
+                newer = update_notice(VERSION, enabled=load_update_config().check)
+                if newer:
+                    ui.note(f"A newer Heya ({newer}) is available. Run `heya update`.")
+            except Exception:
+                pass
         else:
             ui.error(HINT)
 

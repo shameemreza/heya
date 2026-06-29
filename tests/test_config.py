@@ -6,6 +6,7 @@ from heya.config import Profile, resolve_profile, ConfigError
 from heya.config import BUILTIN_PROFILES, load_profiles
 from heya.config import MCPServerConfig, load_mcp_servers
 from heya.config import AgentConfig, load_agent_config
+from heya.config import UpdateConfig, load_update_config
 
 
 def test_profile_api_key_reads_named_env_var(monkeypatch):
@@ -826,3 +827,19 @@ def test_agent_config_default_on_malformed_toml(tmp_path):
     p = tmp_path / "config.toml"
     p.write_text("}{ this is not valid toml")
     assert load_agent_config(p) == AgentConfig(max_background=4)
+
+
+def test_update_config_default(tmp_path):
+    assert load_update_config(tmp_path / "missing.toml") == UpdateConfig(check=True)
+
+
+def test_update_config_reads_false(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text("[update]\ncheck = false\n")
+    assert load_update_config(p).check is False
+
+
+def test_update_config_default_on_malformed(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text("}{ not toml")
+    assert load_update_config(p) == UpdateConfig(check=True)

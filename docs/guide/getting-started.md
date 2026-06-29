@@ -114,6 +114,11 @@ heya --allow ~/sites/my-store "read the latest WordPress debug log and tell me t
 - `--no-self-review` skip the scoped self-review pass.
 - `--max-iters N` cap the tool loop per task.
 
+## Keeping it current
+
+Run `heya update` to upgrade to the latest release. Heya also tells you at
+startup when a newer version is available.
+
 ## Where to go next
 
 - [Configuration reference](configuration.md) for every config block.

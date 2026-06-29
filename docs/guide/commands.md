@@ -29,6 +29,16 @@ heya "what is failing here? @debug.log @error.png"
 - `--max-iters <n>` cap the tool loop per task.
 - `--version` print the version.
 
+## heya update
+
+Upgrade Heya in place. It detects how Heya was installed and runs the right
+upgrade: `pipx upgrade heya-agent` for a pipx install, or pip otherwise. A
+development checkout is left alone with a note to use git. Start Heya again
+afterward to use the new version.
+
+When a newer version is on PyPI, Heya also shows a one-line notice at startup
+(see the `[update]` config to turn it off).
+
 ## Slash commands
 
 Type these inside an interactive session.

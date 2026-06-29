@@ -447,3 +447,25 @@ def test_session_snapshot_includes_background(tmp_path):
     snap = _session_snapshot(_FakeAgent(), profile_name="p", created="t", updated="t")
     assert "background" in snap
     assert snap["background"] and snap["background"][0]["status"] == "done"
+
+
+# ---------------------------------------------------------------------------
+# Task 6 tests: heya update command dispatch
+# ---------------------------------------------------------------------------
+
+
+def test_update_command_dispatches(tmp_path):
+    import argparse
+
+    from heya.main import run_cli
+
+    called = {"n": 0}
+
+    def fake_update():
+        called["n"] += 1
+        return 0
+
+    args = argparse.Namespace(task=["update"])
+    code = run_cli(args, update_fn=fake_update)
+    assert code == 0
+    assert called["n"] == 1

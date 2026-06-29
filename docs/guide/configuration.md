@@ -132,3 +132,24 @@ override Heya's safety rules. Turn it off if you prefer:
 [project]
 read_instructions = false
 ```
+
+## Background agents
+
+```toml
+[agents]
+max_background = 4
+```
+
+`max_background` caps how many background agents run at once. The default is 4.
+
+## Updates: `[update]`
+
+```toml
+[update]
+check = false
+```
+
+By default Heya checks PyPI about once a day for a newer version and shows a
+one-line notice at startup. The check runs in the background, never delays startup,
+and is silent if you are offline. Set `check = false` to turn it off. It only
+contacts the public PyPI endpoint and sends no data about you.

@@ -312,6 +312,24 @@ def load_agent_config(config_path: Path | None = None) -> AgentConfig:
         return default
 
 
+@dataclass(frozen=True)
+class UpdateConfig:
+    check: bool = True
+
+
+def load_update_config(config_path: Path | None = None) -> UpdateConfig:
+    """The [update] settings. `check` is the startup version check. Never raises."""
+    default = UpdateConfig()
+    path = config_path or default_config_path()
+    if not path.exists():
+        return default
+    try:
+        data = tomllib.loads(path.read_text()).get("update", {})
+        return UpdateConfig(check=bool(data.get("check", default.check)))
+    except Exception:
+        return default
+
+
 def default_plugin_paths() -> tuple[Path, ...]:
     home = Path.home()
     return (home / ".claude" / "plugins" / "cache", home / ".config" / "heya" / "plugins")
