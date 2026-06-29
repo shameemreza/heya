@@ -12,6 +12,7 @@ Apply the rules in this file to every plugin or theme you submit to WordPress.or
 The readme.txt is the source of truth the Directory uses to display your plugin or theme listing. Required headers:
 
 ```
+Contributors: alice, bob
 Stable tag: 1.2.3
 Requires at least: 6.4
 Tested up to: 6.8
@@ -19,6 +20,8 @@ Requires PHP: 7.4
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 ```
+
+The version numbers above are illustrative only. Set each header to the versions you actually test against and require; do not copy these values.
 
 Rules for each header:
 
@@ -30,12 +33,13 @@ Rules for each header:
 
 ### Required readme sections
 
-Every plugin readme must contain at least these sections:
+Every plugin readme must contain at least these `== Section ==` blocks:
 
 - **Description**: a clear explanation of what the plugin does.
 - **Installation**: how to install and activate it.
 - **Changelog**: a version history with dates or release notes. Keep it current.
-- **Contributors**: a list of valid WordPress.org usernames. Every username listed must exist and belong to someone who contributed.
+
+`Contributors` is not a section. It is a header field in the top block (above `== Description ==`), alongside `Stable tag` and the others. Its value is a comma-separated list of valid WordPress.org usernames. Every username listed must exist and belong to someone who contributed. Do not add a `== Contributors ==` block.
 
 ### Tags
 
@@ -112,20 +116,22 @@ Privacy policy: https://example.com/privacy
 
 ## Plugin Directory Guidelines: author duties
 
-The Plugin Directory Guidelines impose specific obligations on every author. These are the ones most often missed:
+The Plugin Directory Guidelines are the rules every hosted plugin must follow. The list below covers all of them, framed as the duties you owe as an author. Treat every item as required, not optional.
 
 - **GPL-compatible license for everything.** Every file you ship, including JavaScript, CSS, images, and bundled libraries, must be under a GPL-compatible license. Verify the license of every third-party library before bundling.
-- **You are responsible for every file.** The developer of record is accountable for all code in the plugin, whether written by them or included from a third party.
-- **Keep the hosted version current.** The version in the Directory must reflect what users actually receive. Do not let the hosted version fall behind your active development branch.
+- **You are responsible for every file.** The developer of record is accountable for all code, actions, and behavior of the plugin, whether written by them or included from a third party.
+- **Ship a stable, working version.** The plugin must be complete and functional when you submit it. Provide a working zip with real, usable code. Do not submit a placeholder or "coming soon" shell, and do not reserve a slug for a plugin you have not finished. A stable version must always be available from the Directory page.
 - **Human-readable code.** Do not ship minified-only JavaScript or CSS without including the source. The source must be in the repository or linked from the readme.
 - **No trialware.** Do not ship a plugin that disables features after a trial period or requires payment to unlock functionality that was previously free.
-- **Services documented.** Any external service your plugin contacts must be documented in the readme as described above.
+- **Services documented.** Software as a service is allowed, but any external service your plugin contacts must be documented in the readme as described above.
 - **No tracking without consent.** Do not collect user data, site data, or usage telemetry without explicit opt-in.
-- **No third-party executable code from unapproved sources.** Do not download and execute PHP, JavaScript, or binaries from remote servers at runtime.
-- **Honest behavior.** The plugin must do what it says it does. No hidden behavior, no unexpected side effects.
-- **Credits are opt-in and off by default.** If your plugin adds a "Powered by" credit link or badge, it must be disabled by default and the site owner must explicitly turn it on.
+- **No executable code from third-party systems.** Do not download and run PHP, JavaScript, or binaries from remote servers at runtime, and do not update the plugin from anywhere other than WordPress.org.
+- **Credits are opt-in and off by default.** If your plugin adds a "Powered by" credit link or badge on the public site, it must be disabled by default and the site owner must explicitly turn it on.
 - **No admin hijacking.** Do not redirect the user away from normal WordPress admin pages without user consent, hijack existing admin notices, or suppress other plugins' notices.
-- **No spam.** Do not send unsolicited email or notifications to the site owner or their users.
-- **Use WordPress defaults where they exist.** Respect WordPress settings for dates, times, currencies, and similar. Do not override them silently.
-- **Release-ready commits with incrementing versions.** Every commit to the hosted SVN repository is a potential release. Increment the version number with each tagged release and never reuse or skip a version number.
+- **No spam.** Do not send unsolicited email or notifications. Keep the readme free of affiliate links, keyword stuffing, and competitor names.
+- **Use WordPress-bundled libraries.** Use the copies of jQuery and other libraries that ship with WordPress rather than bundling your own. Respect WordPress defaults for dates, times, and currencies.
+- **Release-ready commits with incrementing versions.** Every commit to the hosted SVN repository is a potential release. Commit with intention, increment the version number with each tagged release, and never reuse or skip a version number.
 - **Respect trademarks and copyrights.** Apply the naming rules above and obey all applicable intellectual property law.
+- **Honest, lawful conduct.** The plugin and its developers must not do anything illegal, dishonest, or abusive. No fake or incentivized reviews, no sockpuppet or throwaway accounts to inflate ratings or reviews, no shipping another person's GPL work as your own without credit, and no harassment of users, reviewers, or other developers.
+
+The Plugin Directory team can enforce these guidelines: it can remove or disable a plugin that breaks them, and it can grant occasional exceptions at its discretion. The team can also update the guidelines at any time, so check the current published version before each release.
