@@ -24,7 +24,7 @@ from .config import (
     resolve_weak_profile, load_plugin_paths, load_disabled_plugins,
     load_command_paths, load_agent_paths, load_identity,
     resolve_api_key, load_default_profile, default_config_path, model_supports_vision,
-    load_project_instructions_enabled,
+    load_project_instructions_enabled, load_agent_config,
 )
 from .init import run_init
 from .preflight import check_profile, OK
@@ -35,6 +35,7 @@ from .agent_defs import discover_agent_roles
 from .llm_client import LLMClient
 from .mcp_runtime import MCPRuntime
 from .memory import MemoryStore
+from .background import BackgroundRegistry
 from .process import ProcessRegistry
 from .tools_browser import BrowserSession
 from .tools_wp import PlaygroundSession
@@ -95,6 +96,8 @@ def _session_snapshot(agent, *, profile_name, created, updated, title=None) -> d
         "session_tokens": getattr(agent, "session_tokens", 0),
         "weak_tokens": getattr(agent, "weak_tokens", 0),
         "messages": messages,
+        "background": (agent.background_registry.snapshot()
+                       if getattr(agent, "background_registry", None) is not None else []),
     }
 
 
@@ -260,6 +263,7 @@ def _default_make_agent(args: argparse.Namespace, *, ui: "UI | None" = None) -> 
     search_provider = build_search_provider(load_search_config())
     browser_session = BrowserSession(headless=load_browser_headless())
     process_registry = ProcessRegistry()
+    background_registry = BackgroundRegistry(max_concurrent=load_agent_config().max_background)
     playground_session = PlaygroundSession(process_registry, cwd=Path.cwd(), allowed_roots=roots)
     wp_default_root = load_wp_path()
     client = LLMClient(profile, api_key=resolve_api_key(profile))
@@ -340,6 +344,10 @@ def _default_make_agent(args: argparse.Namespace, *, ui: "UI | None" = None) -> 
         session_id=session_id,
         identity=identity,
         project_instructions=project_instructions,
+        background_registry=background_registry,
+        write_guard=(lambda name, args:
+                     background_registry.check_write(args.get("path", ""), "main")
+                     if name == "write_file" else None),
     )
 
 
@@ -432,13 +440,27 @@ def run_cli(
             if not text:
                 continue
             if text.lower() in _exit_words:
+                if getattr(agent, "background_registry", None) is not None:
+                    running = agent.background_registry.running_ids()
+                    if running:
+                        ui.note(f"Ending {len(running)} background agent(s) still running: "
+                                f"{', '.join(running)}. They do not survive quitting.")
                 break
             if text.startswith("/"):
                 if not _handle_slash(text, agent, ui, profiles=profiles,
                                      sessions_dir=sessions_dir, created=session_created):
                     break
                 continue
-            agent.run(_build_turn_content(text, agent, ui))
+            notes = ""
+            if getattr(agent, "background_registry", None) is not None:
+                done = agent.background_registry.drain_finished()
+                for a in done:
+                    ui.note(f"{a.id} {a.status}: {a.task[:60]}. Use collect_agent('{a.id}').")
+                if done:
+                    notes = ("[background update] finished: "
+                             + ", ".join(f"{a.id} ({a.status})" for a in done)
+                             + ". Use collect_agent to read results.\n")
+            agent.run(_build_turn_content(notes + text, agent, ui))
             sys.stdout.write("\n")
             snap = _session_snapshot(agent, profile_name=profile_name,
                                      created=session_created, updated=_now())
