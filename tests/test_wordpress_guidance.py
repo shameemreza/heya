@@ -75,3 +75,24 @@ def test_wp_security_names_forbidden_functions():
     text = _read("wp-security")
     for token in ["eval", "unserialize"]:
         assert token in text, f"wp-security.md should warn about: {token}"
+
+
+def test_wp_plugin_structure_loads_with_frontmatter():
+    assert _read("wp-plugin-structure").strip()
+    assert _has_valid_frontmatter("wp-plugin-structure")
+
+
+def test_wp_plugin_structure_covers_core_rules():
+    text = _read("wp-plugin-structure")
+    required = [
+        "ABSPATH",
+        "WP_UNINSTALL_PLUGIN",
+        "wp_enqueue_script",
+        "plugin_dir_path",
+        "register_activation_hook",
+        "register_setting",
+        "permission_callback",
+        "admin_notices",
+    ]
+    for token in required:
+        assert token in text, f"wp-plugin-structure.md is missing: {token}"
