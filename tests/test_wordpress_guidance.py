@@ -171,3 +171,21 @@ def test_wp_blocks_covers_core_rules():
     ]
     for token in required:
         assert token in text, f"wp-blocks.md is missing: {token}"
+
+
+def test_wc_extension_loads_with_frontmatter():
+    assert _read("wc-extension").strip()
+    assert _has_valid_frontmatter("wc-extension")
+
+
+def test_wc_extension_covers_core_rules():
+    text = _read("wc-extension")
+    required = [
+        "HPOS",
+        "wc_get_logger",
+        "WC_Order",
+        "for WooCommerce",
+    ]
+    for token in required:
+        assert token in text, f"wc-extension.md is missing: {token}"
+    assert "Checkout" in text
