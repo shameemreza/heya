@@ -128,3 +128,28 @@ def test_wp_readme_naming_covers_core_rules():
     ]
     for token in required:
         assert token in text, f"wp-readme-naming.md is missing: {token}"
+
+
+def test_wp_themes_loads_with_frontmatter():
+    assert _read("wp-themes").strip()
+    assert _has_valid_frontmatter("wp-themes")
+
+
+def test_wp_themes_covers_review_requirements():
+    text = _read("wp-themes")
+    required = [
+        "style.css",
+        "Text Domain",
+        "screenshot",
+        "1200",
+        "wp_head",
+        "wp_body_open",
+        "wp_footer",
+        "body_class",
+        "sanitize_hex_color",
+        "get_template_directory",
+        "theme.json",
+        "WP_DEBUG",
+    ]
+    for token in required:
+        assert token in text, f"wp-themes.md is missing: {token}"
