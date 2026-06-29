@@ -4,6 +4,8 @@ never raises."""
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 import threading
 import time
 import urllib.request
@@ -105,3 +107,36 @@ def update_notice(current, *, enabled=True, clock=time.time, fetcher=fetch_lates
     if latest and is_newer(latest, current):
         return latest
     return None
+
+
+def detect_install_method(package_dir=None, prefix=None) -> str:
+    """How heya-agent was installed: 'dev', 'pipx', or 'pip'."""
+    pkg = Path(package_dir) if package_dir is not None else Path(__file__).resolve().parent
+    repo = pkg.parent
+    if (repo / "pyproject.toml").exists() and (repo / ".git").exists():
+        return "dev"
+    pfx = str(prefix) if prefix is not None else sys.prefix
+    if "pipx" in Path(pfx).parts:
+        return "pipx"
+    return "pip"
+
+
+def run_update(*, package_dir=None, prefix=None, runner=subprocess.run, out=print) -> int:
+    """Run `heya update`: upgrade the package the way it was installed."""
+    method = detect_install_method(package_dir, prefix)
+    if method == "dev":
+        out("This looks like a development checkout. Update it with git "
+            "(for example git pull), not heya update.")
+        return 0
+    if method == "pipx":
+        cmd = ["pipx", "upgrade", "heya-agent"]
+    else:
+        cmd = [sys.executable, "-m", "pip", "install", "-U", "heya-agent"]
+    out(f"Updating heya-agent: {' '.join(cmd)}")
+    result = runner(cmd)
+    code = int(getattr(result, "returncode", 0) or 0)
+    if code == 0:
+        out("Updated. Start Heya again to use the new version.")
+    else:
+        out("The update did not finish. See the output above.")
+    return code

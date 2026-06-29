@@ -78,3 +78,81 @@ def test_refresh_writes_cache(tmp_path):
     p = tmp_path / "c.json"
     _refresh(clock=lambda: 555.0, fetcher=lambda: "0.0.5", cache_file=p)
     assert read_cache(p) == {"checked": 555.0, "latest": "0.0.5"}
+
+
+def test_detect_dev_when_repo_markers_present(tmp_path):
+    from heya.update import detect_install_method
+
+    repo = tmp_path / "heya-src"
+    pkg = repo / "heya"
+    pkg.mkdir(parents=True)
+    (repo / "pyproject.toml").write_text("[project]\n")
+    (repo / ".git").mkdir()
+    assert detect_install_method(package_dir=pkg, prefix="/anything") == "dev"
+
+
+def test_detect_pipx_from_prefix(tmp_path):
+    from heya.update import detect_install_method
+
+    pkg = tmp_path / "site" / "heya"
+    pkg.mkdir(parents=True)
+    assert detect_install_method(
+        package_dir=pkg, prefix="/home/u/.local/pipx/venvs/heya-agent") == "pipx"
+
+
+def test_detect_pip_otherwise(tmp_path):
+    from heya.update import detect_install_method
+
+    pkg = tmp_path / "site" / "heya"
+    pkg.mkdir(parents=True)
+    assert detect_install_method(package_dir=pkg, prefix="/usr") == "pip"
+
+
+def test_run_update_dev_runs_nothing(tmp_path):
+    from heya.update import run_update
+
+    repo = tmp_path / "heya-src"
+    pkg = repo / "heya"
+    pkg.mkdir(parents=True)
+    (repo / "pyproject.toml").write_text("[project]\n")
+    (repo / ".git").mkdir()
+    calls = []
+    lines = []
+    code = run_update(package_dir=pkg, prefix="/x",
+                      runner=lambda cmd: calls.append(cmd), out=lines.append)
+    assert code == 0
+    assert calls == []  # nothing run for a dev checkout
+    assert any("development" in line for line in lines)
+
+
+def test_run_update_pipx_invokes_runner(tmp_path):
+    from heya.update import run_update
+
+    pkg = tmp_path / "site" / "heya"
+    pkg.mkdir(parents=True)
+
+    class _Result:
+        returncode = 0
+
+    calls = []
+    code = run_update(package_dir=pkg, prefix="/u/pipx/venvs/heya-agent",
+                      runner=lambda cmd: calls.append(cmd) or _Result(), out=lambda s: None)
+    assert code == 0
+    assert calls == [["pipx", "upgrade", "heya-agent"]]
+
+
+def test_run_update_pip_invokes_runner(tmp_path):
+    import sys
+    from heya.update import run_update
+
+    pkg = tmp_path / "site" / "heya"
+    pkg.mkdir(parents=True)
+
+    class _Result:
+        returncode = 3
+
+    calls = []
+    code = run_update(package_dir=pkg, prefix="/usr",
+                      runner=lambda cmd: calls.append(cmd) or _Result(), out=lambda s: None)
+    assert code == 3
+    assert calls == [[sys.executable, "-m", "pip", "install", "-U", "heya-agent"]]
