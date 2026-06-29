@@ -1532,3 +1532,30 @@ def test_cancel_event_stops_the_loop(tmp_path):
     cancel.set()  # already cancelled: the loop must stop on the first check
     agent, _ = make_agent(tmp_path, calls, cancel=cancel)
     assert agent.run("go") == "Stopped: cancelled."
+
+
+def test_write_guard_blocks_write_file(tmp_path):
+    blocked_path = tmp_path / "blocked.txt"
+    calls = [ChatResult(content="", tool_calls=[ToolCall(id="1", name="write_file",
+             arguments=f'{{"path": "{blocked_path}", "content": "x"}}')]),
+             ChatResult(content="done")]
+    seen = {}
+
+    def guard(name, args):
+        seen["name"] = name
+        return "Error: that path is leased by background agent a1."
+
+    agent, _ = make_agent(tmp_path, calls, write_guard=guard)
+    agent.run("write it")
+    assert seen["name"] == "write_file"
+    assert not blocked_path.exists()  # write never happened
+
+
+def test_write_guard_allows_when_none_returned(tmp_path):
+    out_path = tmp_path / "ok.txt"
+    calls = [ChatResult(content="", tool_calls=[ToolCall(id="1", name="write_file",
+             arguments=f'{{"path": "{out_path}", "content": "hi"}}')]),
+             ChatResult(content="done")]
+    agent, _ = make_agent(tmp_path, calls, write_guard=lambda name, args: None)
+    agent.run("write it")
+    assert out_path.read_text() == "hi"

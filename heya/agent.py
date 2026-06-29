@@ -116,6 +116,7 @@ class Agent:
         identity=None,
         project_instructions: str = "",
         cancel: "threading.Event | None" = None,
+        write_guard=None,
     ) -> None:
         self.client = client
         self.weak_client = weak_client if weak_client is not None else client
@@ -182,6 +183,7 @@ class Agent:
         if project_instructions:
             system_content = system_content + "\n\n" + project_instructions
         self.cancel = cancel
+        self.write_guard = write_guard
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": system_content}]
         self._mutated = False
 
@@ -333,6 +335,14 @@ class Agent:
         detail = describe_call(call.name, call.arguments)
         if self.tool_filter is not None and call.name not in self.tool_filter:
             return f"Error: tool {call.name!r} is not available to the {self.label} sub-agent."
+        if self.write_guard is not None and call.name in ("write_file", "run_command", "run_wp_cli"):
+            try:
+                guard_args = json.loads(call.arguments) if call.arguments.strip() else {}
+            except Exception:
+                guard_args = {}
+            guard_error = self.write_guard(call.name, guard_args)
+            if guard_error:
+                return guard_error
         if call.name == "write_file" and isinstance(
             getattr(self.approval, "_approver", None), UiApprover
         ):
