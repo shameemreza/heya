@@ -4,6 +4,9 @@ never raises."""
 from __future__ import annotations
 
 import json
+import threading
+import time
+import urllib.request
 from pathlib import Path
 
 from .config import default_config_path
@@ -55,3 +58,50 @@ def write_cache(data, path=None) -> None:
         p.write_text(json.dumps(data), encoding="utf-8")
     except Exception:
         pass
+
+
+PYPI_URL = "https://pypi.org/pypi/heya-agent/json"
+TTL = 86400  # seconds; check at most about once a day
+
+
+def fetch_latest(timeout: float = 2.0):
+    """The latest heya-agent version on PyPI, or None on any failure."""
+    try:
+        with urllib.request.urlopen(PYPI_URL, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        return data["info"]["version"]
+    except Exception:
+        return None
+
+
+def _refresh(clock, fetcher, cache_file) -> None:
+    """Fetch the latest version and rewrite the cache. Best-effort."""
+    try:
+        write_cache({"checked": clock(), "latest": fetcher()}, cache_file)
+    except Exception:
+        pass
+
+
+def update_notice(current, *, enabled=True, clock=time.time, fetcher=fetch_latest,
+                  cache_file=None, spawn=True):
+    """Return a newer version to tell the user about, or None.
+
+    Never blocks: the answer comes from the cache, and a stale cache triggers a
+    daemon-thread refresh for next time. Does nothing when disabled."""
+    if not enabled:
+        return None
+    cache = read_cache(cache_file)
+    try:
+        stale = (clock() - float(cache.get("checked", 0))) > TTL
+    except Exception:
+        stale = True
+    if stale and spawn:
+        try:
+            threading.Thread(target=_refresh, args=(clock, fetcher, cache_file),
+                             daemon=True).start()
+        except Exception:
+            pass
+    latest = cache.get("latest")
+    if latest and is_newer(latest, current):
+        return latest
+    return None
