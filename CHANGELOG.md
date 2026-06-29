@@ -6,6 +6,8 @@ All notable changes to Heya are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-06-29
+
 ### Added
 
 - Connect a development or staging WordPress and WooCommerce site with
@@ -58,5 +60,6 @@ First public release.
 - Bundled default guidance (writing voice, banned words, support replies) that
   can be overridden.
 
-[Unreleased]: https://github.com/shameemreza/heya/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/shameemreza/heya/compare/v0.0.2...HEAD
+[0.0.2]: https://github.com/shameemreza/heya/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/shameemreza/heya/releases/tag/v0.0.1
