@@ -330,6 +330,62 @@ def load_update_config(config_path: Path | None = None) -> UpdateConfig:
         return default
 
 
+@dataclass(frozen=True)
+class WPSiteConfig:
+    url: str
+    user: str
+    env: str
+    password_key: str = "wordpress"
+
+    def is_allowed_env(self) -> bool:
+        return self.env in ("dev", "staging")
+
+
+def load_wordpress_config(config_path: Path | None = None) -> "WPSiteConfig | None":
+    """The [wordpress] site connection, or None when not configured. Never raises."""
+    path = config_path or default_config_path()
+    if not path.exists():
+        return None
+    try:
+        data = tomllib.loads(path.read_text()).get("wordpress", {})
+        if not data.get("url") or not data.get("user"):
+            return None
+        return WPSiteConfig(
+            url=str(data["url"]),
+            user=str(data["user"]),
+            env=str(data.get("env", "")),
+            password_key=str(data.get("password_key", "wordpress")),
+        )
+    except Exception:
+        return None
+
+
+def write_wordpress_config(path: Path, config: "WPSiteConfig") -> None:
+    """Write or replace the [wordpress] block, preserving every other section."""
+    lines: list[str] = []
+    if path.exists():
+        # Drop an existing [wordpress] block, keep everything else byte for byte.
+        keep = True
+        for line in path.read_text().splitlines():
+            stripped = line.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                keep = stripped != "[wordpress]"
+            if keep:
+                lines.append(line)
+        while lines and lines[-1].strip() == "":
+            lines.pop()
+    block = (
+        "[wordpress]\n"
+        f'url = "{config.url}"\n'
+        f'user = "{config.user}"\n'
+        f'env = "{config.env}"\n'
+        f'password_key = "{config.password_key}"\n'
+    )
+    text = ("\n".join(lines) + "\n\n" + block) if lines else block
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+
+
 def default_plugin_paths() -> tuple[Path, ...]:
     home = Path.home()
     return (home / ".claude" / "plugins" / "cache", home / ".config" / "heya" / "plugins")
