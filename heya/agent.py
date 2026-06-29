@@ -404,6 +404,8 @@ class Agent:
             skill_fn=self._skill,
             triage_report_fn=self._triage_report,
             pick_list_fn=self._record_pick_list,
+            spawn_background_fn=self._spawn_background_agent,
+            background_registry=self.background_registry,
         )
         self._fire("PostToolUse", tool_name=call.name, tool_input=call.arguments, tool_output=output)
         mutating = call.name in ("write_file", "run_command", "run_wp_cli")

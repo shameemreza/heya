@@ -959,3 +959,49 @@ def test_list_files_is_registered_and_dispatched(tmp_path):
     out = dispatch_tool("list_files", json.dumps({"path": str(tmp_path)}),
                         allowed_roots=[tmp_path], cwd=tmp_path, timeout=10)
     assert "x.py" in out
+
+
+from heya.background import BackgroundRegistry
+
+
+def test_background_schemas_present_when_can_spawn():
+    names = {t["function"]["name"] for t in build_tool_schemas(can_spawn=True)}
+    assert {"spawn_background_agent", "check_agent", "list_agents",
+            "collect_agent", "cancel_agent"} <= names
+    off = {t["function"]["name"] for t in build_tool_schemas(can_spawn=False)}
+    assert "spawn_background_agent" not in off
+
+
+def test_dispatch_spawn_background_calls_fn(tmp_path):
+    captured = {}
+
+    def spawn_background_fn(task, role, instructions, write_scope, allow_commands):
+        captured.update(task=task, write_scope=write_scope, allow_commands=allow_commands)
+        return "Started background agent a1 for: x."
+
+    out = dispatch_tool(
+        "spawn_background_agent",
+        '{"task": "build a plugin", "write_scope": "/p", "allow_commands": true}',
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=5,
+        spawn_background_fn=spawn_background_fn, background_registry=BackgroundRegistry())
+    assert "a1" in out
+    assert captured["task"] == "build a plugin"
+    assert captured["allow_commands"] is True
+
+
+def test_dispatch_list_and_collect(tmp_path):
+    reg = BackgroundRegistry()
+
+    def run(entry, on_text):
+        on_text("hi")
+        return "the result"
+
+    reg.start(run, task="t")
+    import time
+    time.sleep(0.1)
+    listed = dispatch_tool("list_agents", "{}", allowed_roots=[tmp_path],
+                           cwd=tmp_path, timeout=5, background_registry=reg)
+    assert "a1" in listed
+    collected = dispatch_tool("collect_agent", '{"id": "a1"}', allowed_roots=[tmp_path],
+                              cwd=tmp_path, timeout=5, background_registry=reg)
+    assert "the result" in collected
