@@ -3,7 +3,7 @@
 Heya can connect to a development or staging WordPress and WooCommerce site and
 act on it through the official Abilities API: discover what the site can do,
 then run those abilities to query orders, update status, manage products, and
-more. Reads flow; anything that changes data asks for your approval first.
+more. Discovery (listing the site's abilities) flows; running an ability or making a REST call asks for your approval first.
 
 ## Connect
 
@@ -19,10 +19,11 @@ more. Reads flow; anything that changes data asks for your approval first.
 
 - `wp_abilities` lists the site's abilities (read-only).
 - `wp_run_ability` runs one by name, for example `woocommerce/orders-query` or
-  `woocommerce/orders-update-status`. The site's own permission checks decide
-  what is allowed; changes ask for your approval.
+  `woocommerce/orders-update-status`. Each run asks for your approval. The
+  site's own permission checks decide what is allowed.
 - `wp_rest` calls the WooCommerce REST API for anything not exposed as an
-  ability, for example `GET /wc/v3/orders`.
+  ability, for example `/wc/v3/orders`. Every call asks for your approval,
+  the same as running an ability.
 
 As the site registers more abilities (subscriptions, memberships), Heya gains
 them automatically, with no Heya update.

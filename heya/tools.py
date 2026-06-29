@@ -390,9 +390,9 @@ _WP_RUN_ABILITY_SCHEMA = {
         "name": "wp_run_ability",
         "description": (
             "Run one of the connected site's abilities by name (for example "
-            "woocommerce/orders-query or woocommerce/orders-update-status). The site's "
-            "own permission checks decide what is allowed. Anything that changes data "
-            "asks for your approval first."),
+            "woocommerce/orders-query or woocommerce/orders-update-status). Running any "
+            "ability asks for your approval first. The site's own permission checks still "
+            "decide what is allowed."),
         "parameters": {
             "type": "object",
             "properties": {
@@ -409,8 +409,8 @@ _WP_REST_SCHEMA = {
         "name": "wp_rest",
         "description": (
             "Call the connected site's WooCommerce REST API for things not exposed as "
-            "abilities (for example GET /wc/v3/orders). Use GET to read; other methods "
-            "ask for your approval."),
+            "abilities (for example GET /wc/v3/orders). Every REST call asks for your "
+            "approval first."),
         "parameters": {
             "type": "object",
             "properties": {

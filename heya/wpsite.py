@@ -40,12 +40,14 @@ def _error(resp) -> str:
 
 
 class WPClient:
+    # Dev/staging environment guard is enforced in build_wp_connector, the intended constructor.
     def __init__(self, base_url, user, password, *, client=None, timeout=20.0):
         self.base = base_url.rstrip("/") + "/wp-json"
         if client is not None:
             self._client = client
         else:
-            self._client = httpx.Client(auth=httpx.BasicAuth(user, password), timeout=timeout, follow_redirects=True)
+            # No follow_redirects: prevents Basic-auth credentials from being resent to a cross-host redirect target.
+            self._client = httpx.Client(auth=httpx.BasicAuth(user, password), timeout=timeout)
 
     def list_abilities(self, *, per_page=50) -> str:
         try:
