@@ -178,6 +178,23 @@ section { padding: clamp(2.5rem, 6vw, 5rem) clamp(1rem, 4vw, 2rem); }
   border: 1px solid var(--green-soft); border-radius: 999px; padding: 0.07rem 0.42rem;
 }
 
+/* Legal pages (privacy, terms) */
+.legal { max-width: 46rem; margin: 0 auto; padding: 3rem 1.2rem 4.5rem; }
+.legal h1 { font-size: 2rem; margin: 0 0 0.3rem; }
+.legal h2 { font-size: 1.15rem; margin: 2.2rem 0 0.6rem; color: var(--text); }
+.legal p, .legal li { color: var(--dim); line-height: 1.75; }
+.legal strong { color: var(--text); }
+.legal a { color: var(--green); }
+.legal a:hover { color: #fff; }
+.legal .updated { font-size: 0.85rem; margin-bottom: 1.6rem; }
+.legal ul { padding-left: 1.2rem; }
+.legal li { margin-bottom: 0.5rem; }
+.legal code {
+  font-family: var(--mono); font-size: 0.85em; color: var(--text);
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+  padding: 0.1rem 0.35rem;
+}
+
 /* Footer */
 .footer { max-width: var(--maxw); margin: 0 auto; padding: 2.5rem clamp(1rem, 4vw, 2rem); border-top: 1px solid var(--border); }
 .foot-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
