@@ -31,6 +31,7 @@ from .credentials import load_key
 from .wpsite import build_wp_connector
 from .update import run_update, update_notice
 from .init import run_init
+from .wpconnect import run_wp_connect
 from .preflight import check_profile, OK
 from .hooks import collect_hooks
 from .plugins import discover_plugins, collect_plugin_skills
@@ -373,6 +374,7 @@ def run_cli(
     stdin: TextIO | None = None,
     init_fn: Callable[..., int] = run_init,
     update_fn: Callable[..., int] = run_update,
+    wp_connect_fn: Callable[..., int] = run_wp_connect,
     auto_init: bool = False,
 ) -> int:
     # `heya init` runs the setup wizard, not a task.
@@ -381,6 +383,9 @@ def run_cli(
     # `heya update` upgrades the installed package.
     if args.task == ["update"]:
         return update_fn()
+    # `heya wp connect` runs the WordPress site setup flow.
+    if args.task == ["wp", "connect"]:
+        return wp_connect_fn(stream=stdin)
     # Fresh install with no config and no task: greet and set up first.
     # Gated by auto_init so only the real entrypoint (main) triggers it; tests
     # that drive run_cli with injected stdin keep auto_init off and are unaffected.
