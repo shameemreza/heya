@@ -30,6 +30,10 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 */
 ```
 
+The version numbers above are illustrative. Set `Requires at least`,
+`Tested up to`, and `Requires PHP` to the versions you actually require and test
+against, not to any fixed value copied from an example.
+
 `Text Domain` must match the theme's slug (the folder name). Every translatable
 string in the theme must use that text domain. Do not use a text domain that
 belongs to another project or to WordPress core.
@@ -153,21 +157,33 @@ review:
 ## Child theme support
 
 A parent theme must not break when a child theme overrides one of its templates.
-Use `get_template_directory` when you need the parent theme's directory, and
-`get_stylesheet_directory` when you need whichever theme is active (parent or
-child):
+Two functions resolve theme directories, and they are not interchangeable:
+
+- `get_template_directory()` returns the parent theme's directory. A parent
+  theme's bundled files always live in the parent, so a parent theme loading its
+  own includes must use this function.
+- `get_stylesheet_directory()` returns the active theme's directory, which is
+  the child when a child theme is active. A child theme loading its own files
+  uses this function.
 
 ```php
-// Wrong: always resolves to the parent, even when loading the child's override.
+// In a parent theme, loading the parent's own bundled file.
+// Correct: the parent's files always live in the parent directory.
 require_once get_template_directory() . '/inc/functions.php';
 
-// Right: resolves to the child theme when a child is active.
-require_once get_stylesheet_directory() . '/inc/functions.php';
+// In a child theme, loading the child's own bundled file.
+// Correct: get_stylesheet_directory() resolves to the active (child) theme.
+require_once get_stylesheet_directory() . '/inc/customizations.php';
 ```
 
-When loading templates, use `get_template_part()`. WordPress resolves template
-parts through the child theme first, then falls back to the parent. Do not use
-`require` or `include` with a hardcoded path.
+Do not use `get_stylesheet_directory()` to `require` a parent theme's file. When
+a child theme is active it resolves to the child, and if the child does not
+contain that file the require fatals.
+
+For templates a child theme should be able to override, use `get_template_part()`
+or `locate_template()` rather than a hardcoded `require`. WordPress resolves
+these through the child theme first, then falls back to the parent, so a child
+can override a template without the parent erroring.
 
 ## Code quality
 
