@@ -160,3 +160,13 @@ def test_locked_sink_serializes_concurrent_writes():
     assert len(out) == sum(len(m) for m in msgs)
     for m in msgs:
         assert m in out  # each message contiguous, not interleaved
+
+
+from heya.subagents import BACKGROUND_TOOLS
+
+
+def test_background_role_exists_and_can_write():
+    assert "background" in ROLES
+    assert "write_file" in BACKGROUND_TOOLS
+    assert "run_command" in BACKGROUND_TOOLS
+    assert PARALLEL_SAFE_TOOLS <= BACKGROUND_TOOLS  # reads still available
