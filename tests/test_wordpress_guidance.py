@@ -96,3 +96,16 @@ def test_wp_plugin_structure_covers_core_rules():
     ]
     for token in required:
         assert token in text, f"wp-plugin-structure.md is missing: {token}"
+
+
+def test_wp_standards_i18n_loads_with_frontmatter():
+    assert _read("wp-standards-i18n").strip()
+    assert _has_valid_frontmatter("wp-standards-i18n")
+
+
+def test_wp_standards_i18n_covers_core_rules():
+    text = _read("wp-standards-i18n")
+    required = ["Yoda", "Text Domain", "translators:", "_n("]
+    for token in required:
+        assert token in text, f"wp-standards-i18n.md is missing: {token}"
+    assert "init" in text
