@@ -19,7 +19,7 @@ These apply to every file you write or change. There are no exceptions.
 defined( 'ABSPATH' ) || exit;
 ```
 
-Put this at the top of every PHP file that is not the plugin entry point.
+Put this at the top of every PHP file.
 
 **Sanitize every input at the point you receive it.**
 

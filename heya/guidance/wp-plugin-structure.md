@@ -52,10 +52,10 @@ underscore alone), and single common English words such as `the_`, `my_`,
 `plugin_`, or `custom_`.
 
 ```php
-// Wrong — bare function name, easy to collide.
+// Wrong: bare function name, easy to collide.
 function get_settings() { ... }
 
-// Right — prefixed with the plugin slug.
+// Right: prefixed with the plugin slug.
 function myplugin_get_settings() { ... }
 ```
 
@@ -67,20 +67,20 @@ layouts.
 
 Use these functions and constants instead:
 
-- `plugin_dir_path( __FILE__ )` — absolute filesystem path to the current file's
+- `plugin_dir_path( __FILE__ )`: absolute filesystem path to the current file's
   directory, with a trailing slash.
-- `plugin_dir_url( __FILE__ )` — full URL to the current file's directory, with
+- `plugin_dir_url( __FILE__ )`: full URL to the current file's directory, with
   a trailing slash.
-- `ABSPATH` — WordPress root directory (with trailing slash).
-- `WP_CONTENT_DIR` — absolute path to the content directory.
-- `WP_PLUGIN_DIR` and `WP_PLUGIN_URL` — absolute path and URL to the plugins
+- `ABSPATH`: WordPress root directory (with trailing slash).
+- `WP_CONTENT_DIR`: absolute path to the content directory.
+- `WP_PLUGIN_DIR` and `WP_PLUGIN_URL`: absolute path and URL to the plugins
   directory.
 
 ```php
-// Wrong — hardcoded path breaks non-standard installs.
+// Wrong: hardcoded path breaks non-standard installs.
 require_once '/var/www/html/wp-content/plugins/my-plugin/includes/class-loader.php';
 
-// Right — resolved relative to the current file.
+// Right: resolved relative to the current file.
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-loader.php';
 ```
 
@@ -104,10 +104,10 @@ load time (no database calls, no output, no redirects while the file is being
 required).
 
 ```php
-// Wrong — runs immediately at load time.
+// Wrong: runs immediately at load time.
 my_plugin_register_settings();
 
-// Right — deferred to the appropriate hook.
+// Right: deferred to the appropriate hook.
 add_action( 'admin_init', 'my_plugin_register_settings' );
 ```
 
@@ -151,10 +151,10 @@ For small inline assets, attach them to an already-enqueued handle with
 `wp_add_inline_style` or `wp_add_inline_script`. Do not print them directly:
 
 ```php
-// Wrong — raw inline tag in output.
+// Wrong: raw inline tag in output.
 echo '<style>.myplugin-box { color: red; }</style>';
 
-// Right — attached to an enqueued handle.
+// Right: attached to an enqueued handle.
 wp_add_inline_style( 'myplugin-styles', '.myplugin-box { color: red; }' );
 ```
 

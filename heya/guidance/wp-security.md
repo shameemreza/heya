@@ -25,10 +25,10 @@ depends on where the value appears.
 Never echo a raw variable. Escape late.
 
 ```php
-// Wrong — raw variable echoed directly.
+// Wrong: raw variable echoed directly.
 echo '<p>' . $user_input . '</p>';
 
-// Right — escaped at the point of output.
+// Right: escaped at the point of output.
 echo '<p>' . esc_html( $user_input ) . '</p>';
 ```
 
@@ -52,10 +52,10 @@ Treat every superglobal (`$_POST`, `$_GET`, `$_REQUEST`, `$_FILES`,
 magic-quotes layer WordPress adds, then the most specific sanitizer available.
 
 ```php
-// Wrong — raw superglobal used directly.
+// Wrong: raw superglobal used directly.
 $name = $_POST['name'];
 
-// Right — unslash, then sanitize.
+// Right: unslash, then sanitize.
 $name = sanitize_text_field( wp_unslash( $_POST['name'] ?? '' ) );
 ```
 
@@ -115,7 +115,7 @@ check_ajax_referer( 'my_plugin_ajax_action', 'nonce' );
 For manual verification when you need to branch:
 
 ```php
-if ( ! wp_verify_nonce( $_POST['my_plugin_nonce'] ?? '', 'my_plugin_save_settings' ) ) {
+if ( ! wp_verify_nonce( wp_unslash( $_POST['my_plugin_nonce'] ?? '' ), 'my_plugin_save_settings' ) ) {
     wp_die( esc_html__( 'Nonce check failed.', 'my-plugin' ) );
 }
 ```
@@ -129,10 +129,10 @@ Check the current user's capability before any privileged action. Use the most
 specific capability that applies.
 
 ```php
-// Wrong — role name is not a capability; is_admin() is not a permission check.
-if ( current_user_role() === 'administrator' ) { ... }
+// Wrong: checks a role, not a capability.
+if ( in_array( 'administrator', (array) wp_get_current_user()->roles, true ) ) { ... }
 
-// Right — check the capability that the action actually requires.
+// Right: check the capability that the action actually requires.
 if ( ! current_user_can( 'manage_options' ) ) {
     wp_die( esc_html__( 'You do not have permission to do this.', 'my-plugin' ) );
 }
@@ -149,10 +149,10 @@ Never build SQL by interpolating variables into a query string. Use
 strings. Use `%i` for identifiers (table names, column names) when available.
 
 ```php
-// Wrong — variable interpolated directly into SQL.
+// Wrong: variable interpolated directly into SQL.
 $results = $wpdb->get_results( "SELECT * FROM {$wpdb->prefix}orders WHERE user_id = $user_id" );
 
-// Right — $wpdb->prepare() with placeholders.
+// Right: $wpdb->prepare() with placeholders.
 $results = $wpdb->get_results(
     $wpdb->prepare(
         'SELECT * FROM %i WHERE user_id = %d',
@@ -164,6 +164,10 @@ $results = $wpdb->get_results(
 
 This applies even when the value looks safe or has been sanitized earlier.
 Sanitization and SQL escaping are separate concerns.
+
+`esc_sql()` is not a substitute for `$wpdb->prepare()`. Do not build a query by
+concatenating `esc_sql( $value )`; always use `$wpdb->prepare()` with
+placeholders.
 
 ## File uploads
 
@@ -230,10 +234,10 @@ trigger arbitrary code execution through magic methods. Use `json_decode`
 instead when you control the data format.
 
 ```php
-// Wrong — unserialize on stored or user-supplied data.
+// Wrong: unserialize on stored or user-supplied data.
 $data = unserialize( get_option( 'my_plugin_data' ) );
 
-// Right — store as JSON, decode safely.
+// Right: store as JSON, decode safely.
 $data = json_decode( get_option( 'my_plugin_data' ), true );
 ```
 

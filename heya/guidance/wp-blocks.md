@@ -176,6 +176,8 @@ const deprecated = [
     },
 ];
 
+// JS-side registration: pairs with block.json metadata registered on the PHP side
+// via register_block_type_from_metadata. The name must match the "name" field in block.json.
 registerBlockType( 'my-plugin/card', {
     // ...
     deprecated,
@@ -191,7 +193,9 @@ existing content invalid for any user who saved content under that format.
 
 ## Build and enqueue
 
-Use `@wordpress/scripts` to compile block source files. The standard
+Use `@wordpress/scripts` to compile block source files. To scaffold a new block
+from scratch, run `npx @wordpress/create-block my-block`, which sets up the
+directory structure and configures `@wordpress/scripts` automatically. The standard
 `package.json` scripts are:
 
 ```json
