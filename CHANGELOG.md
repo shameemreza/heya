@@ -8,6 +8,11 @@ All notable changes to Heya are recorded here. The format follows
 
 ### Added
 
+- WordPress development guidance, so Heya writes secure, standards-compliant
+  plugins, themes, and code snippets that are ready for WordPress.org review.
+  It activates automatically on WordPress work and routes across security,
+  structure, coding standards and i18n, readme and naming, themes, blocks, and
+  WooCommerce.
 - Read a project's `AGENTS.md` and `CLAUDE.md` as context, so Heya picks up the
   conventions of the repo you run it in. Text only, never run, and it does not
   override Heya's safety rules. Disable with `[project] read_instructions = false`.

@@ -18,6 +18,9 @@ Understand the code before you judge it. Map first, then read with purpose.
 
 ## Read a WordPress plugin
 
+- A `Plugin Name:` header, a `style.css` with a theme header, or a `theme.json`
+  marks a WordPress project. When you will write or change its code, read
+  `read_guidance('wordpress')` first and follow it.
 - The main file is the one with the `Plugin Name:` header. Start there.
 - Read `readme.txt` for the stable tag and what the plugin claims to do.
 - Follow `include` and `require` to the files that do the work.

@@ -53,6 +53,7 @@ SYSTEM_PROMPT = (
     "done, give a short, plain final answer."
     " When a task involves writing, code review, debugging, or following standards, call read_guidance first to consult relevant internal guidance and follow it: it is the source of truth for standards and voice."
     " When writing or changing code, prefer the smallest change that fully solves the problem. Reuse what exists, the standard library, or a native feature before new code, and a snippet before a plugin. Use read_guidance('minimal-code') for the ladder. Never minimize understanding, input validation, security, or error handling."
+    " When a task involves a WordPress plugin, theme, or code snippet, call read_guidance('wordpress') first and follow it: it routes to security, structure, standards, readme and naming, theme, block, and WooCommerce guidance so the result is secure and ready for WordPress.org review."
     " When a task depends on the environment (the operating system, installed tools, versions, or paths), check it with a command rather than assuming, and read_guidance('environment') for how."
     " You can search the web (web_search) and read pages (web_fetch) when a task needs current or external information; note that these send the query or URL to a third party."
     " You can drive a real browser to reproduce issues: browser_navigate, browser_snapshot, browser_click, browser_type, browser_screenshot, and browser_evidence (console and network errors). Take a snapshot after each action to see the result."
