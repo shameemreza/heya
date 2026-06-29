@@ -136,6 +136,10 @@ __( 'Settings saved.', 'my-plugin' );
 | `_e( 'text', 'slug' )` | Echo a translated string |
 | `_x( 'text', 'context', 'slug' )` | Return with disambiguation context |
 | `_n( 'single', 'plural', $count, 'slug' )` | Singular/plural form |
+| `esc_html__( 'text', 'slug' )` | Return, escaped for HTML content |
+| `esc_attr__( 'text', 'slug' )` | Return, escaped for an HTML attribute |
+| `esc_html_e( 'text', 'slug' )` | Echo, escaped for HTML content |
+| `esc_attr_e( 'text', 'slug' )` | Echo, escaped for an HTML attribute |
 
 Use the escaping variants whenever the result is output directly into HTML. They
 escape and translate in a single call.
@@ -179,30 +183,39 @@ printf( esc_html__( 'Welcome, %s.', 'my-plugin' ), esc_html( $name ) );
 The comment format is `/* translators: %s: description. */`. Use `%1$s`,
 `%2$s`, etc. for multiple placeholders and describe each one.
 
-### Load translations on init
+### Load translations no earlier than init
 
-Do not call translation functions or load text domains before the `init` hook.
-WordPress loads the active locale and MO files during `init`. Calling
-`load_plugin_textdomain` or using translation functions before `init` may return
-untranslated strings.
+Do not call translation functions before the `init` hook. The common mistake is
+calling them at file scope, at the top level of the file before any hook has
+fired and before WordPress has bootstrapped its locale. Wrap every translatable
+string inside a callback that runs on `init` or later.
 
 ```php
-// Wrong: called on plugins_loaded or at file level before init.
-function my_plugin_setup() {
-    load_plugin_textdomain( 'my-plugin', false, dirname( plugin_basename( __FILE__ ) ) . '/languages/' );
-}
-add_action( 'plugins_loaded', 'my_plugin_setup' );
+// Wrong: called at file scope, before any hook.
+$label = __( 'Settings', 'my-plugin' );
 
-// Right: called on init so the locale is set.
+// Right: called inside a callback hooked no earlier than init.
+function my_plugin_init() {
+    $label = __( 'Settings', 'my-plugin' );
+    // Use $label.
+}
+add_action( 'init', 'my_plugin_init' );
+```
+
+Since WordPress 4.6, translations for plugins hosted on WordPress.org load
+just-in-time, so an explicit `load_plugin_textdomain` call is often unnecessary.
+If you do call it, hook it on `init`:
+
+```php
 function my_plugin_load_textdomain() {
     load_plugin_textdomain( 'my-plugin', false, dirname( plugin_basename( __FILE__ ) ) . '/languages/' );
 }
 add_action( 'init', 'my_plugin_load_textdomain' );
 ```
 
-For plugins that target WordPress 6.7 and later, `load_plugin_textdomain` is
-called automatically and the explicit call can be omitted. Add it anyway when
-the plugin targets older versions.
+For plugins that target WordPress 6.7 and later, calling translation functions
+too early triggers a `_doing_it_wrong` notice, so keep all translation work on
+`init` or later.
 
 ## UI text in sentence case
 
