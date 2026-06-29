@@ -115,6 +115,7 @@ class Agent:
         agent_roles=None,
         identity=None,
         project_instructions: str = "",
+        cancel: "threading.Event | None" = None,
     ) -> None:
         self.client = client
         self.weak_client = weak_client if weak_client is not None else client
@@ -180,6 +181,7 @@ class Agent:
                 system_content = system_content + "\n\n" + line
         if project_instructions:
             system_content = system_content + "\n\n" + project_instructions
+        self.cancel = cancel
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": system_content}]
         self._mutated = False
 
@@ -227,6 +229,8 @@ class Agent:
             tools = [t for t in tools if t["function"]["name"] in self.tool_filter]
         for _ in range(self.max_iters):
             self._maybe_compact()
+            if self.cancel is not None and self.cancel.is_set():
+                return "Stopped: cancelled."
             if self.task_token_budget and self._task_tokens >= self.task_token_budget:
                 return f"Stopped: reached this task's token budget ({self._task_tokens} tokens)."
             result = self.client.chat_stream(self.messages, tools=tools, on_text=self.on_text)

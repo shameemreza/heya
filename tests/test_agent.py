@@ -1519,3 +1519,16 @@ def test_system_prompt_has_environment_nudge():
     assert "environment" in p and "rather than assuming" in p
     assert "read_guidance('environment')" in SYSTEM_PROMPT
     assert "—" not in SYSTEM_PROMPT
+
+
+import threading
+
+
+def test_cancel_event_stops_the_loop(tmp_path):
+    # A script that would keep calling a tool forever if not cancelled.
+    calls = [ChatResult(content="", tool_calls=[ToolCall(id="1", name="read_file",
+             arguments='{"path": "x"}')])] * 50
+    cancel = threading.Event()
+    cancel.set()  # already cancelled: the loop must stop on the first check
+    agent, _ = make_agent(tmp_path, calls, cancel=cancel)
+    assert agent.run("go") == "Stopped: cancelled."
