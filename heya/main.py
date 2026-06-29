@@ -428,15 +428,14 @@ def run_cli(
                 cwd=str(Path.cwd()),
                 branch=_git_branch(),
             )
+            try:
+                newer = update_notice(VERSION, enabled=load_update_config().check)
+                if newer:
+                    ui.note(f"A newer Heya ({newer}) is available. Run `heya update`.")
+            except Exception:
+                pass
         else:
             ui.error(HINT)
-
-        try:
-            newer = update_notice(VERSION, enabled=load_update_config().check)
-            if newer:
-                ui.note(f"A newer Heya ({newer}) is available. Run `heya update`.")
-        except Exception:
-            pass
 
         profiles = load_profiles()
         sessions_dir = sessions.default_sessions_dir()

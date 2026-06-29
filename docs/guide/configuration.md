@@ -149,7 +149,7 @@ max_background = 4
 check = false
 ```
 
-By default Heya checks PyPI about once a day for a newer version and shows a one
-line notice at startup. The check runs in the background, never delays startup,
+By default Heya checks PyPI about once a day for a newer version and shows a
+one-line notice at startup. The check runs in the background, never delays startup,
 and is silent if you are offline. Set `check = false` to turn it off. It only
 contacts the public PyPI endpoint and sends no data about you.

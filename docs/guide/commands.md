@@ -36,7 +36,7 @@ upgrade: `pipx upgrade heya-agent` for a pipx install, or pip otherwise. A
 development checkout is left alone with a note to use git. Start Heya again
 afterward to use the new version.
 
-When a newer version is on PyPI, Heya also shows a one line notice at startup
+When a newer version is on PyPI, Heya also shows a one-line notice at startup
 (see the `[update]` config to turn it off).
 
 ## Slash commands
