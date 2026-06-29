@@ -46,3 +46,32 @@ def test_wordpress_entry_carries_the_essentials():
     text = _read("wordpress")
     for token in ["ABSPATH", "current_user_can", "$wpdb->prepare", "Plugin Check"]:
         assert token in text, f"wordpress.md is missing essential: {token}"
+
+
+def test_wp_security_loads_with_frontmatter():
+    assert _read("wp-security").strip()
+    assert _has_valid_frontmatter("wp-security")
+
+
+def test_wp_security_covers_core_rules():
+    text = _read("wp-security")
+    required = [
+        "esc_html",
+        "esc_url",
+        "wp_kses_post",
+        "wp_unslash",
+        "sanitize_text_field",
+        "current_user_can",
+        "$wpdb->prepare",
+        "wp_handle_upload",
+        "wp_safe_remote",
+        "wp_privacy_personal_data_exporters",
+    ]
+    for token in required:
+        assert token in text, f"wp-security.md is missing: {token}"
+
+
+def test_wp_security_names_forbidden_functions():
+    text = _read("wp-security")
+    for token in ["eval", "unserialize"]:
+        assert token in text, f"wp-security.md should warn about: {token}"
