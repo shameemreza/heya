@@ -115,7 +115,7 @@ check_ajax_referer( 'my_plugin_ajax_action', 'nonce' );
 For manual verification when you need to branch:
 
 ```php
-if ( ! wp_verify_nonce( wp_unslash( $_POST['my_plugin_nonce'] ?? '' ), 'my_plugin_save_settings' ) ) {
+if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['my_plugin_nonce'] ?? '' ) ), 'my_plugin_save_settings' ) ) {
     wp_die( esc_html__( 'Nonce check failed.', 'my-plugin' ) );
 }
 ```

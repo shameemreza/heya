@@ -188,6 +188,8 @@ Declare the WooCommerce version you have tested against in the plugin header:
  */
 ```
 
+The version numbers above are illustrative; set them to the WooCommerce versions you actually test against and update them with each release.
+
 `WC requires at least` and `WC tested up to` are read by WooCommerce to surface
 compatibility notices to merchants. Keep them current with each release. Use
 `Requires Plugins: woocommerce` (a standard WordPress plugin header) to declare

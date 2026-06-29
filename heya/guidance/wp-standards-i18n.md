@@ -11,8 +11,9 @@ cover formatting, naming, regex hygiene, and internationalization.
 ## Formatting and style
 
 WordPress Core follows a strict formatting convention. Use tabs for indentation,
-not spaces. Place a space inside every pair of parentheses in control structures,
-function calls, and function definitions.
+not spaces. Place a space inside parentheses that contain arguments or a
+condition (`if ( $ready )`, `foo( $arg )`), but not inside empty parentheses
+(`bar()`).
 
 ```php
 // Wrong: spaces for indent, no spaces inside parens.
