@@ -153,3 +153,21 @@ def test_wp_themes_covers_review_requirements():
     ]
     for token in required:
         assert token in text, f"wp-themes.md is missing: {token}"
+
+
+def test_wp_blocks_loads_with_frontmatter():
+    assert _read("wp-blocks").strip()
+    assert _has_valid_frontmatter("wp-blocks")
+
+
+def test_wp_blocks_covers_core_rules():
+    text = _read("wp-blocks")
+    required = [
+        "block.json",
+        "apiVersion",
+        "register_block_type_from_metadata",
+        "useBlockProps",
+        "deprecated",
+    ]
+    for token in required:
+        assert token in text, f"wp-blocks.md is missing: {token}"
