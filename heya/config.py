@@ -374,13 +374,12 @@ def write_wordpress_config(path: Path, config: "WPSiteConfig") -> None:
                 lines.append(line)
         while lines and lines[-1].strip() == "":
             lines.pop()
-    block = (
-        "[wordpress]\n"
-        f'url = "{config.url}"\n'
-        f'user = "{config.user}"\n'
-        f'env = "{config.env}"\n'
-        f'password_key = "{config.password_key}"\n'
-    )
+    block = dumps({"wordpress": {
+        "url": config.url,
+        "user": config.user,
+        "env": config.env,
+        "password_key": config.password_key,
+    }})
     text = ("\n".join(lines) + "\n\n" + block) if lines else block
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)

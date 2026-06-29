@@ -879,3 +879,13 @@ def test_write_wordpress_config_preserves_other_sections(tmp_path):
     assert "[wordpress]" in text
     reloaded = load_wordpress_config(p)
     assert reloaded == WPSiteConfig(url="http://s.test", user="admin", env="staging")
+
+
+def test_write_wordpress_config_replaces_existing_block(tmp_path):
+    p = tmp_path / "config.toml"
+    write_wordpress_config(p, WPSiteConfig(url="http://a.test", user="admin", env="dev"))
+    write_wordpress_config(p, WPSiteConfig(url="http://b.test", user="admin", env="staging"))
+    text = p.read_text()
+    assert text.count("[wordpress]") == 1
+    cfg = load_wordpress_config(p)
+    assert cfg.url == "http://b.test" and cfg.env == "staging"
