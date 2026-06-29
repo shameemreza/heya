@@ -219,3 +219,10 @@ def test_confirm_asks_the_approver_when_not_auto():
 def test_confirm_false_on_no():
     pol = ApprovalPolicy(approver=lambda n, d: "no", auto_approve=False)
     assert pol.confirm("launch X") is False
+
+
+def test_wp_tools_are_gated():
+    from heya.approval import GATED_TOOLS
+    assert "wp_run_ability" in GATED_TOOLS
+    assert "wp_rest" in GATED_TOOLS
+    assert "wp_abilities" not in GATED_TOOLS  # discovery is read-only and ungated

@@ -14,6 +14,7 @@ from pathlib import Path
 GATED_TOOLS = frozenset({
     "write_file", "run_command", "browser_click", "browser_type",
     "run_wp_cli", "wp_playground", "kill_command",
+    "wp_run_ability", "wp_rest",
 })
 
 Approver = Callable[[str, str], str]
