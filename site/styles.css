@@ -161,6 +161,11 @@ section { padding: clamp(2.5rem, 6vw, 5rem) clamp(1rem, 4vw, 2rem); }
 }
 .needs { color: var(--dim); font-size: 0.92rem; margin-top: 1.4rem; }
 .needs a { color: var(--green); }
+.needs code, .start code {
+  font-family: var(--mono); font-size: 0.88em; color: var(--text);
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 5px; padding: 0.08rem 0.32rem;
+}
 
 /* Docs */
 .doc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 0.9rem; }

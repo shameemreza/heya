@@ -178,6 +178,26 @@ model = "qwen2.5-coder:14b"</pre>
 
       <div class="feature">
         <div class="feature-text">
+          <h3>Acts on your WooCommerce store</h3>
+          <p>Connect a development or staging store and Heya reads and updates it through WordPress and WooCommerce's official Abilities API: query orders, change status, manage products. Always under the store's own permissions, and your approval.</p>
+        </div>
+        <pre class="feature-snippet"><span class="t-you">you ›</span> find pending orders over 200 and flag them
+<span class="t-dim">· wp_run_ability woocommerce/orders-query</span>
+<span class="t-ok">3 orders</span> 1841, 1855, 1860</pre>
+      </div>
+
+      <div class="feature">
+        <div class="feature-text">
+          <h3>Runs work in the background</h3>
+          <p>Hand off a long job and keep going. Launch agents that build, research, or audit while you work. Each one leases the folder it builds in, so several run side by side without colliding.</p>
+        </div>
+        <pre class="feature-snippet"><span class="t-you">you ›</span> build the gift-card plugin in the background while I review this PR
+<span class="t-dim">· started background agent a1</span>
+<span class="t-ok">a1 done</span> built acme-gift-cards, 9 files</pre>
+      </div>
+
+      <div class="feature">
+        <div class="feature-text">
           <h3>Brings your own tools</h3>
           <p>Drop your Claude skills, plugins, and MCP servers in. Heya reads them and uses them, no rewrite. Your setup, in a new agent.</p>
         </div>
@@ -221,6 +241,7 @@ model = "qwen2.5-coder:14b"</pre>
         </li>
       </ol>
       <p class="needs">Needs Python 3.11 or newer. A local model needs <a href="https://ollama.com">Ollama</a>; a cloud model needs a key.</p>
+      <p class="needs">Already installed? Update any time with <code>heya update</code>.</p>
     </section>
 
     <section class="docs" id="docs">
@@ -237,6 +258,10 @@ model = "qwen2.5-coder:14b"</pre>
         <a class="doc" href="docs/background-agents.html">
           <span class="doc-t">Background agents <span class="doc-new">New</span></span>
           <span class="doc-d">Launch agents that build, research, and audit in the background while you work.</span>
+        </a>
+        <a class="doc" href="docs/wordpress-sites.html">
+          <span class="doc-t">Connect a WordPress site <span class="doc-new">New</span></span>
+          <span class="doc-d">Act on a dev or staging WooCommerce store through the Abilities API.</span>
         </a>
         <a class="doc" href="docs/commands.html">
           <span class="doc-t">Commands and usage</span>
