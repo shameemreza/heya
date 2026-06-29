@@ -124,3 +124,4 @@ installed before assuming.
 | Theme rules | `wp-themes` |
 | Block development | `wp-blocks` |
 | WooCommerce extensions | `wc-extension` |
+| Making a plugin AI-callable with the Abilities API | `wp-abilities` |

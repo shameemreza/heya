@@ -208,3 +208,18 @@ def test_explore_points_at_wordpress_guidance():
     text = _read("explore")
     assert "theme.json" in text
     assert "read_guidance('wordpress')" in text
+
+
+def test_wp_abilities_guidance_loads():
+    assert _read("wp-abilities").strip()
+    assert _has_valid_frontmatter("wp-abilities")
+
+
+def test_wp_abilities_guidance_covers_registration():
+    text = _read("wp-abilities")
+    for token in ["wp_register_ability", "permission_callback", "execute_callback", "input_schema"]:
+        assert token in text, f"wp-abilities.md is missing: {token}"
+
+
+def test_wordpress_router_points_at_abilities():
+    assert "wp-abilities" in _read("wordpress")
