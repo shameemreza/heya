@@ -42,6 +42,10 @@ for block-based Cart and Checkout. Pass `false` as the third argument only when
 your extension is genuinely incompatible and you want WooCommerce to warn the
 merchant.
 
+The second argument must resolve to your main plugin file. If the callback
+lives in an included file, `__FILE__` resolves to that file's path and the
+declaration silently fails; pass a stored reference to the main file instead.
+
 ## CRUD objects, not raw post meta
 
 WooCommerce order and product data is managed through CRUD objects. Never read
@@ -100,7 +104,9 @@ shortcode support; do not rely on shortcodes alone.
 
 Implement `Automattic\WooCommerce\Blocks\Integrations\IntegrationInterface` to
 register block-scoped scripts and data. The interface requires `get_name`,
-`get_script_handles`, `get_editor_script_handles`, and `get_script_data`:
+`initialize`, `get_script_handles`, `get_editor_script_handles`, and
+`get_script_data`. Implement all five; omitting any one leaves an abstract
+method unimplemented and PHP will fatal:
 
 ```php
 use Automattic\WooCommerce\Blocks\Integrations\IntegrationInterface;
@@ -135,7 +141,12 @@ class MyPlugin_Blocks_Integration implements IntegrationInterface {
 }
 ```
 
-Register the integration on the `woocommerce_blocks_loaded` action:
+Register the integration on the `woocommerce_blocks_loaded` action. Note that
+the `Package::container()` call below reaches into the WooCommerce Blocks
+internal dependency-injection container, which is not a documented stable
+public API and has changed across Blocks releases; check the WooCommerce Blocks
+compatibility and extensibility docs for your target version before relying on
+it:
 
 ```php
 add_action( 'woocommerce_blocks_loaded', function() {
