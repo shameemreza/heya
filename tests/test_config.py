@@ -5,6 +5,7 @@ import pytest
 from heya.config import Profile, resolve_profile, ConfigError
 from heya.config import BUILTIN_PROFILES, load_profiles
 from heya.config import MCPServerConfig, load_mcp_servers
+from heya.config import AgentConfig, load_agent_config
 
 
 def test_profile_api_key_reads_named_env_var(monkeypatch):
@@ -810,9 +811,6 @@ def test_model_supports_vision():
     assert model_supports_vision(Profile(name="l", base_url="u", model="mystery", vision=True)) is True
 
 
-from heya.config import AgentConfig, load_agent_config
-
-
 def test_agent_config_default(tmp_path):
     cfg = load_agent_config(tmp_path / "missing.toml")
     assert cfg == AgentConfig(max_background=4)
@@ -822,3 +820,9 @@ def test_agent_config_reads_max_background(tmp_path):
     p = tmp_path / "config.toml"
     p.write_text("[agents]\nmax_background = 8\n")
     assert load_agent_config(p).max_background == 8
+
+
+def test_agent_config_default_on_malformed_toml(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text("}{ this is not valid toml")
+    assert load_agent_config(p) == AgentConfig(max_background=4)
