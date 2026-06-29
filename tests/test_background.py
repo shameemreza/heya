@@ -1,0 +1,99 @@
+import threading
+import time
+
+from heya.background import BackgroundAgent, BackgroundRegistry
+
+
+def _runner(text, *, block=None):
+    """A fake `run` callable: emit text, optionally block on an event, return result."""
+    def run(entry, on_text):
+        on_text(text)
+        if block is not None:
+            block.wait(timeout=2)
+        return f"done: {text}"
+    return run
+
+
+def _wait_until(predicate, timeout=2.0):
+    end = time.time() + timeout
+    while time.time() < end:
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def test_start_returns_entry_with_id_and_runs():
+    reg = BackgroundRegistry()
+    entry = reg.start(_runner("hello"), task="say hi")
+    assert isinstance(entry, BackgroundAgent)
+    assert entry.id == "a1"
+    assert _wait_until(lambda: reg.collect(entry.id).startswith("done: hello"))
+
+
+def test_poll_returns_new_output_then_nothing_new():
+    reg = BackgroundRegistry()
+    entry = reg.start(_runner("chunk-one"), task="t")
+    assert _wait_until(lambda: "chunk-one" in reg.poll(entry.id))
+    later = reg.poll(entry.id)
+    assert "chunk-one" not in later  # cursor advanced
+
+
+def test_capacity_refuses_beyond_max():
+    block = threading.Event()
+    reg = BackgroundRegistry(max_concurrent=1)
+    first = reg.start(_runner("a", block=block), task="t")
+    assert isinstance(first, BackgroundAgent)
+    refused = reg.start(_runner("b"), task="t2")
+    assert isinstance(refused, str) and "Error" in refused
+    block.set()
+
+
+def test_collect_reports_running_then_result():
+    block = threading.Event()
+    reg = BackgroundRegistry()
+    entry = reg.start(_runner("x", block=block), task="t")
+    assert "still running" in reg.collect(entry.id).lower()
+    block.set()
+    assert _wait_until(lambda: "done: x" in reg.collect(entry.id))
+
+
+def test_cancel_sets_event_and_marks_cancelled():
+    started = threading.Event()
+    seen_cancel = threading.Event()
+
+    def run(entry, on_text):
+        started.set()
+        for _ in range(200):
+            if entry.cancel.is_set():
+                seen_cancel.set()
+                return "stopped"
+            time.sleep(0.01)
+        return "ran to end"
+
+    reg = BackgroundRegistry()
+    entry = reg.start(run, task="loop")
+    assert started.wait(1)
+    out = reg.cancel(entry.id)
+    assert "a1" in out
+    assert seen_cancel.wait(1)
+    assert _wait_until(lambda: reg.summaries()[0]["status"] == "cancelled")
+
+
+def test_drain_finished_returns_each_agent_once():
+    reg = BackgroundRegistry()
+    entry = reg.start(_runner("y"), task="t")
+    assert _wait_until(lambda: entry.status == "done")
+    drained = reg.drain_finished()
+    assert [a.id for a in drained] == ["a1"]
+    assert reg.drain_finished() == []  # only once
+
+
+def test_failure_is_captured_not_raised():
+    def run(entry, on_text):
+        raise RuntimeError("boom")
+
+    reg = BackgroundRegistry()
+    entry = reg.start(run, task="t")
+    assert _wait_until(lambda: entry.status == "failed")
+    assert "boom" in reg.collect(entry.id)
