@@ -44,6 +44,18 @@ from .text import estimate_messages_tokens
 from .tools import build_tool_schemas, describe_call, dispatch_tool
 from .tools_files import resolve_in_allowlist
 
+
+class _AutoApprove:
+    """Approval for a background child: the human approved the grant at launch,
+    so inside the grant nothing prompts. The write_guard enforces the scope."""
+
+    def check(self, name, detail, label=""):
+        return True
+
+    def confirm(self, detail, label=""):
+        return True
+
+
 SYSTEM_PROMPT = (
     "You are Heya, a careful, capable command-line assistant. You help with "
     "engineering, support, research, writing, and analysis. You can read and write "
@@ -117,6 +129,7 @@ class Agent:
         project_instructions: str = "",
         cancel: "threading.Event | None" = None,
         write_guard=None,
+        background_registry=None,
     ) -> None:
         self.client = client
         self.weak_client = weak_client if weak_client is not None else client
@@ -184,6 +197,7 @@ class Agent:
             system_content = system_content + "\n\n" + project_instructions
         self.cancel = cancel
         self.write_guard = write_guard
+        self.background_registry = background_registry
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": system_content}]
         self._mutated = False
 
@@ -490,6 +504,102 @@ class Agent:
             return self._run_parallel(tasks)
         except Exception as exc:  # never raise into dispatch
             return f"Error: spawn_agents failed: {exc}"
+
+    def _spawn_background_agent(self, task, role, instructions, write_scope, allow_commands):
+        if self.background_registry is None:
+            return "Error: background agents are not available here."
+        if (write_scope or allow_commands) and self.approval is not None:
+            grant = (f"launch a background agent that may write in "
+                     f"{write_scope or '(no folder)'} and "
+                     f"{'run commands' if allow_commands else 'not run commands'}: "
+                     f"{task[:80]}")
+            if not self.approval.confirm(grant, label=self.label):
+                return f"Declined by user: {grant}"
+
+        def run(entry, on_text):
+            child = self._make_background_child(entry, role, instructions, on_text)
+            return child.run(task)
+
+        entry = self.background_registry.start(
+            run, task=task, role=role, instructions=instructions,
+            write_scope=write_scope, allow_commands=allow_commands)
+        if isinstance(entry, str):
+            return entry
+        return (f"Started background agent {entry.id} for: {task[:60]}. "
+                f"Use check_agent('{entry.id}') for progress and "
+                f"collect_agent('{entry.id}') for the result.")
+
+    def _make_background_child(self, entry, role_name, instructions, on_text):
+        from .process import ProcessRegistry
+        from .subagents import (PARALLEL_SAFE_TOOLS, ROLES, LabeledStream,
+                                build_child_system_prompt)
+
+        writing = entry.write_scope is not None or entry.allow_commands
+        if writing:
+            role = ROLES.get("background")
+            tool_filter = role.tools
+        else:
+            # Read-only background agent: restrict to safe tools, like a parallel child.
+            role = ROLES.get(role_name) if role_name else None
+            tool_filter = ((role.tools & PARALLEL_SAFE_TOOLS)
+                           if (role is not None and role.tools is not None)
+                           else PARALLEL_SAFE_TOOLS)
+        proc = ProcessRegistry()
+        entry.process_registry = proc
+        stream = LabeledStream(on_text, entry.id) if on_text is not None else None
+        child_on_text = stream.write if stream is not None else None
+
+        def guard(name, args):
+            if name == "write_file":
+                if entry.write_scope is None:
+                    return ("Error: this background agent is read-only; it was not "
+                            "granted a write folder.")
+                return self.background_registry.check_write(args.get("path", ""), entry.id)
+            if name in ("run_command", "run_wp_cli"):
+                if not entry.allow_commands:
+                    return ("Error: this background agent was not granted command "
+                            "permission; it can read files only.")
+            return None
+
+        child = Agent(
+            self.client,
+            allowed_roots=self.allowed_roots,
+            cwd=(entry.write_scope or self.cwd),
+            approval=_AutoApprove(),
+            on_text=child_on_text,
+            self_review=False,
+            max_iters=self.max_iters,
+            command_timeout=self.command_timeout,
+            guidance_sources=self.guidance_sources,
+            search_provider=self.search_provider,
+            browser_session=None,
+            process_registry=proc,
+            wp_default_root=self.wp_default_root,
+            playground_session=None,
+            mcp_runtime=self.mcp_runtime,
+            label=entry.id,
+            spawn_depth=self.spawn_depth + 1,
+            max_spawn_depth=self.max_spawn_depth,
+            max_children=self.max_children,
+            tool_filter=tool_filter,
+            system_prompt=build_child_system_prompt(SYSTEM_PROMPT, role, instructions),
+            max_concurrent=self.max_concurrent,
+            root_on_text=self._root_on_text,
+            context_window=self.context_window,
+            compaction_threshold=self.compaction_threshold,
+            reserve_tokens=self.reserve_tokens,
+            keep_recent_tokens=self.keep_recent_tokens,
+            task_token_budget=self.task_token_budget,
+            weak_client=self.weak_client,
+            skills=self.skills,
+            agent_roles=self.agent_roles,
+            identity=self.identity,
+            on_tool=self._on_tool,
+            cancel=entry.cancel,
+            write_guard=guard,
+        )
+        child._labeled_stream = stream
+        return child
 
     def _run_children(self, specs) -> list[tuple[str, str]]:
         """Run read-only parallel children for `specs`; return [(label, report)] in

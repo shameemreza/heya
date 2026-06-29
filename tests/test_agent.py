@@ -1559,3 +1559,25 @@ def test_write_guard_allows_when_none_returned(tmp_path):
     agent, _ = make_agent(tmp_path, calls, write_guard=lambda name, args: None)
     agent.run("write it")
     assert out_path.read_text() == "hi"
+
+
+def test_spawn_background_agent_runs_a_child(tmp_path):
+    from heya.background import BackgroundRegistry
+
+    # The CHILD's scripted client: it answers with no tools, just a report.
+    # The PARENT never loops here; we call the spawn method directly.
+    reg = BackgroundRegistry()
+    parent, _ = make_agent(tmp_path, [ChatResult(content="parent idle")],
+                           background_registry=reg)
+    # Give the parent a child client factory by reusing its own client is not
+    # possible (single-use script); instead the child uses parent.client which
+    # must yield a final answer. Re-script the parent client for the child run:
+    parent.client._scripted = [ChatResult(content="child report")]
+    out = parent._spawn_background_agent("do a thing", None, None, None, False)
+    assert "a1" in out
+
+    import time
+    end = time.time() + 2
+    while time.time() < end and reg.summaries()[0]["status"] == "running":
+        time.sleep(0.01)
+    assert "child report" in reg.collect("a1")
