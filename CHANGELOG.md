@@ -8,6 +8,11 @@ All notable changes to Heya are recorded here. The format follows
 
 ### Added
 
+- Connect a development or staging WordPress and WooCommerce site with
+  `heya wp connect`, then act on it through the official Abilities API: discover
+  and run abilities (query orders, update status, manage products) under the
+  site's own permission checks, with writes behind the approval prompt. Plus
+  guidance for making your own plugin AI-callable.
 - A `heya update` command that upgrades Heya in place (pipx or pip), and an
   optional startup notice when a newer version is on PyPI. The check is
   throttled, off the main thread, silent when offline, and disabled with

@@ -31,6 +31,7 @@ PAGES = [
     ("hosting-claude-ecosystem", "Host your Claude skills", "Use your skills, plugins, and sub-agents."),
     ("wordpress-guidance", "WordPress guidance", "Write secure, review-ready plugins, themes, and snippets."),
     ("background-agents", "Background agents", "Run sub-agents in the background while you keep working."),
+    ("wordpress-sites", "Connect a WordPress site", "Act on a dev or staging store through the Abilities API."),
     ("tools-and-safety", "Tools and safety", "What runs, what asks first, what is off by default."),
 ]
 
