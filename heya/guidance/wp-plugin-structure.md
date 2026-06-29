@@ -10,15 +10,17 @@ Every rule in this file applies to every plugin you write or modify. Read
 
 ## File-access guard
 
-Every PHP file that is not the plugin entry point must refuse direct HTTP
-access. Put this at the very top, before any other code:
+Every PHP file in the plugin, including the main plugin file, must refuse
+direct HTTP access. Put this at the very top, before any other code:
 
 ```php
 defined( 'ABSPATH' ) || exit;
 ```
 
 `ABSPATH` is defined by `wp-load.php`. If the file is loaded directly through
-the web server, `ABSPATH` is not defined and execution stops immediately.
+the web server, `ABSPATH` is not defined and execution stops immediately. The
+guard is harmless when WordPress loads the file normally, and WordPress.org
+review expects it on every file, so add it everywhere with no exceptions.
 
 The uninstall file is a special case. WordPress sets `WP_UNINSTALL_PLUGIN`
 before loading it; guard `uninstall.php` with that constant instead:
@@ -110,8 +112,12 @@ add_action( 'admin_init', 'my_plugin_register_settings' );
 ```
 
 Prefer classes over loose functions to avoid name collisions and to group
-related behavior. Gate admin-only code behind `is_admin()` checks so it never
-runs on public pages.
+related behavior. You can gate admin-only registration behind `is_admin()` to
+avoid loading admin code on the front end. Note that `is_admin()` only means the
+current request is admin-side (including `admin-ajax.php` requests that
+front-end scripts can trigger), so it is a loading hint, not a security or
+audience check. Authorization still requires a capability check with
+`current_user_can`.
 
 ## Enqueueing scripts and styles
 
@@ -293,6 +299,16 @@ Use `__return_true` as the `permission_callback` only for an intentionally
 public read endpoint where no authentication or authorization is needed. Every
 other endpoint must check a real capability.
 
-Read data from the `WP_REST_Request` object, not from superglobals. Declare
-`args` with `type` and `sanitize_callback` or `validate_callback` in the route
-definition so WordPress validates and sanitizes inputs before your callback runs.
+Read data from the `WP_REST_Request` object passed to your callback, not from
+superglobals:
+
+```php
+function myplugin_update_settings( WP_REST_Request $request ) {
+    $api_key = sanitize_text_field( $request->get_param( 'api_key' ) );
+    // ... persist $api_key, then return a WP_REST_Response.
+}
+```
+
+Declare `args` with `type` and `sanitize_callback` or `validate_callback` in
+the route definition so WordPress validates and sanitizes inputs before your
+callback runs.
