@@ -469,3 +469,28 @@ def test_update_command_dispatches(tmp_path):
     code = run_cli(args, update_fn=fake_update)
     assert code == 0
     assert called["n"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Task 6 (wp-integration) tests: connector construction contract
+# ---------------------------------------------------------------------------
+
+
+def test_build_wp_connector_from_config_and_credential(tmp_path):
+    from heya.config import WPSiteConfig
+    from heya.wpsite import WPClient, build_wp_connector
+
+    cfg = WPSiteConfig(url="http://s.test", user="admin", env="dev")
+    assert isinstance(build_wp_connector(cfg, "app-pass"), WPClient)
+    assert build_wp_connector(WPSiteConfig(url="x", user="u", env="production"), "app-pass") is None
+
+
+def test_wp_connect_command_dispatches(tmp_path):
+    import argparse
+    from heya.main import run_cli
+    called = {"n": 0}
+    def fake(stream=None):
+        called["n"] += 1
+        return 0
+    assert run_cli(argparse.Namespace(task=["wp", "connect"]), wp_connect_fn=fake) == 0
+    assert called["n"] == 1

@@ -130,6 +130,7 @@ class Agent:
         cancel: "threading.Event | None" = None,
         write_guard=None,
         background_registry=None,
+        wp_connector=None,
     ) -> None:
         self.client = client
         self.weak_client = weak_client if weak_client is not None else client
@@ -198,6 +199,7 @@ class Agent:
         self.cancel = cancel
         self.write_guard = write_guard
         self.background_registry = background_registry
+        self.wp_connector = wp_connector
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": system_content}]
         self._mutated = False
 
@@ -240,7 +242,7 @@ class Agent:
     def _loop(self) -> str:
         can_spawn = self.spawn_depth < self.max_spawn_depth
         with_memory = self.memory_store is not None
-        tools = build_tool_schemas(self.mcp_runtime, can_spawn=can_spawn, with_memory=with_memory, with_review=can_spawn, with_repro=can_spawn, with_diagnose=can_spawn, with_remediate=can_spawn, with_skills=bool(self.skills), with_triage=can_spawn)
+        tools = build_tool_schemas(self.mcp_runtime, can_spawn=can_spawn, with_memory=with_memory, with_review=can_spawn, with_repro=can_spawn, with_diagnose=can_spawn, with_remediate=can_spawn, with_skills=bool(self.skills), with_triage=can_spawn, with_wordpress=self.wp_connector is not None)
         if self.tool_filter is not None:
             tools = [t for t in tools if t["function"]["name"] in self.tool_filter]
         for _ in range(self.max_iters):
@@ -406,6 +408,7 @@ class Agent:
             pick_list_fn=self._record_pick_list,
             spawn_background_fn=self._spawn_background_agent,
             background_registry=self.background_registry,
+            wp_connector=self.wp_connector,
         )
         self._fire("PostToolUse", tool_name=call.name, tool_input=call.arguments, tool_output=output)
         mutating = call.name in ("write_file", "run_command", "run_wp_cli")

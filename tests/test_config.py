@@ -7,6 +7,7 @@ from heya.config import BUILTIN_PROFILES, load_profiles
 from heya.config import MCPServerConfig, load_mcp_servers
 from heya.config import AgentConfig, load_agent_config
 from heya.config import UpdateConfig, load_update_config
+from heya.config import WPSiteConfig, load_wordpress_config, write_wordpress_config
 
 
 def test_profile_api_key_reads_named_env_var(monkeypatch):
@@ -843,3 +844,48 @@ def test_update_config_default_on_malformed(tmp_path):
     p = tmp_path / "config.toml"
     p.write_text("}{ not toml")
     assert load_update_config(p) == UpdateConfig(check=True)
+
+
+def test_load_wordpress_config_absent_returns_none(tmp_path):
+    assert load_wordpress_config(tmp_path / "missing.toml") is None
+
+
+def test_load_wordpress_config_reads_block(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('[wordpress]\nurl = "http://wcsubs.test"\nuser = "admin"\nenv = "dev"\n')
+    cfg = load_wordpress_config(p)
+    assert cfg == WPSiteConfig(url="http://wcsubs.test", user="admin", env="dev")
+    assert cfg.is_allowed_env() is True
+
+
+def test_wpsite_config_rejects_production_env():
+    assert WPSiteConfig(url="x", user="u", env="production").is_allowed_env() is False
+    assert WPSiteConfig(url="x", user="u", env="dev").is_allowed_env() is True
+    assert WPSiteConfig(url="x", user="u", env="staging").is_allowed_env() is True
+
+
+def test_load_wordpress_config_malformed_returns_none(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text("}{ not toml")
+    assert load_wordpress_config(p) is None
+
+
+def test_write_wordpress_config_preserves_other_sections(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('[defaults]\nprofile = "ollama"\n\n[mcp.servers.x]\ncommand = "y"\n')
+    write_wordpress_config(p, WPSiteConfig(url="http://s.test", user="admin", env="staging"))
+    text = p.read_text()
+    assert "[mcp.servers.x]" in text and 'command = "y"' in text  # untouched
+    assert "[wordpress]" in text
+    reloaded = load_wordpress_config(p)
+    assert reloaded == WPSiteConfig(url="http://s.test", user="admin", env="staging")
+
+
+def test_write_wordpress_config_replaces_existing_block(tmp_path):
+    p = tmp_path / "config.toml"
+    write_wordpress_config(p, WPSiteConfig(url="http://a.test", user="admin", env="dev"))
+    write_wordpress_config(p, WPSiteConfig(url="http://b.test", user="admin", env="staging"))
+    text = p.read_text()
+    assert text.count("[wordpress]") == 1
+    cfg = load_wordpress_config(p)
+    assert cfg.url == "http://b.test" and cfg.env == "staging"

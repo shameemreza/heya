@@ -25,9 +25,13 @@ from .config import (
     load_command_paths, load_agent_paths, load_identity,
     resolve_api_key, load_default_profile, default_config_path, model_supports_vision,
     load_project_instructions_enabled, load_agent_config, load_update_config,
+    load_wordpress_config,
 )
+from .credentials import load_key
+from .wpsite import build_wp_connector
 from .update import run_update, update_notice
 from .init import run_init
+from .wpconnect import run_wp_connect
 from .preflight import check_profile, OK
 from .hooks import collect_hooks
 from .plugins import discover_plugins, collect_plugin_skills
@@ -316,6 +320,16 @@ def _default_make_agent(args: argparse.Namespace, *, ui: "UI | None" = None) -> 
     project_instructions = load_project_instructions(
         Path.cwd(), enabled=load_project_instructions_enabled())
 
+    wp_connector = None
+    wp_cfg = load_wordpress_config()
+    if wp_cfg is not None:
+        if wp_cfg.is_allowed_env():
+            wp_connector = build_wp_connector(wp_cfg, load_key(wp_cfg.password_key))
+            if wp_connector is None and ui is not None:
+                ui.note("WordPress site is configured but has no stored password. Run `heya wp connect`.")
+        elif ui is not None:
+            ui.note(f"WordPress site env is {wp_cfg.env!r}; the site tools need dev or staging.")
+
     return Agent(
         client,
         allowed_roots=roots,
@@ -349,6 +363,7 @@ def _default_make_agent(args: argparse.Namespace, *, ui: "UI | None" = None) -> 
         write_guard=(lambda name, call_args:
                      background_registry.check_write(call_args.get("path", ""), "main")
                      if name == "write_file" else None),
+        wp_connector=wp_connector,
     )
 
 
@@ -359,6 +374,7 @@ def run_cli(
     stdin: TextIO | None = None,
     init_fn: Callable[..., int] = run_init,
     update_fn: Callable[..., int] = run_update,
+    wp_connect_fn: Callable[..., int] = run_wp_connect,
     auto_init: bool = False,
 ) -> int:
     # `heya init` runs the setup wizard, not a task.
@@ -367,6 +383,9 @@ def run_cli(
     # `heya update` upgrades the installed package.
     if args.task == ["update"]:
         return update_fn()
+    # `heya wp connect` runs the WordPress site setup flow.
+    if args.task == ["wp", "connect"]:
+        return wp_connect_fn(stream=stdin)
     # Fresh install with no config and no task: greet and set up first.
     # Gated by auto_init so only the real entrypoint (main) triggers it; tests
     # that drive run_cli with injected stdin keep auto_init off and are unaffected.

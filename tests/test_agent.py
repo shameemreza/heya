@@ -1607,3 +1607,23 @@ def test_spawn_background_declined_grant(tmp_path):
                                         str(tmp_path / "plugin"), True)
     assert "Declined" in out
     assert reg.summaries() == []  # nothing was started
+
+
+def test_wp_tools_appear_when_connector_present(tmp_path):
+    class _Conn:
+        def list_abilities(self):
+            return "abilities here"
+
+    calls = [ChatResult(content="", tool_calls=[ToolCall(id="1", name="wp_abilities", arguments="{}")]),
+             ChatResult(content="done")]
+    agent, _ = make_agent(tmp_path, calls, wp_connector=_Conn())
+    agent.run("list site abilities")
+    names = {t["function"]["name"] for t in (agent.client.last_tools or [])}
+    assert "wp_abilities" in names
+
+
+def test_wp_tools_absent_without_connector(tmp_path):
+    agent, _ = make_agent(tmp_path, [ChatResult(content="hi")])
+    agent.run("hi")
+    names = {t["function"]["name"] for t in (agent.client.last_tools or [])}
+    assert "wp_abilities" not in names
