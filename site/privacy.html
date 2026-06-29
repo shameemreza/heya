@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy - Heya</title>
+  <meta name="description" content="How Heya handles your data: local-first, no telemetry, nothing phones home, plus the terms of use.">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html" aria-label="Heya home">
+      <span class="brand-he">heya</span><span class="brand-cursor" aria-hidden="true">_</span>
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html">Home</a>
+      <a href="docs/index.html">Docs</a>
+      <a class="nav-ext" href="https://github.com/shameemreza/heya">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <article class="legal">
+      <h1>Privacy</h1>
+      <p class="updated">Last reviewed June 2026.</p>
+
+      <p>Heya is a local-first tool. It runs on your machine, and it is built so your
+      work stays with you. This page explains what that means for your data, and the
+      terms of use.</p>
+
+      <h2>Heya runs on your machine</h2>
+      <p>Heya is a command-line program you install and run locally. It reads and writes
+      files only in the folders you allow, and it runs commands only after you approve
+      them. There is no Heya server, no account, and no sign-in.</p>
+
+      <h2>What leaves your machine, and only when you ask</h2>
+      <p>A few actions reach the network, and each one is something you set up or
+      trigger:</p>
+      <ul>
+        <li><strong>The AI model you configure.</strong> Your prompts, and any files or
+        output you include, go to the model provider you chose, whether that is a cloud
+        API you pointed Heya at or a model running on your own machine. That provider
+        handles them under its own policy. Heya does not add a middleman.</li>
+        <li><strong>MCP servers you connect.</strong> If you add an MCP server, Heya
+        talks to it the way you configured.</li>
+        <li><strong>Web search and web fetch.</strong> When you or the agent use these,
+        the query or URL goes to that third party. Heya notes that the request is going
+        out before it does.</li>
+        <li><strong>The update check.</strong> Once a day at most, Heya asks the public
+        PyPI page whether a newer version exists. It sends no information about you, and
+        you can turn it off with <code>[update] check = false</code>.</li>
+      </ul>
+
+      <h2>What Heya collects</h2>
+      <p>Nothing. There is no telemetry, no analytics, no tracking, and no usage
+      reporting. Heya does not phone home about you.</p>
+
+      <h2>Where your data lives</h2>
+      <p>Your settings, sessions, and memory live in <code>~/.config/heya</code> on your
+      own disk. API keys you paste are stored in a locked credentials file that only you
+      can read (file mode 0600), and they are only ever sent to the provider you point
+      them at. Your project files stay in your project.</p>
+
+      <h2>Use development and staging sites</h2>
+      <p>Heya can run real commands and change real files. When you use it with
+      WordPress or any live system, point it at development or staging rather than
+      production, and keep backups. You stay in control through the approval prompts.</p>
+
+      <h2>Terms of use</h2>
+      <p>Heya is open source under the MIT license, which governs your use of it. It is
+      provided as is, without warranty of any kind. You are responsible for what you
+      approve Heya to do, including any commands it runs and any changes it makes. See
+      the <a href="https://github.com/shameemreza/heya/blob/main/LICENSE">license</a>
+      for the full terms.</p>
+
+      <h2>Questions</h2>
+      <p>Heya's source is public. Read the code or open an issue on
+      <a href="https://github.com/shameemreza/heya">GitHub</a>.</p>
+    </article>
+  </main>
+
+  <footer class="footer">
+    <div class="foot-row">
+      <span class="foot-brand">heya</span>
+      <nav class="foot-nav" aria-label="Footer">
+        <a href="https://github.com/shameemreza/heya">GitHub</a>
+        <a href="https://pypi.org/project/heya-agent/">PyPI</a>
+        <a href="https://github.com/shameemreza/heya/blob/main/CONTRIBUTING.md">Contribute</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="https://github.com/shameemreza/heya/blob/main/LICENSE">MIT license</a>
+      </nav>
+    </div>
+    <p class="foot-by">Built by <a href="https://shameemreza.com">Shameem Reza</a>.</p>
+  </footer>
+</body>
+</html>

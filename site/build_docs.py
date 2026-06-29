@@ -62,7 +62,7 @@ PAGE = """<!doctype html>
   <main class="docs-content">{content}</main>
 </div>
 <footer class="footer">
-  <p class="foot-by">Built by <a href="https://shameemreza.com">Shameem Reza</a>.</p>
+  <p class="foot-by">Built by <a href="https://shameemreza.com">Shameem Reza</a>. <a href="../privacy.html">Privacy</a></p>
 </footer>
 <script src="../docs.js" defer></script>
 </body>
