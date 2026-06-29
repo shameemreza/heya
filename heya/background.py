@@ -72,11 +72,14 @@ class BackgroundRegistry:
 
         def _work() -> None:
             try:
-                entry.result = run(entry, _sink)
-                entry.status = "cancelled" if entry.cancel.is_set() else "done"
-            except Exception as exc:  # never propagate from a thread
-                entry.result = f"Error: background agent failed: {exc}"
-                entry.status = "failed"
+                result = run(entry, _sink)
+                with entry.lock:
+                    entry.result = result
+                    entry.status = "cancelled" if entry.cancel.is_set() else "done"
+            except BaseException as exc:  # never propagate from a thread
+                with entry.lock:
+                    entry.result = f"Error: background agent failed: {exc}"
+                    entry.status = "failed"
             finally:
                 entry.finished = self._clock()
 
@@ -100,8 +103,10 @@ class BackgroundRegistry:
         return f"[{id} {entry.status}]\n{body}"
 
     def summaries(self) -> list[dict]:
+        with self._lock:
+            agents = list(self._agents.values())
         out = []
-        for a in self._agents.values():
+        for a in agents:
             out.append({"id": a.id, "task": a.task[:80], "status": a.status,
                         "scope": str(a.write_scope) if a.write_scope else None})
         return out
@@ -118,6 +123,8 @@ class BackgroundRegistry:
         entry = self._require(id)
         if entry is None:
             return f"Error: no background agent {id!r}."
+        if entry.status != "running":
+            return f"Background agent {id} already finished ({entry.status})."
         entry.cancel.set()
         reg = entry.process_registry
         if reg is not None and hasattr(reg, "close"):
@@ -129,10 +136,11 @@ class BackgroundRegistry:
 
     def drain_finished(self) -> list[BackgroundAgent]:
         done = []
-        for a in self._agents.values():
-            if a.status != "running" and not a._drained:
-                a._drained = True
-                done.append(a)
+        with self._lock:
+            for a in self._agents.values():
+                if a.status != "running" and not a._drained:
+                    a._drained = True
+                    done.append(a)
         return done
 
     # ---- leases ----
@@ -155,9 +163,13 @@ class BackgroundRegistry:
     # ---- persistence / shutdown ----
 
     def snapshot(self) -> list[dict]:
+        with self._lock:
+            agents = list(self._agents.values())
         return [{"id": a.id, "task": a.task[:120], "status": a.status,
                  "result": (a.result or "")[:2000]}
-                for a in self._agents.values() if a.status != "running"]
+                for a in agents if a.status != "running"]
 
     def running_ids(self) -> list[str]:
-        return [a.id for a in self._agents.values() if a.status == "running"]
+        with self._lock:
+            agents = list(self._agents.values())
+        return [a.id for a in agents if a.status == "running"]
