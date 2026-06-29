@@ -161,8 +161,6 @@ def _id_arg_schema(name, desc):
 _CHECK_AGENT_SCHEMA = _id_arg_schema("check_agent", "Read new output and status from one background agent.")
 _COLLECT_AGENT_SCHEMA = _id_arg_schema("collect_agent", "Get the final result of a completed background agent, or a note that it is still running.")
 _CANCEL_AGENT_SCHEMA = _id_arg_schema("cancel_agent", "Ask a background agent to stop at its next checkpoint.")
-_CHECK_AGENTS_SCHEMA = {"type": "function", "function": {"name": "check_agents",
-    "description": "List background agents with their status.", "parameters": {"type": "object", "properties": {}}}}
 _LIST_AGENTS_SCHEMA = {"type": "function", "function": {"name": "list_agents",
     "description": "List background agents with their status.", "parameters": {"type": "object", "properties": {}}}}
 
