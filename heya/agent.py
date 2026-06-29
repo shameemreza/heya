@@ -355,7 +355,7 @@ class Agent:
             except Exception:
                 guard_args = {}
             guard_error = self.write_guard(call.name, guard_args)
-            if guard_error:
+            if guard_error is not None:
                 return guard_error
         if call.name == "write_file" and isinstance(
             getattr(self.approval, "_approver", None), UiApprover

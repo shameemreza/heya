@@ -345,8 +345,8 @@ def _default_make_agent(args: argparse.Namespace, *, ui: "UI | None" = None) -> 
         identity=identity,
         project_instructions=project_instructions,
         background_registry=background_registry,
-        write_guard=(lambda name, args:
-                     background_registry.check_write(args.get("path", ""), "main")
+        write_guard=(lambda name, call_args:
+                     background_registry.check_write(call_args.get("path", ""), "main")
                      if name == "write_file" else None),
     )
 
@@ -452,14 +452,17 @@ def run_cli(
                     break
                 continue
             notes = ""
-            if getattr(agent, "background_registry", None) is not None:
-                done = agent.background_registry.drain_finished()
-                for a in done:
-                    ui.note(f"{a.id} {a.status}: {a.task[:60]}. Use collect_agent('{a.id}').")
-                if done:
-                    notes = ("[background update] finished: "
-                             + ", ".join(f"{a.id} ({a.status})" for a in done)
-                             + ". Use collect_agent to read results.\n")
+            try:
+                if getattr(agent, "background_registry", None) is not None:
+                    done = agent.background_registry.drain_finished()
+                    for a in done:
+                        ui.note(f"{a.id} {a.status}: {a.task[:60]}. Use collect_agent('{a.id}').")
+                    if done:
+                        notes = ("[background update] finished: "
+                                 + ", ".join(f"{a.id} ({a.status})" for a in done)
+                                 + ". Use collect_agent to read results.\n")
+            except Exception:
+                pass
             agent.run(_build_turn_content(notes + text, agent, ui))
             sys.stdout.write("\n")
             snap = _session_snapshot(agent, profile_name=profile_name,

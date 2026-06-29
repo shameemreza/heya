@@ -1,8 +1,10 @@
 import json
+import time
 from pathlib import Path
 
 import pytest
 
+from heya.background import BackgroundRegistry
 from heya.tools import TOOL_SCHEMAS, build_tool_schemas, dispatch_tool, describe_call
 from heya.tools_mcp import _MAX_DESC  # noqa: F401  (referenced for the truncation test)
 
@@ -961,9 +963,6 @@ def test_list_files_is_registered_and_dispatched(tmp_path):
     assert "x.py" in out
 
 
-from heya.background import BackgroundRegistry
-
-
 def test_background_schemas_present_when_can_spawn():
     names = {t["function"]["name"] for t in build_tool_schemas(can_spawn=True)}
     assert {"spawn_background_agent", "check_agent", "list_agents",
@@ -997,7 +996,6 @@ def test_dispatch_list_and_collect(tmp_path):
         return "the result"
 
     reg.start(run, task="t")
-    import time
     time.sleep(0.1)
     listed = dispatch_tool("list_agents", "{}", allowed_roots=[tmp_path],
                            cwd=tmp_path, timeout=5, background_registry=reg)

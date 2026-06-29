@@ -23,7 +23,7 @@ def test_two_concurrent_agents_finish_and_drain():
 
     a = reg.start(make_run("A"), task="task A")
     b = reg.start(make_run("B"), task="task B")
-    assert _wait(lambda: a.status == "done" and b.status == "done")
+    assert _wait(lambda: a.status == "done" and b.status == "done"), "agents did not finish in time"
     drained = {x.id for x in reg.drain_finished()}
     assert drained == {"a1", "a2"}
     snap = reg.snapshot()

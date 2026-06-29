@@ -4,7 +4,7 @@ import time
 from heya.subagents import (
     Role, ROLES, resolve_role, build_child_system_prompt, SUBAGENT_FRAMING,
     LabeledStream, PARALLEL_SAFE_TOOLS, parallel_label, format_parallel_report,
-    MAX_REPORT_CHARS, LockedSink,
+    MAX_REPORT_CHARS, LockedSink, BACKGROUND_TOOLS,
 )
 
 
@@ -160,9 +160,6 @@ def test_locked_sink_serializes_concurrent_writes():
     assert len(out) == sum(len(m) for m in msgs)
     for m in msgs:
         assert m in out  # each message contiguous, not interleaved
-
-
-from heya.subagents import BACKGROUND_TOOLS
 
 
 def test_background_role_exists_and_can_write():

@@ -159,7 +159,7 @@ def _id_arg_schema(name, desc):
 
 
 _CHECK_AGENT_SCHEMA = _id_arg_schema("check_agent", "Read new output and status from one background agent.")
-_COLLECT_AGENT_SCHEMA = _id_arg_schema("collect_agent", "Get the final result of a background agent (or that it is still running).")
+_COLLECT_AGENT_SCHEMA = _id_arg_schema("collect_agent", "Get the final result of a completed background agent, or a note that it is still running.")
 _CANCEL_AGENT_SCHEMA = _id_arg_schema("cancel_agent", "Ask a background agent to stop at its next checkpoint.")
 _CHECK_AGENTS_SCHEMA = {"type": "function", "function": {"name": "check_agents",
     "description": "List background agents with their status.", "parameters": {"type": "object", "properties": {}}}}
@@ -543,7 +543,7 @@ def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False, with_memory
     extras: list[dict] = []
     if can_spawn:
         extras += [_SPAWN_AGENT_SCHEMA, _SPAWN_AGENTS_SCHEMA,
-                   _SPAWN_BACKGROUND_SCHEMA, _CHECK_AGENT_SCHEMA, _CHECK_AGENTS_SCHEMA,
+                   _SPAWN_BACKGROUND_SCHEMA, _CHECK_AGENT_SCHEMA,
                    _LIST_AGENTS_SCHEMA, _COLLECT_AGENT_SCHEMA, _CANCEL_AGENT_SCHEMA]
     if with_memory:
         extras += _MEMORY_SCHEMAS

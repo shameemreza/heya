@@ -1,3 +1,5 @@
+import threading
+
 import pytest
 
 from heya.agent import Agent
@@ -1519,9 +1521,6 @@ def test_system_prompt_has_environment_nudge():
     assert "environment" in p and "rather than assuming" in p
     assert "read_guidance('environment')" in SYSTEM_PROMPT
     assert "—" not in SYSTEM_PROMPT
-
-
-import threading
 
 
 def test_cancel_event_stops_the_loop(tmp_path):
