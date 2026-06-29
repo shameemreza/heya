@@ -110,6 +110,15 @@ class ApprovalPolicy:
                 return True
             return decision == "yes"
 
+    def confirm(self, detail: str, *, label: str = "") -> bool:
+        """One-time yes/no gate for a privileged action (e.g. launching a
+        background agent with a write or command grant). Honors auto_approve."""
+        if self.auto_approve:
+            return True
+        display = f"[{label}] {detail}" if label else detail
+        with self._lock:
+            return self._approver("spawn_background_agent", display) in ("yes", "always")
+
     def check_sampling(self, server: str, preview: str) -> bool:
         """Gate a server-initiated sampling request, reusing the allow list."""
         name = f"mcp_sample:{server}"

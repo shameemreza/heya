@@ -418,3 +418,32 @@ def test_slash_resume_ignores_glued_token(tmp_path):
     ui = main_mod.UI(plain=True, write=lambda s: None)
     main_mod._handle_slash("/resumeabc", agent, ui, sessions_dir=tmp_path)
     assert agent.session_id == "sid1"  # not treated as a resume of "abc"
+
+
+# ---------------------------------------------------------------------------
+# Task 10 tests: background registry in session snapshot
+# ---------------------------------------------------------------------------
+
+
+def test_session_snapshot_includes_background(tmp_path):
+    from heya.background import BackgroundRegistry
+    from heya.main import _session_snapshot
+
+    reg = BackgroundRegistry()
+
+    def run(entry, on_text):
+        return "built it"
+
+    reg.start(run, task="build a plugin")
+    import time
+    time.sleep(0.1)
+
+    class _FakeAgent:
+        messages = [{"role": "user", "content": "hi"}]
+        session_id = "s1"
+        cwd = tmp_path
+        background_registry = reg
+
+    snap = _session_snapshot(_FakeAgent(), profile_name="p", created="t", updated="t")
+    assert "background" in snap
+    assert snap["background"] and snap["background"][0]["status"] == "done"

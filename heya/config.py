@@ -294,6 +294,24 @@ def load_agent_paths(config_path: Path | None = None) -> tuple[Path, ...]:
     return tuple(Path(p).expanduser() for p in raw) if raw else default_agent_paths()
 
 
+@dataclass(frozen=True)
+class AgentConfig:
+    max_background: int = 4
+
+
+def load_agent_config(config_path: Path | None = None) -> AgentConfig:
+    """Background-agent settings from [agents] in config.toml. Never raises."""
+    default = AgentConfig()
+    path = config_path or default_config_path()
+    if not path.exists():
+        return default
+    try:
+        data = tomllib.loads(path.read_text()).get("agents", {})
+        return AgentConfig(max_background=int(data.get("max_background", default.max_background)))
+    except Exception:
+        return default
+
+
 def default_plugin_paths() -> tuple[Path, ...]:
     home = Path.home()
     return (home / ".claude" / "plugins" / "cache", home / ".config" / "heya" / "plugins")

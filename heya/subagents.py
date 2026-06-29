@@ -47,6 +47,18 @@ ROLES: dict[str, Role] = {
     ),
 }
 
+BACKGROUND_TOOLS = PARALLEL_SAFE_TOOLS | frozenset({
+    "write_file", "run_command", "check_command", "kill_command", "run_wp_cli",
+})
+
+ROLES["background"] = Role(
+    "background",
+    "You run as a background agent on an independent task. You may read, and "
+    "within your granted folder you may write files and run commands. Do the "
+    "task end to end, then reply with a short report of what you produced.",
+    BACKGROUND_TOOLS,
+)
+
 
 def resolve_role(name: str | None) -> Role | None:
     """Return the Role for a name, or None (unknown name or None)."""

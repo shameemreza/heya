@@ -1,3 +1,5 @@
+import threading
+
 import pytest
 
 from heya.agent import Agent
@@ -1519,3 +1521,89 @@ def test_system_prompt_has_environment_nudge():
     assert "environment" in p and "rather than assuming" in p
     assert "read_guidance('environment')" in SYSTEM_PROMPT
     assert "—" not in SYSTEM_PROMPT
+
+
+def test_cancel_event_stops_the_loop(tmp_path):
+    # A script that would keep calling a tool forever if not cancelled.
+    calls = [ChatResult(content="", tool_calls=[ToolCall(id="1", name="read_file",
+             arguments='{"path": "x"}')])] * 50
+    cancel = threading.Event()
+    cancel.set()  # already cancelled: the loop must stop on the first check
+    agent, _ = make_agent(tmp_path, calls, cancel=cancel)
+    assert agent.run("go") == "Stopped: cancelled."
+
+
+def test_write_guard_blocks_write_file(tmp_path):
+    blocked_path = tmp_path / "blocked.txt"
+    calls = [ChatResult(content="", tool_calls=[ToolCall(id="1", name="write_file",
+             arguments=f'{{"path": "{blocked_path}", "content": "x"}}')]),
+             ChatResult(content="done")]
+    seen = {}
+
+    def guard(name, args):
+        seen["name"] = name
+        return "Error: that path is leased by background agent a1."
+
+    agent, _ = make_agent(tmp_path, calls, write_guard=guard)
+    agent.run("write it")
+    assert seen["name"] == "write_file"
+    assert not blocked_path.exists()  # write never happened
+
+
+def test_write_guard_allows_when_none_returned(tmp_path):
+    out_path = tmp_path / "ok.txt"
+    calls = [ChatResult(content="", tool_calls=[ToolCall(id="1", name="write_file",
+             arguments=f'{{"path": "{out_path}", "content": "hi"}}')]),
+             ChatResult(content="done")]
+    agent, _ = make_agent(tmp_path, calls, write_guard=lambda name, args: None)
+    agent.run("write it")
+    assert out_path.read_text() == "hi"
+
+
+def test_spawn_background_agent_runs_a_child(tmp_path):
+    from heya.background import BackgroundRegistry
+
+    # The CHILD's scripted client: it answers with no tools, just a report.
+    # The PARENT never loops here; we call the spawn method directly.
+    reg = BackgroundRegistry()
+    parent, _ = make_agent(tmp_path, [ChatResult(content="parent idle")],
+                           background_registry=reg)
+    # Give the parent a child client factory by reusing its own client is not
+    # possible (single-use script); instead the child uses parent.client which
+    # must yield a final answer. Re-script the parent client for the child run:
+    parent.client._scripted = [ChatResult(content="child report")]
+    out = parent._spawn_background_agent("do a thing", None, None, None, False)
+    assert "a1" in out
+
+    import time
+    end = time.time() + 2
+    while time.time() < end and reg.summaries()[0]["status"] == "running":
+        time.sleep(0.01)
+    assert "child report" in reg.collect("a1")
+
+
+def test_spawn_background_without_registry_errors(tmp_path):
+    agent, _ = make_agent(tmp_path, [ChatResult(content="idle")])  # no background_registry
+    out = agent._spawn_background_agent("do a thing", None, None, None, False)
+    assert "Error" in out and "not available" in out
+
+
+class _DeclineConfirm:
+    def check(self, name, detail, label=""):
+        return True
+
+    def confirm(self, detail, label=""):
+        return False
+
+
+def test_spawn_background_declined_grant(tmp_path):
+    from heya.background import BackgroundRegistry
+    reg = BackgroundRegistry()
+    agent, _ = make_agent(tmp_path, [ChatResult(content="idle")],
+                          background_registry=reg)
+    # make_agent forces approval=_AllowAll(); override it to exercise the decline path.
+    agent.approval = _DeclineConfirm()
+    out = agent._spawn_background_agent("build a plugin", None, None,
+                                        str(tmp_path / "plugin"), True)
+    assert "Declined" in out
+    assert reg.summaries() == []  # nothing was started

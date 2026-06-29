@@ -124,6 +124,46 @@ _SPAWN_AGENTS_SCHEMA = {
     },
 }
 
+_SPAWN_BACKGROUND_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "spawn_background_agent",
+        "description": (
+            "Launch a sub-agent that runs in the BACKGROUND while you keep working, "
+            "and return its id immediately. Use it to offload long or parallel work "
+            "(audit a plugin, research, or build a plugin/theme). Without a "
+            "write_scope it is read-only. To let it build or change files, set "
+            "write_scope to the folder it owns (it gets an exclusive lease so no one "
+            "else writes there) and allow_commands if it must run commands. Check it "
+            "with check_agent and get the result with collect_agent."),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task": {"type": "string", "description": "Self-contained task; the agent sees none of this chat."},
+                "role": {"type": "string", "description": "Optional role specialization."},
+                "instructions": {"type": "string", "description": "Optional extra focusing guidance."},
+                "write_scope": {"type": "string", "description": "Folder the agent may write in; leased exclusively."},
+                "allow_commands": {"type": "boolean", "description": "Allow it to run shell commands in its scope."},
+            },
+            "required": ["task"],
+        },
+    },
+}
+
+
+def _id_arg_schema(name, desc):
+    return {"type": "function", "function": {"name": name, "description": desc,
+            "parameters": {"type": "object",
+                           "properties": {"id": {"type": "string", "description": "Background agent id."}},
+                           "required": ["id"]}}}
+
+
+_CHECK_AGENT_SCHEMA = _id_arg_schema("check_agent", "Read new output and status from one background agent.")
+_COLLECT_AGENT_SCHEMA = _id_arg_schema("collect_agent", "Get the final result of a completed background agent, or a note that it is still running.")
+_CANCEL_AGENT_SCHEMA = _id_arg_schema("cancel_agent", "Ask a background agent to stop at its next checkpoint.")
+_LIST_AGENTS_SCHEMA = {"type": "function", "function": {"name": "list_agents",
+    "description": "List background agents with their status.", "parameters": {"type": "object", "properties": {}}}}
+
 _REVIEW_SCHEMA = {
     "type": "function",
     "function": {
@@ -500,7 +540,9 @@ def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False, with_memory
     """
     extras: list[dict] = []
     if can_spawn:
-        extras += [_SPAWN_AGENT_SCHEMA, _SPAWN_AGENTS_SCHEMA]
+        extras += [_SPAWN_AGENT_SCHEMA, _SPAWN_AGENTS_SCHEMA,
+                   _SPAWN_BACKGROUND_SCHEMA, _CHECK_AGENT_SCHEMA,
+                   _LIST_AGENTS_SCHEMA, _COLLECT_AGENT_SCHEMA, _CANCEL_AGENT_SCHEMA]
     if with_memory:
         extras += _MEMORY_SCHEMAS
     if with_review:
@@ -565,6 +607,8 @@ def dispatch_tool(
     skill_fn=None,
     triage_report_fn=None,
     pick_list_fn=None,
+    spawn_background_fn=None,
+    background_registry=None,
 ) -> str:
     """Run one model tool-call. Returns a string result (errors included)."""
     try:
@@ -696,6 +740,27 @@ def dispatch_tool(
             if spawn_agents_fn is None:
                 return f"Error: unknown tool {name!r}."
             return spawn_agents_fn(args["tasks"])  # method truncates per report itself
+        if name == "spawn_background_agent":
+            if spawn_background_fn is None:
+                return f"Error: unknown tool {name!r}."
+            return truncate_output(spawn_background_fn(
+                args["task"], args.get("role"), args.get("instructions"),
+                args.get("write_scope"), args.get("allow_commands", False)))
+        if name in ("check_agent", "collect_agent", "cancel_agent"):
+            if background_registry is None:
+                return f"Error: background agents are not available here."
+            method = {"check_agent": background_registry.poll,
+                      "collect_agent": background_registry.collect,
+                      "cancel_agent": background_registry.cancel}[name]
+            return truncate_output(method(args["id"]))
+        if name in ("check_agents", "list_agents"):
+            if background_registry is None:
+                return f"Error: background agents are not available here."
+            rows = background_registry.summaries()
+            if not rows:
+                return "No background agents."
+            return "\n".join(f"{r['id']} [{r['status']}] {r['task']}"
+                             + (f" -> {r['scope']}" if r['scope'] else "") for r in rows)
         if name in ("remember", "update_memory", "forget", "read_memory"):
             if memory_store is None:
                 return f"Error: unknown tool {name!r}."

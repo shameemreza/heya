@@ -8,6 +8,10 @@ All notable changes to Heya are recorded here. The format follows
 
 ### Added
 
+- Background agents: launch sub-agents that run in the background while you keep
+  working, for parallel audits, research, and building plugins or themes. They
+  can write and run commands within a folder they lease exclusively, authorized
+  once at launch, so concurrent agents never collide.
 - WordPress development guidance, so Heya writes secure, standards-compliant
   plugins, themes, and code snippets that are ready for WordPress.org review.
   It activates automatically on WordPress work and routes across security,
