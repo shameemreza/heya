@@ -197,3 +197,25 @@ def test_unified_file_diff_no_change(tmp_path):
     p.write_text("same\n", encoding="utf-8")
     diff = unified_file_diff(p, "same\n")
     assert diff == ""
+
+
+def test_confirm_true_when_auto_approve():
+    pol = ApprovalPolicy(approver=lambda n, d: "no", auto_approve=True)
+    assert pol.confirm("launch background agent") is True
+
+
+def test_confirm_asks_the_approver_when_not_auto():
+    asked = {}
+
+    def approver(name, detail):
+        asked["detail"] = detail
+        return "yes"
+
+    pol = ApprovalPolicy(approver=approver, auto_approve=False)
+    assert pol.confirm("launch X", label="main") is True
+    assert "launch X" in asked["detail"]
+
+
+def test_confirm_false_on_no():
+    pol = ApprovalPolicy(approver=lambda n, d: "no", auto_approve=False)
+    assert pol.confirm("launch X") is False
