@@ -26,3 +26,4 @@ def test_wp_connect_refuses_production(tmp_path):
                           config_path=cfg, credentials_path=creds)
     assert code != 0
     assert load_wordpress_config(cfg) is None  # nothing written
+    assert load_key("wordpress", path=creds) is None  # credential not written

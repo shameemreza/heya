@@ -32,10 +32,11 @@ def _error(resp) -> str:
         body = resp.json()
     except Exception:
         body = None
+    status = getattr(resp, "status_code", 500)
     if isinstance(body, dict) and (body.get("code") or body.get("message")):
-        return f"Error: {resp.status_code} {body.get('code', '')} {body.get('message', '')}".strip()
+        return f"Error: {status} {body.get('code', '')} {body.get('message', '')}".strip()
     snippet = (getattr(resp, "text", "") or "")[:500]
-    return f"Error: {resp.status_code} from the site. {snippet}".strip()
+    return f"Error: {status} from the site. {snippet}".strip()
 
 
 class WPClient:
@@ -44,7 +45,7 @@ class WPClient:
         if client is not None:
             self._client = client
         else:
-            self._client = httpx.Client(auth=httpx.BasicAuth(user, password), timeout=timeout)
+            self._client = httpx.Client(auth=httpx.BasicAuth(user, password), timeout=timeout, follow_redirects=True)
 
     def list_abilities(self, *, per_page=50) -> str:
         try:
@@ -61,11 +62,14 @@ class WPClient:
         if not items:
             return "No abilities are registered on this site."
         lines = ["Abilities on this site (run one with wp_run_ability):"]
-        for a in items:
-            name = a.get("name", "?")
-            label = a.get("label", "")
-            desc = a.get("description", "")
-            lines.append(f"- {name}: {label}. {desc}".rstrip())
+        try:
+            for a in items:
+                name = a.get("name", "?")
+                label = a.get("label", "")
+                desc = a.get("description", "")
+                lines.append(f"- {name}: {label}. {desc}".rstrip())
+        except Exception:
+            return "Error: could not read the abilities list."
         return "\n".join(lines)
 
     def get_ability(self, name) -> str:
@@ -80,10 +84,10 @@ class WPClient:
         except Exception:
             return "Error: the site did not return JSON for the ability."
 
-    def run_ability(self, name, input) -> str:
+    def run_ability(self, name, ability_input) -> str:
         url = f"{self.base}/{_ABILITIES}/{encode_ability_name(name)}/run"
         try:
-            resp = self._client.post(url, json={"input": input or {}})
+            resp = self._client.post(url, json={"input": ability_input or {}})
         except Exception as exc:
             return f"Error: could not reach the site: {exc}"
         if getattr(resp, "status_code", 500) >= 400:

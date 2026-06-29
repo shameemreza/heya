@@ -6,8 +6,8 @@ import getpass
 import sys
 from pathlib import Path
 
-from .config import WPSiteConfig, write_wordpress_config
-from .credentials import save_key
+from .config import WPSiteConfig, write_wordpress_config, default_config_path
+from .credentials import save_key, default_credentials_path
 from .wpsite import build_wp_connector
 
 
@@ -46,12 +46,10 @@ def run_wp_connect(*, stream=None, out=print, config_path=None,
         return 1
 
     config = WPSiteConfig(url=url, user=user, env=env)
-    from .config import default_config_path
-    from .credentials import default_credentials_path
     cfg_path = config_path or default_config_path()
     creds_path = credentials_path or default_credentials_path()
-    save_key(config.password_key, password, path=creds_path)
     write_wordpress_config(cfg_path, config)
+    save_key(config.password_key, password, path=creds_path)
 
     check = connector_check
     if check is None:
