@@ -109,3 +109,22 @@ def test_wp_standards_i18n_covers_core_rules():
     for token in required:
         assert token in text, f"wp-standards-i18n.md is missing: {token}"
     assert "init" in text
+
+
+def test_wp_readme_naming_loads_with_frontmatter():
+    assert _read("wp-readme-naming").strip()
+    assert _has_valid_frontmatter("wp-readme-naming")
+
+
+def test_wp_readme_naming_covers_core_rules():
+    text = _read("wp-readme-naming")
+    required = [
+        "Stable tag",
+        "Requires PHP",
+        "Tested up to",
+        "GPL",
+        "for WooCommerce",
+        "trademark",
+    ]
+    for token in required:
+        assert token in text, f"wp-readme-naming.md is missing: {token}"
