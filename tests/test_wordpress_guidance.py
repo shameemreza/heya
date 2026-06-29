@@ -189,3 +189,22 @@ def test_wc_extension_covers_core_rules():
     for token in required:
         assert token in text, f"wc-extension.md is missing: {token}"
     assert "Checkout" in text
+
+
+def test_all_wp_files_are_listed():
+    items = collect_guidance([BUNDLED_GUIDANCE_DIR])
+    for name in WP_FILES:
+        assert name in items, f"guidance listing is missing {name}"
+
+
+def test_system_prompt_nudges_wordpress():
+    from heya.agent import SYSTEM_PROMPT
+
+    assert "read_guidance('wordpress')" in SYSTEM_PROMPT
+    assert "WordPress" in SYSTEM_PROMPT
+
+
+def test_explore_points_at_wordpress_guidance():
+    text = _read("explore")
+    assert "theme.json" in text
+    assert "read_guidance('wordpress')" in text
