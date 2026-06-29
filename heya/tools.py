@@ -373,6 +373,56 @@ _MEMORY_SCHEMAS = [
             "properties": {"name": {"type": "string"}}, "required": ["name"]}}},
 ]
 
+_WP_ABILITIES_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "wp_abilities",
+        "description": (
+            "List the abilities the connected WordPress or WooCommerce site exposes "
+            "(orders, products, and whatever else it registers). Read-only. Call this "
+            "first to learn what you can run, then use wp_run_ability."),
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+_WP_RUN_ABILITY_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "wp_run_ability",
+        "description": (
+            "Run one of the connected site's abilities by name (for example "
+            "woocommerce/orders-query or woocommerce/orders-update-status). The site's "
+            "own permission checks decide what is allowed. Anything that changes data "
+            "asks for your approval first."),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "The ability name, e.g. woocommerce/orders-query."},
+                "input": {"type": "object", "description": "The ability's input object, matching its schema."},
+            },
+            "required": ["name"],
+        },
+    },
+}
+_WP_REST_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "wp_rest",
+        "description": (
+            "Call the connected site's WooCommerce REST API for things not exposed as "
+            "abilities (for example GET /wc/v3/orders). Use GET to read; other methods "
+            "ask for your approval."),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "method": {"type": "string", "description": "GET, POST, PUT, or DELETE."},
+                "path": {"type": "string", "description": "REST path under wp-json, e.g. /wc/v3/orders."},
+                "body": {"type": "object", "description": "Optional JSON body for writes."},
+            },
+            "required": ["method", "path"],
+        },
+    },
+}
+
 TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
@@ -531,7 +581,7 @@ TOOL_SCHEMAS: list[dict] = [
 ]
 
 
-def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False, with_memory: bool = False, with_review: bool = False, with_repro: bool = False, with_diagnose: bool = False, with_remediate: bool = False, with_skills: bool = False, with_triage: bool = False) -> list[dict]:
+def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False, with_memory: bool = False, with_review: bool = False, with_repro: bool = False, with_diagnose: bool = False, with_remediate: bool = False, with_skills: bool = False, with_triage: bool = False, with_wordpress: bool = False) -> list[dict]:
     """Native tools plus, when a runtime is connected, one schema per MCP tool.
 
     Includes the spawn tools only when `can_spawn` (depth-0 agents), the memory
@@ -560,6 +610,8 @@ def build_tool_schemas(mcp_runtime=None, *, can_spawn: bool = False, with_memory
     if with_triage:
         extras.append(_TRIAGE_REPORT_SCHEMA)
         extras.append(_RECORD_PICK_LIST_SCHEMA)
+    if with_wordpress:
+        extras += [_WP_ABILITIES_SCHEMA, _WP_RUN_ABILITY_SCHEMA, _WP_REST_SCHEMA]
     base = TOOL_SCHEMAS + extras if extras else TOOL_SCHEMAS
     if mcp_runtime is None:
         return base
@@ -609,6 +661,7 @@ def dispatch_tool(
     pick_list_fn=None,
     spawn_background_fn=None,
     background_registry=None,
+    wp_connector=None,
 ) -> str:
     """Run one model tool-call. Returns a string result (errors included)."""
     try:
@@ -808,6 +861,14 @@ def dispatch_tool(
             if pick_list_fn is None:
                 return f"Error: unknown tool {name!r}."
             return pick_list_fn(**args)
+        if name in ("wp_abilities", "wp_run_ability", "wp_rest"):
+            if wp_connector is None:
+                return "Error: no WordPress site is connected. Run `heya wp connect` first."
+            if name == "wp_abilities":
+                return truncate_output(wp_connector.list_abilities())
+            if name == "wp_run_ability":
+                return truncate_output(wp_connector.run_ability(args["name"], args.get("input") or {}))
+            return truncate_output(wp_connector.rest(args["method"], args["path"], args.get("body")))
         return f"Error: unknown tool {name!r}."
     except ToolError as exc:
         return f"Error: {exc}"

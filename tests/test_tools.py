@@ -1003,3 +1003,43 @@ def test_dispatch_list_and_collect(tmp_path):
     collected = dispatch_tool("collect_agent", '{"id": "a1"}', allowed_roots=[tmp_path],
                               cwd=tmp_path, timeout=5, background_registry=reg)
     assert "the result" in collected
+
+
+def test_wordpress_schemas_present_when_enabled():
+    from heya.tools import build_tool_schemas
+    on = {t["function"]["name"] for t in build_tool_schemas(with_wordpress=True)}
+    assert {"wp_abilities", "wp_run_ability", "wp_rest"} <= on
+    off = {t["function"]["name"] for t in build_tool_schemas(with_wordpress=False)}
+    assert "wp_run_ability" not in off
+
+
+def test_dispatch_wp_run_ability_routes_to_connector(tmp_path):
+    from heya.tools import dispatch_tool
+
+    class _Conn:
+        def __init__(self):
+            self.calls = []
+        def run_ability(self, name, inp):
+            self.calls.append((name, inp))
+            return "ok result"
+        def list_abilities(self):
+            return "the abilities"
+
+    conn = _Conn()
+    out = dispatch_tool(
+        "wp_run_ability",
+        '{"name": "woocommerce/orders-query", "input": {"status": "completed"}}',
+        allowed_roots=[tmp_path], cwd=tmp_path, timeout=5, wp_connector=conn)
+    assert "ok result" in out
+    assert conn.calls == [("woocommerce/orders-query", {"status": "completed"})]
+
+    listed = dispatch_tool("wp_abilities", "{}", allowed_roots=[tmp_path],
+                           cwd=tmp_path, timeout=5, wp_connector=conn)
+    assert "the abilities" in listed
+
+
+def test_dispatch_wp_tool_without_connector_errors(tmp_path):
+    from heya.tools import dispatch_tool
+    out = dispatch_tool("wp_abilities", "{}", allowed_roots=[tmp_path],
+                        cwd=tmp_path, timeout=5, wp_connector=None)
+    assert "Error" in out and "no WordPress site" in out
