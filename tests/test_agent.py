@@ -1581,3 +1581,30 @@ def test_spawn_background_agent_runs_a_child(tmp_path):
     while time.time() < end and reg.summaries()[0]["status"] == "running":
         time.sleep(0.01)
     assert "child report" in reg.collect("a1")
+
+
+def test_spawn_background_without_registry_errors(tmp_path):
+    agent, _ = make_agent(tmp_path, [ChatResult(content="idle")])  # no background_registry
+    out = agent._spawn_background_agent("do a thing", None, None, None, False)
+    assert "Error" in out and "not available" in out
+
+
+class _DeclineConfirm:
+    def check(self, name, detail, label=""):
+        return True
+
+    def confirm(self, detail, label=""):
+        return False
+
+
+def test_spawn_background_declined_grant(tmp_path):
+    from heya.background import BackgroundRegistry
+    reg = BackgroundRegistry()
+    agent, _ = make_agent(tmp_path, [ChatResult(content="idle")],
+                          background_registry=reg)
+    # make_agent forces approval=_AllowAll(); override it to exercise the decline path.
+    agent.approval = _DeclineConfirm()
+    out = agent._spawn_background_agent("build a plugin", None, None,
+                                        str(tmp_path / "plugin"), True)
+    assert "Declined" in out
+    assert reg.summaries() == []  # nothing was started

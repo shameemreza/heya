@@ -597,6 +597,9 @@ class Agent:
             on_tool=self._on_tool,
             cancel=entry.cancel,
             write_guard=guard,
+            session_id=self.session_id,
+            hooks=self.hooks,
+            hooks_enabled=self.hooks_enabled,
         )
         child._labeled_stream = stream
         return child
