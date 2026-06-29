@@ -97,3 +97,57 @@ def test_failure_is_captured_not_raised():
     entry = reg.start(run, task="t")
     assert _wait_until(lambda: entry.status == "failed")
     assert "boom" in reg.collect(entry.id)
+
+
+def test_lease_blocks_foreground_inside_scope(tmp_path):
+    block = threading.Event()
+    reg = BackgroundRegistry()
+    scope = tmp_path / "plugin"
+    scope.mkdir()
+    entry = reg.start(_runner("x", block=block), task="build", write_scope=scope)
+    assert isinstance(entry, BackgroundAgent)
+    err = reg.check_write(scope / "main.php", "main")
+    assert err and entry.id in err
+    block.set()
+
+
+def test_lease_allows_foreground_outside_scope(tmp_path):
+    block = threading.Event()
+    reg = BackgroundRegistry()
+    scope = tmp_path / "plugin"
+    scope.mkdir()
+    reg.start(_runner("x", block=block), task="build", write_scope=scope)
+    assert reg.check_write(tmp_path / "other" / "file.txt", "main") is None
+    block.set()
+
+
+def test_lease_refuses_overlapping_scope(tmp_path):
+    block = threading.Event()
+    reg = BackgroundRegistry()
+    scope = tmp_path / "plugin"
+    scope.mkdir()
+    reg.start(_runner("a", block=block), task="t", write_scope=scope)
+    refused = reg.start(_runner("b"), task="t2", write_scope=scope / "sub")
+    assert isinstance(refused, str) and "overlap" in refused.lower()
+    block.set()
+
+
+def test_two_nonoverlapping_writers_both_allowed(tmp_path):
+    block = threading.Event()
+    reg = BackgroundRegistry(max_concurrent=2)
+    a = reg.start(_runner("a", block=block), task="t", write_scope=tmp_path / "p1")
+    b = reg.start(_runner("b", block=block), task="t2", write_scope=tmp_path / "p2")
+    assert isinstance(a, BackgroundAgent) and isinstance(b, BackgroundAgent)
+    block.set()
+
+
+def test_owner_may_write_inside_its_scope_only(tmp_path):
+    block = threading.Event()
+    reg = BackgroundRegistry()
+    scope = tmp_path / "plugin"
+    scope.mkdir()
+    entry = reg.start(_runner("x", block=block), task="t", write_scope=scope)
+    assert reg.check_write(scope / "inc" / "f.php", entry.id) is None
+    outside = reg.check_write(tmp_path / "elsewhere.txt", entry.id)
+    assert outside and "only write inside" in outside
+    block.set()
