@@ -1,10 +1,7 @@
-import os
 import tomllib
 
-from pathlib import Path
-
+from heya.credentials import load_key, save_key
 from heya.tomlw import dumps
-from heya.credentials import save_key, load_key
 
 
 def test_dumps_roundtrips_tables_and_lists():

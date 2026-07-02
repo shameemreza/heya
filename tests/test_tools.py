@@ -2,10 +2,8 @@ import json
 import time
 from pathlib import Path
 
-import pytest
-
 from heya.background import BackgroundRegistry
-from heya.tools import TOOL_SCHEMAS, build_tool_schemas, dispatch_tool, describe_call
+from heya.tools import TOOL_SCHEMAS, build_tool_schemas, describe_call, dispatch_tool
 from heya.tools_mcp import _MAX_DESC  # noqa: F401  (referenced for the truncation test)
 
 
@@ -761,7 +759,7 @@ def test_spawn_agent_dispatch_weak_defaults_false():
 
 
 def test_read_guidance_reproduction_present():
-    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    from heya.tools_guidance import BUNDLED_GUIDANCE_DIR, read_guidance
     out = read_guidance("reproduction", sources=[BUNDLED_GUIDANCE_DIR])
     assert "funnel" in out.lower()
     assert "no evidence, no verdict" in out.lower()
@@ -811,7 +809,7 @@ def test_dispatch_record_repro_verdict_routes():
 
 
 def test_read_guidance_diagnosis_present():
-    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    from heya.tools_guidance import BUNDLED_GUIDANCE_DIR, read_guidance
     out = read_guidance("diagnosis", sources=[BUNDLED_GUIDANCE_DIR])
     low = out.lower()
     assert "conflict test" in low
@@ -844,7 +842,7 @@ def test_dispatch_diagnose_routes():
 
 
 def test_read_guidance_remediation_present():
-    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    from heya.tools_guidance import BUNDLED_GUIDANCE_DIR, read_guidance
     out = read_guidance("remediation", sources=[BUNDLED_GUIDANCE_DIR])
     low = out.lower()
     assert "dual oracle" in low or "regression" in low
@@ -885,7 +883,7 @@ def test_dispatch_remediation_routes():
 
 
 def test_diagnosis_guidance_has_escalation():
-    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    from heya.tools_guidance import BUNDLED_GUIDANCE_DIR, read_guidance
     out = read_guidance("diagnosis", sources=[BUNDLED_GUIDANCE_DIR]).lower()
     assert "insufficient evidence" in out
     assert "one more signal" in out
@@ -916,7 +914,7 @@ def test_dispatch_skill_routes():
 
 
 def test_read_guidance_triage_present():
-    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    from heya.tools_guidance import BUNDLED_GUIDANCE_DIR, read_guidance
     out = read_guidance("triage", sources=[BUNDLED_GUIDANCE_DIR]).lower()
     assert "pick list" in out or "pick-list" in out
     assert "never post" in out or "do not post" in out
@@ -946,7 +944,7 @@ def test_dispatch_triage_routes():
 
 
 def test_bundled_voice_guidance_present():
-    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    from heya.tools_guidance import BUNDLED_GUIDANCE_DIR, read_guidance
     for name in ("writing-voice", "banned-words", "support-reply"):
         out = read_guidance(name, sources=[BUNDLED_GUIDANCE_DIR])
         assert out.strip() and "No guidance" not in out

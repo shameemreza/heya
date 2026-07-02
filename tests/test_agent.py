@@ -851,7 +851,6 @@ def test_review_reviewers_panel_has_four(tmp_path):
 
 
 from heya.llm_client import Usage
-from heya.context import SUMMARY_MARKER
 
 
 class FakeChatClient:
@@ -1160,9 +1159,10 @@ def test_agent_diagnose_escalates_then_blocks(tmp_path, monkeypatch):
 
 
 def test_agent_diagnose_grounded_resets_counter(tmp_path, monkeypatch):
-    import heya.agent as agent_mod
     import json as _json
-    from heya.diagnosis import synthesize_diagnosis, Hypothesis
+
+    import heya.agent as agent_mod
+    from heya.diagnosis import Hypothesis, synthesize_diagnosis
     agent, _ = make_agent(tmp_path, [ChatResult(content="x")])
     base = tmp_path / "repro" / "WOO-reset"
     (base / "evidence").mkdir(parents=True)
@@ -1211,7 +1211,7 @@ def test_collect_skills_into_agent(tmp_path):
 
 
 def test_plugin_skill_reaches_agent(tmp_path):
-    from heya.plugins import discover_plugins, collect_plugin_skills
+    from heya.plugins import collect_plugin_skills, discover_plugins
     root = tmp_path / "cache" / "mkt" / "superpowers" / "1.0.0"
     (root / ".claude-plugin").mkdir(parents=True)
     (root / ".claude-plugin" / "plugin.json").write_text('{"name": "superpowers"}')
@@ -1265,6 +1265,7 @@ def test_agent_sessionstart_and_stop_fire(tmp_path):
 
 def test_hooks_collected_and_fire(tmp_path):
     import json as _json
+
     from heya.hooks import collect_hooks
     settings = tmp_path / "settings.json"
     settings.write_text(_json.dumps({"hooks": {"SessionStart": [
@@ -1306,8 +1307,8 @@ def test_spawn_agent_builtin_role_still_works(tmp_path):
 
 
 def test_command_and_agent_reach_agent(tmp_path):
-    from heya.skills import collect_commands
     from heya.agent_defs import discover_agent_roles
+    from heya.skills import collect_commands
     cdir = tmp_path / "commands"; cdir.mkdir()
     (cdir / "deploy.md").write_text("---\nname: deploy\ndescription: ship\n---\nDeploy now.")
     adir = tmp_path / "agents"; adir.mkdir()
@@ -1404,9 +1405,10 @@ def test_write_file_diff_does_not_read_outside_allowlist(tmp_path, tmp_path_fact
     file's contents in the approval diff preview (the file read itself is
     the bypass — the write is also later blocked by the tool's own check)."""
     from io import StringIO
+
     from heya.approval import ApprovalPolicy, UiApprover
-    from heya.ui import UI
     from heya.llm_client import ToolCall
+    from heya.ui import UI
 
     # A second, distinct tmp directory that is NOT in allowed_roots.
     outside_dir = tmp_path_factory.mktemp("outside")
@@ -1446,9 +1448,10 @@ def test_write_file_diff_does_not_read_outside_allowlist(tmp_path, tmp_path_fact
 def test_write_file_diff_still_shows_for_in_allowlist_path(tmp_path):
     """write_file to an in-allowlist path still shows the diff content."""
     from io import StringIO
+
     from heya.approval import ApprovalPolicy, UiApprover
-    from heya.ui import UI
     from heya.llm_client import ToolCall
+    from heya.ui import UI
 
     in_path = tmp_path / "notes.txt"
     in_path.write_text("ORIGINAL_CONTENT_99", encoding="utf-8")
@@ -1483,7 +1486,6 @@ def test_write_file_diff_still_shows_for_in_allowlist_path(tmp_path):
 
 
 def test_system_prompt_has_scoped_minimalism_principle():
-    from heya.agent import SYSTEM_PROMPT
     p = SYSTEM_PROMPT.lower()
     # scoped to code, names the guidance, and keeps the safety carve-out
     assert "smallest change" in p
@@ -1516,7 +1518,6 @@ def test_review_panel_focus_selects_minimalism():
 
 
 def test_system_prompt_has_environment_nudge():
-    from heya.agent import SYSTEM_PROMPT
     p = SYSTEM_PROMPT.lower()
     assert "environment" in p and "rather than assuming" in p
     assert "read_guidance('environment')" in SYSTEM_PROMPT

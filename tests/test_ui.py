@@ -70,7 +70,7 @@ def test_approval_shows_diff_through_ui():
 
 
 def test_heya_art_rows_shape():
-    from heya.ui import heya_art_rows, ART_GREEN, ART_PURPLE
+    from heya.ui import ART_GREEN, ART_PURPLE, heya_art_rows
     rows = heya_art_rows()
     assert len(rows) == 5
     assert all(len(r) == 2 for r in rows)
@@ -81,6 +81,7 @@ def test_heya_art_rows_shape():
 
 def test_banner_plain_unchanged():
     import io
+
     from heya.ui import UI
     buf = io.StringIO()
     ui = UI(plain=True, write=buf.write)
@@ -99,6 +100,7 @@ def test_banner_color_path_does_not_raise():
 
 def test_prompt_stream_and_plain_unchanged():
     import io
+
     from heya.ui import UI
     assert UI(plain=True, stream=io.StringIO("hi\n")).prompt() == "hi\n"
 
@@ -108,6 +110,7 @@ def test_at_path_completer_yields_after_at(tmp_path):
     pytest = __import__("pytest")
     pytest.importorskip("prompt_toolkit")
     from prompt_toolkit.document import Document
+
     from heya.ui import _AtPathCompleter
     (tmp_path / "alpha.txt").write_text("x")
     doc = Document(f"see @{tmp_path}/")

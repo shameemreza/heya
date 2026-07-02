@@ -116,7 +116,7 @@ def upsert_profile(path: Path, profile_name: str, fields: dict, *, make_default:
     lines = text.splitlines(keepends=True)
 
     # Identify headers to remove: [defaults] and [profiles.<profile_name>]
-    headers_to_remove = {f"[defaults]", f"[profiles.{profile_name}]"}
+    headers_to_remove = {"[defaults]", f"[profiles.{profile_name}]"}
 
     def _is_section_header(line: str) -> bool:
         return bool(re.match(r"^\s*\[", line))

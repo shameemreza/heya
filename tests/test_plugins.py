@@ -1,8 +1,11 @@
 from pathlib import Path
 
 from heya.plugins import (
-    Plugin, parse_plugin_manifest, discover_plugins, plugin_skill_dirs,
+    Plugin,
     collect_plugin_skills,
+    discover_plugins,
+    parse_plugin_manifest,
+    plugin_skill_dirs,
 )
 
 

@@ -1,5 +1,3 @@
-import shutil
-import pytest
 from heya import tools_wp
 
 

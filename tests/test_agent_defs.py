@@ -1,4 +1,4 @@
-from heya.agent_defs import discover_agent_roles, agent_roles_note
+from heya.agent_defs import agent_roles_note, discover_agent_roles
 
 
 def _agent(d, name, frontmatter, body="You review code."):

@@ -1,7 +1,14 @@
 from heya.review import (
-    Finding, parse_findings, synthesize, normalize_severity, SEVERITIES, git_diff,
-    run_review, verifier_confirms, REVIEWER_PROMPT, VERIFIER_PROMPT,
-    WP_SECURITY_METHODOLOGY, WP_STANDARDS_METHODOLOGY,
+    REVIEWER_PROMPT,
+    WP_SECURITY_METHODOLOGY,
+    WP_STANDARDS_METHODOLOGY,
+    Finding,
+    git_diff,
+    normalize_severity,
+    parse_findings,
+    run_review,
+    synthesize,
+    verifier_confirms,
 )
 
 
@@ -328,7 +335,7 @@ def test_minimalism_methodology_exists_and_is_focused():
 
 
 def test_reviewer_prompt_includes_minimalism_methodology():
-    from heya.review import REVIEWER_PROMPT, MINIMALISM_METHODOLOGY
+    from heya.review import MINIMALISM_METHODOLOGY, REVIEWER_PROMPT
     prompt = REVIEWER_PROMPT("diff", "minimalism", "minimal-code", "",
                              MINIMALISM_METHODOLOGY)
     assert MINIMALISM_METHODOLOGY.strip() in prompt

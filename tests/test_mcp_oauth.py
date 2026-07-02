@@ -5,9 +5,16 @@ import pytest
 
 pytest.importorskip("mcp")  # the MCP SDK is an optional extra (heya-agent[mcp])
 
-from heya.mcp_oauth import InMemoryTokenStorage, KeyringTokenStorage, make_token_storage, open_browser_redirect, LoopbackCallbackServer
+from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+
 from heya.config import MCPServerConfig
-from mcp.shared.auth import OAuthToken, OAuthClientInformationFull
+from heya.mcp_oauth import (
+    InMemoryTokenStorage,
+    KeyringTokenStorage,
+    LoopbackCallbackServer,
+    make_token_storage,
+    open_browser_redirect,
+)
 
 
 def _token():

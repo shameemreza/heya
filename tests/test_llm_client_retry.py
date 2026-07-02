@@ -1,8 +1,11 @@
 import json
+
 import httpx
 import pytest
+
 from heya.config import Profile
 from heya.llm_client import LLMClient
+
 
 def _profile():
     return Profile(name="t", base_url="http://x/v1", model="m", timeout=5.0)

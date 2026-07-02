@@ -15,43 +15,63 @@ try:
 except Exception:
     VERSION = "0.0.2"
 
-from .agent import Agent, DEFAULT_MAX_ITERS
-from .project import load_project_instructions
+import uuid
+
+from . import attachments, sessions
+from .agent import DEFAULT_MAX_ITERS, Agent
+from .agent_defs import discover_agent_roles
 from .approval import ApprovalPolicy, UiApprover, prompt_stdin
+from .background import BackgroundRegistry
 from .config import (
-    load_allowed_roots, load_approval_allow, load_browser_headless, load_context_config,
-    load_guidance_paths, load_hooks_config, load_mcp_servers, load_memory_path, load_profiles,
-    load_routing_config, load_search_config, load_skill_paths, load_wp_path, resolve_profile,
-    resolve_weak_profile, load_plugin_paths, load_disabled_plugins,
-    load_command_paths, load_agent_paths, load_identity,
-    resolve_api_key, load_default_profile, default_config_path, model_supports_vision,
-    load_project_instructions_enabled, load_agent_config, load_update_config,
-    load_wordpress_config, load_web_config,
+    default_config_path,
+    load_agent_config,
+    load_agent_paths,
+    load_allowed_roots,
+    load_approval_allow,
+    load_browser_headless,
+    load_command_paths,
+    load_context_config,
+    load_default_profile,
+    load_disabled_plugins,
+    load_guidance_paths,
+    load_hooks_config,
+    load_identity,
+    load_mcp_servers,
+    load_memory_path,
+    load_plugin_paths,
+    load_profiles,
+    load_project_instructions_enabled,
+    load_routing_config,
+    load_search_config,
+    load_skill_paths,
+    load_update_config,
+    load_web_config,
+    load_wordpress_config,
+    load_wp_path,
+    model_supports_vision,
+    resolve_api_key,
+    resolve_profile,
+    resolve_weak_profile,
 )
 from .credentials import load_key
-from .wpsite import build_wp_connector
-from .update import run_update, update_notice
-from .init import run_init
-from .wpconnect import run_wp_connect
-from .preflight import check_profile, OK
 from .hooks import collect_hooks
-from .plugins import discover_plugins, collect_plugin_skills
-from .skills import collect_skills, collect_commands
-from .agent_defs import discover_agent_roles
+from .init import run_init
 from .llm_client import LLMClient
 from .mcp_runtime import MCPRuntime
 from .memory import MemoryStore
-from .background import BackgroundRegistry
+from .plugins import collect_plugin_skills, discover_plugins
+from .preflight import OK, check_profile
 from .process import ProcessRegistry
+from .project import load_project_instructions
+from .skills import collect_commands, collect_skills
 from .tools_browser import BrowserSession
-from .tools_wp import PlaygroundSession
 from .tools_guidance import BUNDLED_GUIDANCE_DIR
 from .tools_web import build_search_provider
+from .tools_wp import PlaygroundSession
 from .ui import UI, should_plain
-from . import sessions
-from . import attachments
-
-import uuid
+from .update import run_update, update_notice
+from .wpconnect import run_wp_connect
+from .wpsite import build_wp_connector
 
 
 def _build_turn_content(text, agent, ui):

@@ -5,12 +5,22 @@ import pytest
 pytest.importorskip("mcp")  # the MCP SDK is an optional extra (heya-agent[mcp])
 
 from mcp.types import (
-    CreateMessageRequestParams, CreateMessageResult, SamplingMessage, TextContent, ErrorData,
-    ElicitResult, ElicitRequestFormParams, ElicitRequestURLParams, LoggingMessageNotificationParams,
+    CreateMessageRequestParams,
+    CreateMessageResult,
+    ElicitRequestFormParams,
+    ElicitRequestURLParams,
+    ErrorData,
+    LoggingMessageNotificationParams,
+    SamplingMessage,
+    TextContent,
 )
+
 from heya.mcp_callbacks import (
-    sampling_messages_to_llm, build_sampling_callback,
-    coerce_value, build_elicitation_callback, build_logging_callback,
+    build_elicitation_callback,
+    build_logging_callback,
+    build_sampling_callback,
+    coerce_value,
+    sampling_messages_to_llm,
 )
 
 

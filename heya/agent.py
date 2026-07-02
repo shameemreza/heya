@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import math
 import subprocess
+import threading
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import TimeoutError as FuturesTimeout
@@ -18,32 +19,47 @@ from pathlib import Path
 from typing import Any
 
 from . import review
-from .hooks import fire_hooks, hook_payload
-
 from .agent_defs import agent_roles_note
 from .approval import ApprovalPolicy, UiApprover, unified_file_diff
-from .reproduction import (
-    parse_issue_context, repro_workdir, gate_verdict, render_report, render_comment,
-)
-from .triage import gate_priority, render_triage_report, render_triage_comment, render_pick_list
-from .diagnosis import (
-    run_diagnosis, classify_log, extract_trace_frames,
-    is_insufficient, escalation_should_stop,
-)
-from .remediation import (
-    verify_remediation, check_fix_safety, gate_fix_verdict, render_solution,
-    repair_should_stop,
-)
 from .context import build_summarizer, compact
+from .diagnosis import (
+    classify_log,
+    escalation_should_stop,
+    extract_trace_frames,
+    is_insufficient,
+    run_diagnosis,
+)
+from .hooks import fire_hooks, hook_payload
 from .memory import build_memory_block
+from .remediation import (
+    check_fix_safety,
+    gate_fix_verdict,
+    render_solution,
+    repair_should_stop,
+    verify_remediation,
+)
+from .reproduction import (
+    gate_verdict,
+    parse_issue_context,
+    render_comment,
+    render_report,
+    repro_workdir,
+)
 from .skills import build_skills_block, render_skill
 from .subagents import (
-    LabeledStream, LockedSink, PARALLEL_SAFE_TOOLS, build_child_system_prompt,
-    format_parallel_report, parallel_label, resolve_role, ROLES,
+    PARALLEL_SAFE_TOOLS,
+    ROLES,
+    LabeledStream,
+    LockedSink,
+    build_child_system_prompt,
+    format_parallel_report,
+    parallel_label,
+    resolve_role,
 )
 from .text import estimate_messages_tokens
 from .tools import build_tool_schemas, describe_call, dispatch_tool
 from .tools_files import resolve_in_allowlist
+from .triage import gate_priority, render_pick_list, render_triage_comment, render_triage_report
 
 
 class _AutoApprove:
@@ -551,8 +567,7 @@ class Agent:
 
     def _make_background_child(self, entry, role_name, instructions, on_text):
         from .process import ProcessRegistry
-        from .subagents import (PARALLEL_SAFE_TOOLS, ROLES, LabeledStream,
-                                build_child_system_prompt)
+        from .subagents import PARALLEL_SAFE_TOOLS, ROLES, LabeledStream, build_child_system_prompt
 
         writing = entry.write_scope is not None or entry.allow_commands
         if writing:

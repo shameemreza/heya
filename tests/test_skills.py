@@ -1,8 +1,13 @@
 from pathlib import Path
 
 from heya.skills import (
-    SkillItem, parse_skill_frontmatter, collect_skills, build_skills_block,
-    render_skill, translate_allowed_tools, collect_commands,
+    SkillItem,
+    build_skills_block,
+    collect_commands,
+    collect_skills,
+    parse_skill_frontmatter,
+    render_skill,
+    translate_allowed_tools,
 )
 
 
@@ -75,9 +80,9 @@ def test_build_skills_block_lists_and_bounds():
 
 
 def test_render_skill_substitutes(tmp_path):
-    sd = _write_skill(tmp_path, "greet",
-                      "name: greet\ndescription: greet",
-                      "Hello $ARGUMENTS from ${CLAUDE_SKILL_DIR}. First=$0 Second=$1")
+    _write_skill(tmp_path, "greet",
+                 "name: greet\ndescription: greet",
+                 "Hello $ARGUMENTS from ${CLAUDE_SKILL_DIR}. First=$0 Second=$1")
     skills = collect_skills([tmp_path])
     out = render_skill(skills["greet"], "world there")
     assert "Hello world there from" in out

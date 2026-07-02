@@ -12,17 +12,25 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .memory import MEMORY_TYPES
+from .netsafety import BlockedHostError, check_host
 from .remediation import FIX_KINDS
 from .reproduction import VERDICTS
-from .triage import PRIORITIES
 from .subagents import ROLES as _ROLES
 from .text import truncate_output
-from .tools_files import ToolError, read_file, resolve_in_allowlist, run_command, search_files, list_files, write_file
+from .tools_files import (
+    ToolError,
+    list_files,
+    read_file,
+    resolve_in_allowlist,
+    run_command,
+    search_files,
+    write_file,
+)
 from .tools_guidance import read_guidance as _read_guidance
-from .tools_mcp import MCP_PREFIX, build_reverse_map, mcp_tool_name, parse_mcp_name, _MAX_DESC
-from .netsafety import BlockedHostError, check_host
+from .tools_mcp import _MAX_DESC, MCP_PREFIX, build_reverse_map, mcp_tool_name, parse_mcp_name
 from .tools_web import web_fetch, web_search
 from .tools_wp import read_log, run_wp_cli
+from .triage import PRIORITIES
 
 _MCP_RESOURCE_SCHEMAS = [
     {"type": "function", "function": {
@@ -809,14 +817,14 @@ def dispatch_tool(
                 args.get("write_scope"), args.get("allow_commands", False)))
         if name in ("check_agent", "collect_agent", "cancel_agent"):
             if background_registry is None:
-                return f"Error: background agents are not available here."
+                return "Error: background agents are not available here."
             method = {"check_agent": background_registry.poll,
                       "collect_agent": background_registry.collect,
                       "cancel_agent": background_registry.cancel}[name]
             return truncate_output(method(args["id"]))
         if name in ("check_agents", "list_agents"):
             if background_registry is None:
-                return f"Error: background agents are not available here."
+                return "Error: background agents are not available here."
             rows = background_registry.summaries()
             if not rows:
                 return "No background agents."

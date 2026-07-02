@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import ipaddress
 import socket
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 

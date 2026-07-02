@@ -3,8 +3,8 @@ import sys
 
 import pytest
 
-from heya.main import build_parser, run_cli
 import heya.main as main_mod
+from heya.main import build_parser, run_cli
 
 
 class FakeAgent:
@@ -194,9 +194,9 @@ def test_fresh_install_launches_wizard(tmp_path, monkeypatch, capsys):
 
     agent = FakeAgent()
     # no task, fresh config, auto_init on -> wizard runs, then REPL reads EOF
-    code = run_cli(build_parser().parse_args([]),
-                   make_agent=lambda args: agent,
-                   stdin=io.StringIO(""), init_fn=fake_init, auto_init=True)
+    run_cli(build_parser().parse_args([]),
+            make_agent=lambda args: agent,
+            stdin=io.StringIO(""), init_fn=fake_init, auto_init=True)
     assert called["n"] == 1
 
 
@@ -487,6 +487,7 @@ def test_build_wp_connector_from_config_and_credential(tmp_path):
 
 def test_wp_connect_command_dispatches(tmp_path):
     import argparse
+
     from heya.main import run_cli
     called = {"n": 0}
     def fake(stream=None):

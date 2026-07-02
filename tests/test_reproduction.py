@@ -1,10 +1,11 @@
-from pathlib import Path
 
-import pytest
 
 from heya.reproduction import (
-    VERDICTS, IssueContext, parse_issue_context, repro_workdir,
-    gate_verdict, render_report, render_comment,
+    gate_verdict,
+    parse_issue_context,
+    render_comment,
+    render_report,
+    repro_workdir,
 )
 
 

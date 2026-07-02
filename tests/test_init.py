@@ -1,8 +1,8 @@
 import io
 import tomllib
 
-from heya.init import run_init
 from heya.credentials import load_key
+from heya.init import run_init
 
 
 def _run(answers, **kw):

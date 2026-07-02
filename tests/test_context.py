@@ -1,4 +1,4 @@
-from heya.context import group_messages, compact, build_summarizer, SUMMARY_MARKER
+from heya.context import SUMMARY_MARKER, build_summarizer, compact, group_messages
 
 
 def _no_orphans(messages):

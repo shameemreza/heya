@@ -1,7 +1,14 @@
 from heya.diagnosis import (
-    ISSUE_CLASSES, classify_log, extract_trace_frames, Hypothesis,
-    parse_hypotheses, diagnosis_confirmed, Diagnosis, render_diagnosis,
-    synthesize_diagnosis, DIAGNOSIS_LENSES, HYPOTHESIS_PROMPT, VERIFY_HYPOTHESIS_PROMPT, run_diagnosis,
+    DIAGNOSIS_LENSES,
+    Diagnosis,
+    Hypothesis,
+    classify_log,
+    diagnosis_confirmed,
+    extract_trace_frames,
+    parse_hypotheses,
+    render_diagnosis,
+    run_diagnosis,
+    synthesize_diagnosis,
 )
 
 

@@ -1,8 +1,11 @@
 # tests/test_netsafety.py
 import socket
-import pytest
+
 import httpx
-from heya.netsafety import check_host, is_blocked_ip, BlockedHostError, guarded_get
+import pytest
+
+from heya.netsafety import BlockedHostError, check_host, guarded_get, is_blocked_ip
+
 
 def _resolver_for(ip):
     def r(host, *a, **k):

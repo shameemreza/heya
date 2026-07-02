@@ -4,8 +4,8 @@ import sys
 import pytest
 
 import heya.tools_wp as wp_mod
-from heya.tools_wp import read_log, resolve_wp_root
 from heya.tools_files import ToolError
+from heya.tools_wp import read_log, resolve_wp_root
 
 
 def _make_site(tmp_path, log_lines):
@@ -184,8 +184,9 @@ def test_wp_cli_info_live(tmp_path):
 
 @pytest.mark.integration
 def test_process_registry_real_background(tmp_path):
-    from heya.process import ProcessRegistry
     import time
+
+    from heya.process import ProcessRegistry
     reg = ProcessRegistry()
     try:
         mp = reg.start(f'{sys.executable} -u -c "import time; print(\'up\'); time.sleep(30)"', cwd=tmp_path)

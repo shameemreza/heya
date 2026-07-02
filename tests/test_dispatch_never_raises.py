@@ -1,7 +1,10 @@
 from pathlib import Path
+
 import pytest
+
 from heya import tools
-from heya.tools_files import read_file, ToolError
+from heya.tools_files import ToolError, read_file
+
 
 def test_read_file_permission_error_becomes_toolerror(tmp_path, monkeypatch):
     p = tmp_path / "f.txt"

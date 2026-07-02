@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import time
-
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -17,7 +16,6 @@ import httpx
 
 from .config import Profile
 from .text import estimate_messages_tokens, estimate_tokens
-
 
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 

@@ -1,9 +1,13 @@
 import json
-from pathlib import Path
 
 from heya.hooks import (
-    HookSpec, HookOutcome, parse_hooks_config, collect_hooks, tool_matches,
-    hook_payload, run_command_hook, fire_hooks,
+    HookSpec,
+    collect_hooks,
+    fire_hooks,
+    hook_payload,
+    parse_hooks_config,
+    run_command_hook,
+    tool_matches,
 )
 
 _BLOCK_CFG = {"hooks": {"PreToolUse": [

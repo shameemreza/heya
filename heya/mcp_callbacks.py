@@ -55,7 +55,7 @@ def coerce_value(raw: str, prop_schema: dict):
 
 
 def build_elicitation_callback(prompter, server_name):
-    from mcp.types import ElicitResult, ElicitRequestURLParams
+    from mcp.types import ElicitRequestURLParams, ElicitResult
 
     async def _callback(context, params):
         loop = asyncio.get_running_loop()
@@ -118,7 +118,7 @@ class CallbackDeps:
 
 
 def build_sampling_callback(llm_client, approver, server_name, *, on_note=None):
-    from mcp.types import CreateMessageResult, TextContent, ErrorData
+    from mcp.types import CreateMessageResult, ErrorData, TextContent
 
     async def _callback(context, params):
         loop = asyncio.get_running_loop()
