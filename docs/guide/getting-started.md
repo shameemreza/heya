@@ -32,11 +32,16 @@ It walks you through a local or cloud model and writes the config for you. A
 pasted cloud key goes into a locked credentials file, never into the config.
 
 If you would rather configure by hand, Heya talks to any OpenAI-compatible chat
-endpoint. Copy the example config:
+endpoint. Create `~/.config/heya/config.toml` with a `[profiles.<name>]` block
+(the repo's `config.example.toml` is a full template, but it is not bundled in the
+installed package):
 
-```bash
-mkdir -p ~/.config/heya
-cp config.example.toml ~/.config/heya/config.toml
+```toml
+[profiles.cloud]
+base_url = "https://openrouter.ai/api/v1"
+model = "anthropic/claude-sonnet-4-6"
+provider_type = "api_key"
+api_key_env = "OPENROUTER_API_KEY"
 ```
 
 ### A local model

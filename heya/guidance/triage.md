@@ -1,3 +1,8 @@
+---
+name: triage
+description: Full triage workflow from intake to a paste-ready comment. Handles single issues and collections, and applies reproduction, diagnosis, and remediation in sequence.
+---
+
 # Triage workflow
 
 Use this to take a bug report or a backlog from intake to a finished, paste-ready

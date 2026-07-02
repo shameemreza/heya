@@ -8,10 +8,10 @@ visible.
 
 Reads run on their own. Anything that changes the world asks first.
 
-- Runs on its own: `read_file`, `search_files`, `read_guidance`, `read_log`,
-  `web_search`, `web_fetch`, browser reads, memory reads.
-- Asks first: `write_file`, `run_command`, `run_wp_cli`, and browser clicks and
-  typing.
+- Runs on its own: `read_file`, `search_files`, `list_files`, `read_guidance`,
+  `read_log`, `web_search`, `web_fetch`, browser reads, memory reads.
+- Asks first: `write_file`, `run_command`, `run_wp_cli`, `wp_playground`,
+  `kill_command`, and browser clicks and typing.
 
 Approve a prompted action once, approve it for the session, or decline it. With
 `--auto-approve`, the prompted tools run without asking. Use that only in a
@@ -57,8 +57,18 @@ it, not your conversation. Parallel sub-agents are read-only by design: they get
 the read-only tool surface and the shared browser and WordPress sessions are
 withheld, so several can run at once with no races.
 
+## Web safety
+
+`web_fetch` and `browser_navigate` reach any real site. By default they block
+link-local addresses (including `169.254.169.254`, where cloud instance-metadata
+lives). Loopback and private network addresses are allowed, so local dev sites
+work fine. You can turn this off in `[web] block_metadata = false`, but there is
+rarely a reason to.
+
 ## Privacy
 
 Heya is local-first. With a local model, nothing leaves your machine. With a
-cloud model, only what you send to that model's API leaves. API keys are read
-from environment variables you name in config; Heya never stores a key.
+cloud model, only what you send to that model's API leaves. Heya resolves a key
+from the environment variable you name in `api_key_env` first; if that is unset,
+it reads from the locked credentials file (`~/.config/heya/credentials.toml`,
+mode 0600) that `heya init` writes. A key is never stored in `config.toml`.
