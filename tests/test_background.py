@@ -1,6 +1,7 @@
 import threading
 import time
 
+from heya.agent import Agent
 from heya.background import BackgroundAgent, BackgroundRegistry
 
 
@@ -151,3 +152,40 @@ def test_owner_may_write_inside_its_scope_only(tmp_path):
     outside = reg.check_write(tmp_path / "elsewhere.txt", entry.id)
     assert outside and "only write inside" in outside
     block.set()
+
+
+def test_command_grant_text_warns_full_shell(tmp_path):
+    """When allow_commands=True, the approval detail must state the shell is unconfined."""
+    captured = []
+
+    class RecordingApprover:
+        def check(self, name, detail, label=""):
+            return True
+
+        def confirm(self, detail, label=""):
+            captured.append(detail)
+            return False  # decline so no background thread starts
+
+    reg = BackgroundRegistry()
+    agent = Agent(
+        object(),  # client is never called: approval declines before any thread starts
+        allowed_roots=[tmp_path],
+        cwd=tmp_path,
+        approval=RecordingApprover(),
+        self_review=False,
+        background_registry=reg,
+    )
+
+    agent._spawn_background_agent(
+        task="build plugin",
+        role=None,
+        instructions=None,
+        write_scope=None,
+        allow_commands=True,
+    )
+
+    assert captured, "approval.confirm was not called"
+    text = captured[0]
+    assert "full shell" in text or "not confined" in text, (
+        f"grant text does not warn about unconfined shell: {text!r}"
+    )

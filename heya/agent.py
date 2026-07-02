@@ -518,9 +518,13 @@ class Agent:
         if self.background_registry is None:
             return "Error: background agents are not available here."
         if (write_scope or allow_commands) and self.approval is not None:
+            if allow_commands:
+                cmd_part = ("run commands as a full shell"
+                            " (not confined to the leased folder or the allow-list)")
+            else:
+                cmd_part = "not run commands"
             grant = (f"launch a background agent that may write in "
-                     f"{write_scope or '(no folder)'} and "
-                     f"{'run commands' if allow_commands else 'not run commands'}: "
+                     f"{write_scope or '(no folder)'} and {cmd_part}: "
                      f"{task[:80]}")
             if not self.approval.confirm(grant, label=self.label):
                 return f"Declined by user: {grant}"

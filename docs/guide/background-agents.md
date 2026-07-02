@@ -19,6 +19,10 @@ writes there until it finishes, and two agents building two different plugins
 never collide. You authorize a writing or command-running agent once, when it
 starts; after that it runs on its own within that grant.
 
+A command grant runs a full shell with your user's permissions and is not
+confined to the leased folder or the command allow-list, so only grant it for
+tasks you trust fully.
+
 ## Controlling them
 
 - See what is running with a status list.
