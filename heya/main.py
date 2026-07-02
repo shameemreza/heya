@@ -367,6 +367,7 @@ def _default_make_agent(args: argparse.Namespace, *, ui: "UI | None" = None) -> 
                      if name == "write_file" else None),
         wp_connector=wp_connector,
         web_block_metadata=web_cfg.block_metadata,
+        status_cb=getattr(ui, "status", None),
     )
 
 

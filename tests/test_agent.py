@@ -1627,3 +1627,29 @@ def test_wp_tools_absent_without_connector(tmp_path):
     agent.run("hi")
     names = {t["function"]["name"] for t in (agent.client.last_tools or [])}
     assert "wp_abilities" not in names
+
+
+def test_status_cb_wraps_tool_dispatch(tmp_path):
+    from contextlib import contextmanager
+
+    (tmp_path / "a.txt").write_text("hello")
+    events = []
+
+    @contextmanager
+    def recording_status(label):
+        events.append(("enter", label))
+        yield
+        events.append(("exit", label))
+
+    scripted = [
+        ChatResult(content=None, tool_calls=[ToolCall(id="1", name="read_file",
+            arguments=f'{{"path": "{tmp_path / "a.txt"}"}}')]),
+        ChatResult(content="done"),
+    ]
+    agent, _ = make_agent(tmp_path, scripted, status_cb=recording_status)
+    agent.run("read the file")
+
+    assert len(events) == 2
+    assert events[0][0] == "enter"
+    assert events[1][0] == "exit"
+    assert events[0][1] == events[1][1]  # same label for enter and exit

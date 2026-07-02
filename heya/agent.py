@@ -13,6 +13,7 @@ import subprocess
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import TimeoutError as FuturesTimeout
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -133,6 +134,7 @@ class Agent:
         background_registry=None,
         wp_connector=None,
         web_block_metadata: bool = True,
+        status_cb=None,
     ) -> None:
         self.client = client
         self.weak_client = weak_client if weak_client is not None else client
@@ -203,6 +205,7 @@ class Agent:
         self.background_registry = background_registry
         self.wp_connector = wp_connector
         self.web_block_metadata = web_block_metadata
+        self._status_cb = status_cb
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": system_content}]
         self._mutated = False
 
@@ -384,36 +387,38 @@ class Agent:
                 self._on_tool(label + detail)
             except Exception:
                 pass  # the trace is best-effort
-        output = dispatch_tool(
-            call.name,
-            call.arguments,
-            allowed_roots=self.allowed_roots,
-            cwd=self.cwd,
-            timeout=self.command_timeout,
-            guidance_sources=self.guidance_sources,
-            search_provider=self.search_provider,
-            browser_session=self.browser_session,
-            process_registry=self.process_registry,
-            wp_default_root=self.wp_default_root,
-            playground_session=self.playground_session,
-            mcp_runtime=self.mcp_runtime,
-            spawn_fn=self._spawn_agent,
-            spawn_agents_fn=self._spawn_agents,
-            memory_store=self.memory_store,
-            review_fn=self._review_changes,
-            start_repro_fn=self._start_reproduction,
-            repro_verdict_fn=self._record_repro_verdict,
-            diagnose_fn=self._diagnose_issue,
-            check_remediation_fn=self._check_remediation,
-            fix_verdict_fn=self._record_fix_verdict,
-            skill_fn=self._skill,
-            triage_report_fn=self._triage_report,
-            pick_list_fn=self._record_pick_list,
-            spawn_background_fn=self._spawn_background_agent,
-            background_registry=self.background_registry,
-            wp_connector=self.wp_connector,
-            web_block_metadata=self.web_block_metadata,
-        )
+        ctx = self._status_cb(detail) if self._status_cb is not None else nullcontext()
+        with ctx:
+            output = dispatch_tool(
+                call.name,
+                call.arguments,
+                allowed_roots=self.allowed_roots,
+                cwd=self.cwd,
+                timeout=self.command_timeout,
+                guidance_sources=self.guidance_sources,
+                search_provider=self.search_provider,
+                browser_session=self.browser_session,
+                process_registry=self.process_registry,
+                wp_default_root=self.wp_default_root,
+                playground_session=self.playground_session,
+                mcp_runtime=self.mcp_runtime,
+                spawn_fn=self._spawn_agent,
+                spawn_agents_fn=self._spawn_agents,
+                memory_store=self.memory_store,
+                review_fn=self._review_changes,
+                start_repro_fn=self._start_reproduction,
+                repro_verdict_fn=self._record_repro_verdict,
+                diagnose_fn=self._diagnose_issue,
+                check_remediation_fn=self._check_remediation,
+                fix_verdict_fn=self._record_fix_verdict,
+                skill_fn=self._skill,
+                triage_report_fn=self._triage_report,
+                pick_list_fn=self._record_pick_list,
+                spawn_background_fn=self._spawn_background_agent,
+                background_registry=self.background_registry,
+                wp_connector=self.wp_connector,
+                web_block_metadata=self.web_block_metadata,
+            )
         self._fire("PostToolUse", tool_name=call.name, tool_input=call.arguments, tool_output=output)
         mutating = call.name in ("write_file", "run_command", "run_wp_cli")
         if mutating and not output.startswith(("Error", "Started background process", "Declined")):
@@ -486,6 +491,7 @@ class Agent:
             identity=self.identity,
             on_tool=self._on_tool,
             web_block_metadata=self.web_block_metadata,
+            status_cb=None,
         )
         child._labeled_stream = stream
         return child
@@ -615,6 +621,7 @@ class Agent:
             hooks=self.hooks,
             hooks_enabled=self.hooks_enabled,
             web_block_metadata=self.web_block_metadata,
+            status_cb=None,
         )
         child._labeled_stream = stream
         return child
