@@ -874,6 +874,10 @@ def dispatch_tool(
         return f"Error: {exc}"
     except KeyError as exc:
         return f"Error: missing required argument {exc} for tool {name!r}."
+    except OSError as exc:
+        return f"Error: tool {name!r} failed: {exc}"
+    except Exception as exc:  # noqa: BLE001 - the tool boundary must never raise into the loop
+        return f"Error: tool {name!r} failed: {exc}"
 
 
 def describe_call(name: str, arguments: str) -> str:

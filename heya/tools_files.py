@@ -41,6 +41,8 @@ def read_file(path: Path | str, *, allowed_roots: Sequence[Path]) -> str:
         raise ToolError(f"No such file: {resolved}") from exc
     except IsADirectoryError as exc:
         raise ToolError(f"Is a directory, not a file: {resolved}") from exc
+    except PermissionError as exc:
+        raise ToolError(f"Permission denied: {resolved}") from exc
 
 
 _NOISE_DIRS = {".git", "node_modules", "vendor", ".venv", "__pycache__",
