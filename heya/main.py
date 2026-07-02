@@ -13,7 +13,7 @@ try:
     from importlib.metadata import version as _pkg_version
     VERSION = _pkg_version("heya-agent")
 except Exception:
-    VERSION = "0.0.2"
+    VERSION = "0.0.3"
 
 import uuid
 
