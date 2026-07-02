@@ -457,7 +457,7 @@ def test_schemas_include_read_log():
 def test_dispatch_run_wp_cli_routes(tmp_path, monkeypatch):
     import heya.tools_wp as wp_mod
     monkeypatch.setattr(wp_mod.shutil, "which", lambda _: "/usr/bin/wp")
-    monkeypatch.setattr(wp_mod, "run_command", lambda cmd, **k: __import__("heya.tools_files", fromlist=["CommandResult"]).CommandResult(stdout=cmd, stderr="", exit_code=0))
+    monkeypatch.setattr(wp_mod, "run_command", lambda cmd, **k: __import__("heya.tools_files", fromlist=["CommandResult"]).CommandResult(stdout=" ".join(cmd) if isinstance(cmd, list) else cmd, stderr="", exit_code=0))
     out = dispatch_tool(
         "run_wp_cli", json.dumps({"args": "plugin list", "path": str(tmp_path)}),
         allowed_roots=[tmp_path], cwd=tmp_path, timeout=10,

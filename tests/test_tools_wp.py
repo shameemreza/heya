@@ -55,7 +55,8 @@ def test_run_wp_cli_injects_path(tmp_path, monkeypatch):
     monkeypatch.setattr(wp_mod, "run_command", fake_run_command)
     monkeypatch.setattr(wp_mod.shutil, "which", lambda _: "/usr/bin/wp")
     out = wp_mod.run_wp_cli("plugin list", str(tmp_path), allowed_roots=[tmp_path], cwd=tmp_path, timeout=10)
-    assert "--path=" in seen["cmd"] and "plugin list" in seen["cmd"]
+    assert any(tok.startswith("--path=") for tok in seen["cmd"])
+    assert "plugin" in seen["cmd"] and "list" in seen["cmd"]
     assert "ok" in out
 
 
@@ -70,7 +71,7 @@ def test_run_wp_cli_respects_user_path(tmp_path, monkeypatch):
     monkeypatch.setattr(wp_mod, "run_command", fake_run_command)
     monkeypatch.setattr(wp_mod.shutil, "which", lambda _: "/usr/bin/wp")
     wp_mod.run_wp_cli("plugin list --path=/custom", str(tmp_path), allowed_roots=[tmp_path], cwd=tmp_path, timeout=10)
-    assert seen["cmd"].count("--path=") == 1  # did not double-inject
+    assert sum(1 for tok in seen["cmd"] if tok.startswith("--path=")) == 1  # did not double-inject
 
 
 def test_run_wp_cli_missing_binary_hint(tmp_path, monkeypatch):
