@@ -7,9 +7,31 @@ without stdin and the CLI supplies a real prompt.
 from __future__ import annotations
 
 import difflib
+import shlex
 import threading
 from collections.abc import Callable
 from pathlib import Path
+
+_SHELL_METACHARS = (";", "&&", "||", "|", "`", "$(", ">", "<", "&", "\n")
+_COMMAND_TOOLS = frozenset({"run_command", "run_wp_cli"})
+
+
+def _has_metachars(cmd: str) -> bool:
+    return any(m in cmd for m in _SHELL_METACHARS)
+
+
+def _argv_prefix_match(command: str, prefix: str) -> bool:
+    """Return True iff *command* has no shell metacharacters and its argv tokens
+    start with *prefix*'s tokens."""
+    if _has_metachars(command):
+        return False
+    try:
+        cmd_tokens = shlex.split(command)
+        pre_tokens = shlex.split(prefix)
+    except ValueError:
+        return False
+    return bool(pre_tokens) and cmd_tokens[: len(pre_tokens)] == pre_tokens
+
 
 GATED_TOOLS = frozenset({
     "write_file", "run_command", "browser_click", "browser_type",
@@ -95,19 +117,33 @@ class ApprovalPolicy:
         is_mcp = name.startswith("mcp__")
         if name not in GATED_TOOLS and not is_mcp:
             return True
-        if self.auto_approve or name in self._always:
-            return True
         command = self._command_of(detail)
-        candidates = (command, name) if is_mcp else (command,)
-        if any(c.startswith(prefix) for c in candidates for prefix in self._allow if prefix):
+        # Command tools use a per-command key so "always" is scoped to a specific
+        # argv, not the tool name. Non-command tools keep tool-level "always".
+        always_key = f"{name}:{command}" if name in _COMMAND_TOOLS else name
+        if self.auto_approve or always_key in self._always or name in self._always:
+            return True
+        if is_mcp:
+            if any(
+                c.startswith(prefix)
+                for c in (command, name)
+                for prefix in self._allow
+                if prefix
+            ):
+                return True
+        elif name in _COMMAND_TOOLS:
+            if any(_argv_prefix_match(command, prefix) for prefix in self._allow if prefix):
+                return True
+        elif any(command.startswith(prefix) for prefix in self._allow if prefix):
             return True
         display = f"[{label}] {detail}" if label else detail
         with self._lock:
-            if name in self._always:  # double-checked: another thread may have set it
+            # Double-checked: another thread may have set the key while we waited.
+            if always_key in self._always or name in self._always:
                 return True
             decision = self._approver(name, display)
             if decision == "always":
-                self._always.add(name)
+                self._always.add(always_key)
                 return True
             return decision == "yes"
 
