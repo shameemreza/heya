@@ -62,8 +62,8 @@ withheld, so several can run at once with no races.
 `web_fetch` and `browser_navigate` reach any real site. By default they block
 link-local addresses (including `169.254.169.254`, where cloud instance-metadata
 lives). Loopback and private network addresses are allowed, so local dev sites
-work fine. You can turn this off in `[web] block_metadata = false`, but there is
-rarely a reason to.
+work fine. You can turn this off by setting `block_metadata = false` under
+`[web]`, but there is rarely a reason to.
 
 ## Privacy
 
