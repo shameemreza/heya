@@ -20,6 +20,7 @@ from .text import truncate_output
 from .tools_files import ToolError, read_file, resolve_in_allowlist, run_command, search_files, list_files, write_file
 from .tools_guidance import read_guidance as _read_guidance
 from .tools_mcp import MCP_PREFIX, build_reverse_map, mcp_tool_name, parse_mcp_name, _MAX_DESC
+from .netsafety import BlockedHostError, check_host
 from .tools_web import web_fetch, web_search
 from .tools_wp import read_log, run_wp_cli
 
@@ -662,6 +663,7 @@ def dispatch_tool(
     spawn_background_fn=None,
     background_registry=None,
     wp_connector=None,
+    web_block_metadata: bool = True,
 ) -> str:
     """Run one model tool-call. Returns a string result (errors included)."""
     try:
@@ -745,7 +747,7 @@ def dispatch_tool(
             max_results = max(1, max_results)  # uniform across providers; never zero/negative
             return web_search(args["query"], provider=search_provider, max_results=max_results)
         if name == "web_fetch":
-            return web_fetch(args["url"], timeout=timeout)
+            return web_fetch(args["url"], timeout=timeout, block_metadata=web_block_metadata)
         if name in (
             "browser_navigate", "browser_snapshot", "browser_click",
             "browser_type", "browser_screenshot", "browser_evidence",
@@ -753,6 +755,12 @@ def dispatch_tool(
             if browser_session is None:
                 raise ToolError("the browser is not available in this context")
             if name == "browser_navigate":
+                if web_block_metadata:
+                    from urllib.parse import urlparse as _urlparse
+                    try:
+                        check_host(_urlparse(args["url"]).hostname or "")
+                    except BlockedHostError as exc:
+                        raise ToolError(str(exc)) from exc
                 return browser_session.navigate(args["url"])
             if name == "browser_snapshot":
                 return browser_session.snapshot()

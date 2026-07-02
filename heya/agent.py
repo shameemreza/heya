@@ -131,6 +131,7 @@ class Agent:
         write_guard=None,
         background_registry=None,
         wp_connector=None,
+        web_block_metadata: bool = True,
     ) -> None:
         self.client = client
         self.weak_client = weak_client if weak_client is not None else client
@@ -200,6 +201,7 @@ class Agent:
         self.write_guard = write_guard
         self.background_registry = background_registry
         self.wp_connector = wp_connector
+        self.web_block_metadata = web_block_metadata
         self.messages: list[dict[str, Any]] = [{"role": "system", "content": system_content}]
         self._mutated = False
 
@@ -409,6 +411,7 @@ class Agent:
             spawn_background_fn=self._spawn_background_agent,
             background_registry=self.background_registry,
             wp_connector=self.wp_connector,
+            web_block_metadata=self.web_block_metadata,
         )
         self._fire("PostToolUse", tool_name=call.name, tool_input=call.arguments, tool_output=output)
         mutating = call.name in ("write_file", "run_command", "run_wp_cli")
@@ -481,6 +484,7 @@ class Agent:
             agent_roles=self.agent_roles,
             identity=self.identity,
             on_tool=self._on_tool,
+            web_block_metadata=self.web_block_metadata,
         )
         child._labeled_stream = stream
         return child
@@ -605,6 +609,7 @@ class Agent:
             session_id=self.session_id,
             hooks=self.hooks,
             hooks_enabled=self.hooks_enabled,
+            web_block_metadata=self.web_block_metadata,
         )
         child._labeled_stream = stream
         return child

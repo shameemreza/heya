@@ -486,6 +486,26 @@ def load_search_config(config_path: Path | None = None) -> SearchConfig:
 
 
 @dataclass(frozen=True)
+class WebConfig:
+    block_metadata: bool = True
+
+
+def load_web_config(config_path: Path | None = None) -> WebConfig:
+    """Outbound web safety settings.
+
+    User file shape:
+        [web]
+        block_metadata = true   # block cloud-metadata / link-local addresses (default true)
+    """
+    path = config_path or default_config_path()
+    if not path.exists():
+        return WebConfig()
+    data = tomllib.loads(path.read_text())
+    section = data.get("web") or {}
+    return WebConfig(block_metadata=bool(section.get("block_metadata", True)))
+
+
+@dataclass(frozen=True)
 class ContextConfig:
     threshold: float = 0.85
     reserve_tokens: int = 2048

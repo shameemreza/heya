@@ -302,7 +302,7 @@ def test_dispatch_web_search_clamps_max_results_to_at_least_one(tmp_path):
 
 
 def test_dispatch_web_fetch_routes(tmp_path, monkeypatch):
-    monkeypatch.setattr("heya.tools.web_fetch", lambda url, *, timeout: f"FETCHED {url}")
+    monkeypatch.setattr("heya.tools.web_fetch", lambda url, *, timeout, block_metadata=True: f"FETCHED {url}")
     out = dispatch_tool(
         "web_fetch", json.dumps({"url": "https://example.com"}),
         allowed_roots=[tmp_path], cwd=tmp_path, timeout=10,
@@ -347,7 +347,8 @@ def test_schemas_include_browser_tools():
 def test_dispatch_browser_navigate(tmp_path):
     s = _FakeSession()
     out = dispatch_tool("browser_navigate", json.dumps({"url": "https://x"}),
-                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, browser_session=s)
+                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, browser_session=s,
+                        web_block_metadata=False)
     assert out == "NAV https://x"
 
 

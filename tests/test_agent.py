@@ -240,7 +240,7 @@ def test_agent_threads_browser_session(tmp_path):
     client = FakeClient(scripted)
     session = Session()
     agent = Agent(client, allowed_roots=[tmp_path], cwd=tmp_path, approval=_AllowAll(),
-                  self_review=False, browser_session=session)
+                  self_review=False, browser_session=session, web_block_metadata=False)
     answer = agent.run("open x")
     assert answer == "done"
     assert any(m["role"] == "tool" and "navigated https://x" in m["content"] for m in client.calls[1])

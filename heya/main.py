@@ -25,7 +25,7 @@ from .config import (
     load_command_paths, load_agent_paths, load_identity,
     resolve_api_key, load_default_profile, default_config_path, model_supports_vision,
     load_project_instructions_enabled, load_agent_config, load_update_config,
-    load_wordpress_config,
+    load_wordpress_config, load_web_config,
 )
 from .credentials import load_key
 from .wpsite import build_wp_connector
@@ -266,6 +266,7 @@ def _default_make_agent(args: argparse.Namespace, *, ui: "UI | None" = None) -> 
     roots = list(load_allowed_roots()) + [Path(p).expanduser().resolve() for p in args.allow]
     guidance_sources = (BUNDLED_GUIDANCE_DIR, *load_guidance_paths())
     search_provider = build_search_provider(load_search_config())
+    web_cfg = load_web_config()
     browser_session = BrowserSession(headless=load_browser_headless())
     process_registry = ProcessRegistry()
     background_registry = BackgroundRegistry(max_concurrent=load_agent_config().max_background)
@@ -364,6 +365,7 @@ def _default_make_agent(args: argparse.Namespace, *, ui: "UI | None" = None) -> 
                      background_registry.check_write(call_args.get("path", ""), "main")
                      if name == "write_file" else None),
         wp_connector=wp_connector,
+        web_block_metadata=web_cfg.block_metadata,
     )
 
 
