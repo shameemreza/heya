@@ -494,3 +494,71 @@ def test_wp_connect_command_dispatches(tmp_path):
         return 0
     assert run_cli(argparse.Namespace(task=["wp", "connect"]), wp_connect_fn=fake) == 0
     assert called["n"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Task 8 tests: REPL resilience — turn errors, Ctrl+C, no-model guard
+# ---------------------------------------------------------------------------
+
+
+def test_interactive_survives_turn_exception(capsys):
+    """A turn exception must not crash the REPL; the loop continues."""
+    class FailOnceAgent:
+        def __init__(self):
+            self._calls = 0
+            self.messages = []
+        def run(self, text):
+            self._calls += 1
+            if self._calls == 1:
+                raise RuntimeError("connection dropped")
+            return "ok"
+
+    agent = FailOnceAgent()
+    # "first" triggers the exception; "quit" exits cleanly
+    code = run_cli(build_parser().parse_args([]),
+                   make_agent=lambda args: agent,
+                   stdin=io.StringIO("first\nquit\n"))
+    assert code == 0
+    assert agent._calls == 1  # ran once (and raised), then quit without another call
+
+
+def test_oneshot_returns_1_on_exception(capsys):
+    """One-shot mode must return 1 when agent.run raises."""
+    class RaisingAgent:
+        def run(self, text):
+            raise RuntimeError("API error 500")
+
+    code = run_cli(build_parser().parse_args(["hi"]),
+                   make_agent=lambda args: RaisingAgent(),
+                   stdin=io.StringIO(""))
+    assert code == 1
+
+
+def test_interactive_survives_keyboard_interrupt(capsys):
+    """A KeyboardInterrupt during a turn must not crash the REPL."""
+    class KBAgent:
+        def __init__(self):
+            self._calls = 0
+            self.messages = []
+        def run(self, text):
+            self._calls += 1
+            raise KeyboardInterrupt
+
+    agent = KBAgent()
+    code = run_cli(build_parser().parse_args([]),
+                   make_agent=lambda args: agent,
+                   stdin=io.StringIO("first\nquit\n"))
+    assert code == 0
+    assert agent._calls == 1
+
+
+def test_no_model_interactive_returns_without_looping(monkeypatch, capsys):
+    """Interactive mode with a broken model profile must return 1, not enter the loop."""
+    monkeypatch.setattr(main_mod, "check_profile", lambda m: "error: no model configured")
+    agent = _agent_with_profile()
+    # Even though stdin has input, the loop must never start
+    code = run_cli(build_parser().parse_args([]),
+                   make_agent=lambda args: agent,
+                   stdin=io.StringIO("hello\n"))
+    assert code == 1
+    assert agent.prompts == []  # agent.run was never called

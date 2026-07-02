@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import signal
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -436,7 +437,14 @@ def run_cli(
             if status != OK:
                 ui.error(HINT)
                 return 1
-            agent.run(_build_turn_content(" ".join(args.task), agent, ui))
+            try:
+                agent.run(_build_turn_content(" ".join(args.task), agent, ui))
+            except KeyboardInterrupt:
+                ui.error("Interrupted.")
+                return 130
+            except Exception as exc:  # noqa: BLE001 - keep the CLI from crashing on API/tool errors
+                ui.error(f"Error: {exc}")
+                return 1
             sys.stdout.write("\n")
             return 0
 
@@ -457,6 +465,7 @@ def run_cli(
                 pass
         else:
             ui.error(HINT)
+            return 1
 
         profiles = load_profiles()
         sessions_dir = sessions.default_sessions_dir()
@@ -495,7 +504,31 @@ def run_cli(
                                  + ". Use collect_agent to read results.\n")
             except Exception:
                 pass
-            agent.run(_build_turn_content(notes + text, agent, ui))
+            cancel = getattr(agent, "cancel", None)
+
+            def _on_sigint(signum, frame):
+                if cancel is not None:
+                    cancel.set()
+
+            try:
+                prev = signal.signal(signal.SIGINT, _on_sigint)
+                _sigint_installed = True
+            except ValueError:
+                prev = None
+                _sigint_installed = False
+
+            try:
+                agent.run(_build_turn_content(notes + text, agent, ui))
+            except KeyboardInterrupt:
+                ui.error("Interrupted.")
+            except Exception as exc:  # noqa: BLE001 - keep the REPL alive on API/tool errors
+                ui.error(f"Error: {exc}")
+            finally:
+                if _sigint_installed:
+                    signal.signal(signal.SIGINT, prev)
+                if cancel is not None:
+                    cancel.clear()
+
             sys.stdout.write("\n")
             snap = _session_snapshot(agent, profile_name=profile_name,
                                      created=session_created, updated=_now())
