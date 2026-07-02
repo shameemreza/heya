@@ -1,13 +1,19 @@
+[![PyPI version](https://img.shields.io/pypi/v/heya-agent?label=PyPI)](https://pypi.org/project/heya-agent/)
+[![CI](https://img.shields.io/github/actions/workflow/status/shameemreza/heya/ci.yml?branch=main&label=CI)](https://github.com/shameemreza/heya/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/shameemreza/heya)](LICENSE)
+[![Python](https://img.shields.io/pypi/pyversions/heya-agent)](https://pypi.org/project/heya-agent/)
+
 # Heya
 
-Heya is a single, local-first AI agent that runs in your terminal. One model,
-one agent, a toolbox. It reads a request, decides what to do, calls tools, and
-loops until the task is done.
+A local-first, model-agnostic terminal AI agent built for WordPress and WooCommerce support engineers and developers.
 
-The model is a configuration choice, not part of the design. The same loop runs
-against a small local model through Ollama or a frontier cloud model through
-OpenRouter, OpenAI, LM Studio, or anything that speaks the OpenAI chat API. Point
-it at whatever you have. Your prompts and your data stay on your machine.
+**[shameemreza.github.io/heya](https://shameemreza.github.io/heya)** - [docs](https://shameemreza.github.io/heya/docs/getting-started.html)
+
+Heya reads a request, decides what to do, calls tools, and loops until the task
+is done. The model is a configuration choice: it runs against a small local model
+through Ollama, a frontier cloud model through OpenRouter, OpenAI, LM Studio, or
+anything that speaks the OpenAI chat API. Your prompts and your data stay on your
+machine.
 
 It is built in plain Python with no agent framework, so you can see exactly what
 every part does.
@@ -31,13 +37,19 @@ what you already have.
   triage comment with a verdict, impact, suggested priority, evidence, and a
   one-click repro link. Every stage is evidence-gated: no evidence, no verdict.
   It can also rank a backlog into a pick-list so you know what to work on.
+- **Connect a dev or staging WordPress site.** `heya wp connect` links a
+  development or staging site and lets Heya act on it through the official
+  Abilities API: query orders, update status, manage products, all under the
+  site's own permission checks. Writes go behind the approval prompt. You can
+  also make your own plugin AI-callable.
+- **Background agents.** Launch sub-agents that run while you keep working, for
+  parallel audits, research, or building plugins and themes. Each agent gets a
+  folder lease it holds exclusively, so concurrent agents never collide. Authorize
+  once at launch.
 - **Hosts your Claude ecosystem.** Discovers your `~/.claude` skills and plugins
   and makes them available through a `Skill` tool, runs lifecycle hooks (off by
   default), and turns Claude sub-agent and command definitions into Heya roles
   and commands.
-- **Sub-agents.** Delegate a self-contained task to a fresh, context-isolated
-  child agent, or fan several read-only children out in parallel and synthesize
-  their reports.
 - **MCP client.** Connect Model Context Protocol servers over stdio or HTTP, with
   OAuth, sampling, elicitation, and logging.
 - **Memory.** Heya remembers facts across sessions in plain markdown files you
@@ -48,6 +60,10 @@ what you already have.
 - **Cost and context controls.** An optional cheaper model for forgiving work,
   a per-task token budget, and context compaction so long sessions keep working
   on small-window local models.
+- **Self-update.** `heya update` upgrades Heya in place (pipx or pip). An
+  optional startup notice fires when a newer version is on PyPI; the check is
+  off the main thread, silent when offline, and disabled with
+  `[update] check = false`.
 - **Files, shell, web, and a real browser.** All writes, shell commands, and
   browser clicks ask before they run. Reads run on their own. Everything is
   confined to an allow-list of folders.
@@ -104,8 +120,8 @@ heya init
 
 A pasted cloud key is stored in a locked credentials file, never in the config.
 On the local path the wizard offers to download a model for you. If you would
-rather configure by hand, copy `config.example.toml` to
-`~/.config/heya/config.toml` and edit it. See
+rather configure by hand, `config.example.toml` in this repository is a
+commented template to copy into `~/.config/heya/config.toml`. See
 [docs/guide/getting-started.md](docs/guide/getting-started.md).
 
 ## Run it
@@ -126,14 +142,36 @@ Use a skill you already have:
 heya "use my support-reply skill to draft a response to this ticket: ..."
 ```
 
+Connect and query a staging site:
+
+```bash
+heya wp connect
+heya "list the last 10 failed orders on my staging store"
+```
+
+Launch a background agent:
+
+```bash
+heya "audit the checkout flow in the background and report back when done"
+```
+
 ## Docs
 
 - [Getting started](docs/guide/getting-started.md)
+- [Commands](docs/guide/commands.md)
 - [Configuration reference](docs/guide/configuration.md)
 - [The diagnostic workflow](docs/guide/diagnostic-workflow.md)
+- [Connect an MCP server](docs/guide/mcp.md)
 - [Hosting your Claude skills, plugins, and tools](docs/guide/hosting-claude-ecosystem.md)
+- [WordPress development guidance](docs/guide/wordpress-guidance.md)
+- [Background agents](docs/guide/background-agents.md)
+- [Connect a WordPress site](docs/guide/wordpress-sites.md)
 - [Tools and safety](docs/guide/tools-and-safety.md)
-- [Connect your own MCP servers](docs/guide/mcp.md)
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). The [changelog](CHANGELOG.md) records
+what changed between releases.
 
 ## License
 

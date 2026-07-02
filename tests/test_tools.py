@@ -2,10 +2,8 @@ import json
 import time
 from pathlib import Path
 
-import pytest
-
 from heya.background import BackgroundRegistry
-from heya.tools import TOOL_SCHEMAS, build_tool_schemas, dispatch_tool, describe_call
+from heya.tools import TOOL_SCHEMAS, build_tool_schemas, describe_call, dispatch_tool
 from heya.tools_mcp import _MAX_DESC  # noqa: F401  (referenced for the truncation test)
 
 
@@ -302,7 +300,7 @@ def test_dispatch_web_search_clamps_max_results_to_at_least_one(tmp_path):
 
 
 def test_dispatch_web_fetch_routes(tmp_path, monkeypatch):
-    monkeypatch.setattr("heya.tools.web_fetch", lambda url, *, timeout: f"FETCHED {url}")
+    monkeypatch.setattr("heya.tools.web_fetch", lambda url, *, timeout, block_metadata=True: f"FETCHED {url}")
     out = dispatch_tool(
         "web_fetch", json.dumps({"url": "https://example.com"}),
         allowed_roots=[tmp_path], cwd=tmp_path, timeout=10,
@@ -347,7 +345,8 @@ def test_schemas_include_browser_tools():
 def test_dispatch_browser_navigate(tmp_path):
     s = _FakeSession()
     out = dispatch_tool("browser_navigate", json.dumps({"url": "https://x"}),
-                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, browser_session=s)
+                        allowed_roots=[tmp_path], cwd=tmp_path, timeout=10, browser_session=s,
+                        web_block_metadata=False)
     assert out == "NAV https://x"
 
 
@@ -456,7 +455,7 @@ def test_schemas_include_read_log():
 def test_dispatch_run_wp_cli_routes(tmp_path, monkeypatch):
     import heya.tools_wp as wp_mod
     monkeypatch.setattr(wp_mod.shutil, "which", lambda _: "/usr/bin/wp")
-    monkeypatch.setattr(wp_mod, "run_command", lambda cmd, **k: __import__("heya.tools_files", fromlist=["CommandResult"]).CommandResult(stdout=cmd, stderr="", exit_code=0))
+    monkeypatch.setattr(wp_mod, "run_command", lambda cmd, **k: __import__("heya.tools_files", fromlist=["CommandResult"]).CommandResult(stdout=" ".join(cmd) if isinstance(cmd, list) else cmd, stderr="", exit_code=0))
     out = dispatch_tool(
         "run_wp_cli", json.dumps({"args": "plugin list", "path": str(tmp_path)}),
         allowed_roots=[tmp_path], cwd=tmp_path, timeout=10,
@@ -760,7 +759,7 @@ def test_spawn_agent_dispatch_weak_defaults_false():
 
 
 def test_read_guidance_reproduction_present():
-    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    from heya.tools_guidance import BUNDLED_GUIDANCE_DIR, read_guidance
     out = read_guidance("reproduction", sources=[BUNDLED_GUIDANCE_DIR])
     assert "funnel" in out.lower()
     assert "no evidence, no verdict" in out.lower()
@@ -810,7 +809,7 @@ def test_dispatch_record_repro_verdict_routes():
 
 
 def test_read_guidance_diagnosis_present():
-    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    from heya.tools_guidance import BUNDLED_GUIDANCE_DIR, read_guidance
     out = read_guidance("diagnosis", sources=[BUNDLED_GUIDANCE_DIR])
     low = out.lower()
     assert "conflict test" in low
@@ -843,7 +842,7 @@ def test_dispatch_diagnose_routes():
 
 
 def test_read_guidance_remediation_present():
-    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    from heya.tools_guidance import BUNDLED_GUIDANCE_DIR, read_guidance
     out = read_guidance("remediation", sources=[BUNDLED_GUIDANCE_DIR])
     low = out.lower()
     assert "dual oracle" in low or "regression" in low
@@ -884,7 +883,7 @@ def test_dispatch_remediation_routes():
 
 
 def test_diagnosis_guidance_has_escalation():
-    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    from heya.tools_guidance import BUNDLED_GUIDANCE_DIR, read_guidance
     out = read_guidance("diagnosis", sources=[BUNDLED_GUIDANCE_DIR]).lower()
     assert "insufficient evidence" in out
     assert "one more signal" in out
@@ -915,7 +914,7 @@ def test_dispatch_skill_routes():
 
 
 def test_read_guidance_triage_present():
-    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    from heya.tools_guidance import BUNDLED_GUIDANCE_DIR, read_guidance
     out = read_guidance("triage", sources=[BUNDLED_GUIDANCE_DIR]).lower()
     assert "pick list" in out or "pick-list" in out
     assert "never post" in out or "do not post" in out
@@ -945,7 +944,7 @@ def test_dispatch_triage_routes():
 
 
 def test_bundled_voice_guidance_present():
-    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    from heya.tools_guidance import BUNDLED_GUIDANCE_DIR, read_guidance
     for name in ("writing-voice", "banned-words", "support-reply"):
         out = read_guidance(name, sources=[BUNDLED_GUIDANCE_DIR])
         assert out.strip() and "No guidance" not in out

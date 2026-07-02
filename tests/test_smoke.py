@@ -18,7 +18,7 @@ def test_heya_help_runs():
 
 def test_triage_render_path_offline():
     from heya.reproduction import parse_issue_context
-    from heya.triage import render_triage_report, gate_priority
+    from heya.triage import gate_priority, render_triage_report
 
     ctx = parse_issue_context({"source": "WOO-1", "wp_version": "6.5"})
     out = render_triage_report(

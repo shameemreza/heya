@@ -41,6 +41,8 @@ def read_file(path: Path | str, *, allowed_roots: Sequence[Path]) -> str:
         raise ToolError(f"No such file: {resolved}") from exc
     except IsADirectoryError as exc:
         raise ToolError(f"Is a directory, not a file: {resolved}") from exc
+    except PermissionError as exc:
+        raise ToolError(f"Permission denied: {resolved}") from exc
 
 
 _NOISE_DIRS = {".git", "node_modules", "vendor", ".venv", "__pycache__",
@@ -134,25 +136,28 @@ class CommandResult:
 
 
 def run_command(
-    cmd: str,
+    cmd,
     *,
     cwd: Path | str,
     allowed_roots: Sequence[Path],
     timeout: float,
 ) -> CommandResult:
-    """Run a shell command confined to the allow-list. Timeout is required."""
+    """Run a command confined to the allow-list. `cmd` may be a shell string or
+    an argv list; a list runs without a shell. Timeout is required."""
     resolved_cwd = resolve_in_allowlist(cwd, allowed_roots)
     if not resolved_cwd.is_dir():
         raise ToolError(f"cwd is not a directory: {resolved_cwd}")
+    use_shell = isinstance(cmd, str)
     try:
         proc = subprocess.run(
             cmd,
-            shell=True,
+            shell=use_shell,
             cwd=resolved_cwd,
             capture_output=True,
             text=True,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired as exc:
-        raise ToolError(f"Command timed out after {timeout}s: {cmd}") from exc
+        shown = cmd if isinstance(cmd, str) else " ".join(cmd)
+        raise ToolError(f"Command timed out after {timeout}s: {shown}") from exc
     return CommandResult(stdout=proc.stdout, stderr=proc.stderr, exit_code=proc.returncode)

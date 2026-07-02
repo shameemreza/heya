@@ -1,7 +1,11 @@
 from heya.reproduction import parse_issue_context
 from heya.triage import (
-    PRIORITIES, ROUTES, gate_priority, render_triage_report, render_triage_comment,
+    PRIORITIES,
+    ROUTES,
+    gate_priority,
     render_pick_list,
+    render_triage_comment,
+    render_triage_report,
 )
 
 

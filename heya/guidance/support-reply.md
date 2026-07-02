@@ -47,5 +47,5 @@ from it.
   is not evidence.
 - For a code snippet, say where it goes and what it does, and label a workaround
   as unsupported when it is one.
-- No banned words or phrases. Re-read `banned-words` before you send.
+- No banned words or phrases. Re-read `banned-words` when unsure or before publishing.
 - Never add any AI attribution.

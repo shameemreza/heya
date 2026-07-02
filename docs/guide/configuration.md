@@ -1,8 +1,8 @@
 # Configuration reference
 
 Heya reads `~/.config/heya/config.toml`. Every block is optional; Heya runs with
-sensible defaults if the file is missing. The shipped `config.example.toml` has a
-copy-paste template of all of this.
+sensible defaults if the file is missing. An example config lives in the repo
+(`config.example.toml`) with a copy-paste template of all of this.
 
 ## Models: `[profiles.<name>]`
 
@@ -16,10 +16,13 @@ provider_type = "local"        # local | api_key | oauth
 context_window = 32768         # used for context compaction
 # api_key_env = "SOME_KEY"     # the NAME of the env var holding the key
 # timeout = 600                # request timeout in seconds
+# vision = false               # set true to enable image attachments for this profile
 ```
 
 Pick the active profile with `heya --profile <name>` or the `HEYA_PROFILE` env
-var. The default profile is `local`.
+var. The default profile is `local`. Set `vision = true` for any profile whose
+model accepts image inputs (GPT-4o, Claude 3+, Gemini 1.5+, and similar). Heya
+also auto-detects vision from common model name patterns.
 
 ## Cheaper secondary model: `[routing]`
 
@@ -132,6 +135,33 @@ override Heya's safety rules. Turn it off if you prefer:
 [project]
 read_instructions = false
 ```
+
+## Command auto-approve: `[approval]`
+
+A list of command prefixes that bypass the per-command prompt. A command
+auto-approves only when its argv starts with one of these prefixes and contains
+no shell metacharacters (`;`, `&&`, `|`, `>`, and similar). Anything not in the
+list still prompts. The default is none.
+
+```toml
+[approval]
+allow = ["wp plugin list", "wp option get", "git status"]
+```
+
+Security note: shell metacharacters are never auto-approved, even for a listed
+prefix. A command like `wp plugin list && rm -rf /` still hits the gate.
+
+## Web safety: `[web]`
+
+```toml
+[web]
+block_metadata = true   # block cloud-metadata / link-local addresses (default true)
+```
+
+`web_fetch` and `browser_navigate` reach any real site by default. With
+`block_metadata = true` (the default), they refuse to connect to link-local
+addresses such as `169.254.169.254` (cloud instance-metadata). Set to `false`
+only if your network genuinely needs link-local access.
 
 ## Background agents
 

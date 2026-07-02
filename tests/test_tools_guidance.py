@@ -82,7 +82,7 @@ def test_bundled_guidance_is_discoverable():
 
 
 def test_minimal_code_guidance_is_readable():
-    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    from heya.tools_guidance import BUNDLED_GUIDANCE_DIR, read_guidance
     text = read_guidance("minimal-code", sources=[BUNDLED_GUIDANCE_DIR])
     # the ladder and the safety carve-out are both present
     assert "ladder" in text.lower()
@@ -93,7 +93,7 @@ def test_minimal_code_guidance_is_readable():
 
 
 def test_environment_guidance_is_readable():
-    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    from heya.tools_guidance import BUNDLED_GUIDANCE_DIR, read_guidance
     text = read_guidance("environment", sources=[BUNDLED_GUIDANCE_DIR])
     assert "do not assume" in text.lower() or "check, do not guess" in text.lower()
     assert "uname" in text and "version" in text.lower()
@@ -101,7 +101,7 @@ def test_environment_guidance_is_readable():
 
 
 def test_explore_guidance_is_readable():
-    from heya.tools_guidance import read_guidance, BUNDLED_GUIDANCE_DIR
+    from heya.tools_guidance import BUNDLED_GUIDANCE_DIR, read_guidance
     text = read_guidance("explore", sources=[BUNDLED_GUIDANCE_DIR])
     assert "list_files" in text and "search_files" in text
     assert "plugin name" in text.lower() or "plugin file" in text.lower()

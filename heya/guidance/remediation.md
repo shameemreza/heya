@@ -1,3 +1,8 @@
+---
+name: remediation
+description: Methodology for proposing and verifying a fix after diagnosis. Covers fix forms by issue class, grounding requirements, and the bounded repair loop.
+---
+
 # Remediation methodology
 
 Use this after a diagnosis to propose a fix and prove it works. You apply fixes

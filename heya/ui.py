@@ -20,7 +20,7 @@ except Exception:  # rich missing or broken
     _RICH = False
 
 try:
-    from prompt_toolkit.completion import Completer, Completion, PathCompleter
+    from prompt_toolkit.completion import Completer, PathCompleter
     from prompt_toolkit.document import Document
 
     class _AtPathCompleter(Completer):

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import signal
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -12,45 +13,65 @@ try:
     from importlib.metadata import version as _pkg_version
     VERSION = _pkg_version("heya-agent")
 except Exception:
-    VERSION = "0.0.2"
+    VERSION = "0.0.3"
 
-from .agent import Agent, DEFAULT_MAX_ITERS
-from .project import load_project_instructions
+import uuid
+
+from . import attachments, sessions
+from .agent import DEFAULT_MAX_ITERS, Agent
+from .agent_defs import discover_agent_roles
 from .approval import ApprovalPolicy, UiApprover, prompt_stdin
+from .background import BackgroundRegistry
 from .config import (
-    load_allowed_roots, load_approval_allow, load_browser_headless, load_context_config,
-    load_guidance_paths, load_hooks_config, load_mcp_servers, load_memory_path, load_profiles,
-    load_routing_config, load_search_config, load_skill_paths, load_wp_path, resolve_profile,
-    resolve_weak_profile, load_plugin_paths, load_disabled_plugins,
-    load_command_paths, load_agent_paths, load_identity,
-    resolve_api_key, load_default_profile, default_config_path, model_supports_vision,
-    load_project_instructions_enabled, load_agent_config, load_update_config,
+    default_config_path,
+    load_agent_config,
+    load_agent_paths,
+    load_allowed_roots,
+    load_approval_allow,
+    load_browser_headless,
+    load_command_paths,
+    load_context_config,
+    load_default_profile,
+    load_disabled_plugins,
+    load_guidance_paths,
+    load_hooks_config,
+    load_identity,
+    load_mcp_servers,
+    load_memory_path,
+    load_plugin_paths,
+    load_profiles,
+    load_project_instructions_enabled,
+    load_routing_config,
+    load_search_config,
+    load_skill_paths,
+    load_update_config,
+    load_web_config,
     load_wordpress_config,
+    load_wp_path,
+    model_supports_vision,
+    resolve_api_key,
+    resolve_profile,
+    resolve_weak_profile,
 )
 from .credentials import load_key
-from .wpsite import build_wp_connector
-from .update import run_update, update_notice
-from .init import run_init
-from .wpconnect import run_wp_connect
-from .preflight import check_profile, OK
 from .hooks import collect_hooks
-from .plugins import discover_plugins, collect_plugin_skills
-from .skills import collect_skills, collect_commands
-from .agent_defs import discover_agent_roles
+from .init import run_init
 from .llm_client import LLMClient
 from .mcp_runtime import MCPRuntime
 from .memory import MemoryStore
-from .background import BackgroundRegistry
+from .plugins import collect_plugin_skills, discover_plugins
+from .preflight import OK, check_profile
 from .process import ProcessRegistry
+from .project import load_project_instructions
+from .skills import collect_commands, collect_skills
 from .tools_browser import BrowserSession
-from .tools_wp import PlaygroundSession
 from .tools_guidance import BUNDLED_GUIDANCE_DIR
 from .tools_web import build_search_provider
+from .tools_wp import PlaygroundSession
 from .ui import UI, should_plain
-from . import sessions
-from . import attachments
-
-import uuid
+from .update import run_update, update_notice
+from .wpconnect import run_wp_connect
+from .wpsite import build_wp_connector
 
 
 def _build_turn_content(text, agent, ui):
@@ -266,6 +287,7 @@ def _default_make_agent(args: argparse.Namespace, *, ui: "UI | None" = None) -> 
     roots = list(load_allowed_roots()) + [Path(p).expanduser().resolve() for p in args.allow]
     guidance_sources = (BUNDLED_GUIDANCE_DIR, *load_guidance_paths())
     search_provider = build_search_provider(load_search_config())
+    web_cfg = load_web_config()
     browser_session = BrowserSession(headless=load_browser_headless())
     process_registry = ProcessRegistry()
     background_registry = BackgroundRegistry(max_concurrent=load_agent_config().max_background)
@@ -364,6 +386,8 @@ def _default_make_agent(args: argparse.Namespace, *, ui: "UI | None" = None) -> 
                      background_registry.check_write(call_args.get("path", ""), "main")
                      if name == "write_file" else None),
         wp_connector=wp_connector,
+        web_block_metadata=web_cfg.block_metadata,
+        status_cb=getattr(ui, "status", None),
     )
 
 
@@ -434,7 +458,14 @@ def run_cli(
             if status != OK:
                 ui.error(HINT)
                 return 1
-            agent.run(_build_turn_content(" ".join(args.task), agent, ui))
+            try:
+                agent.run(_build_turn_content(" ".join(args.task), agent, ui))
+            except KeyboardInterrupt:
+                ui.error("Interrupted.")
+                return 130
+            except Exception as exc:  # noqa: BLE001 - keep the CLI from crashing on API/tool errors
+                ui.error(f"Error: {exc}")
+                return 1
             sys.stdout.write("\n")
             return 0
 
@@ -455,6 +486,7 @@ def run_cli(
                 pass
         else:
             ui.error(HINT)
+            return 1
 
         profiles = load_profiles()
         sessions_dir = sessions.default_sessions_dir()
@@ -493,7 +525,31 @@ def run_cli(
                                  + ". Use collect_agent to read results.\n")
             except Exception:
                 pass
-            agent.run(_build_turn_content(notes + text, agent, ui))
+            cancel = getattr(agent, "cancel", None)
+
+            def _on_sigint(signum, frame):
+                if cancel is not None:
+                    cancel.set()
+
+            try:
+                prev = signal.signal(signal.SIGINT, _on_sigint)
+                _sigint_installed = True
+            except ValueError:
+                prev = None
+                _sigint_installed = False
+
+            try:
+                agent.run(_build_turn_content(notes + text, agent, ui))
+            except KeyboardInterrupt:
+                ui.error("Interrupted.")
+            except Exception as exc:  # noqa: BLE001 - keep the REPL alive on API/tool errors
+                ui.error(f"Error: {exc}")
+            finally:
+                if _sigint_installed:
+                    signal.signal(signal.SIGINT, prev)
+                if cancel is not None:
+                    cancel.clear()
+
             sys.stdout.write("\n")
             snap = _session_snapshot(agent, profile_name=profile_name,
                                      created=session_created, updated=_now())

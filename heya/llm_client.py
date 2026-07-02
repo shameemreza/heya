@@ -8,7 +8,7 @@ signature.
 from __future__ import annotations
 
 import json
-
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -16,6 +16,8 @@ import httpx
 
 from .config import Profile
 from .text import estimate_messages_tokens, estimate_tokens
+
+_RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 
 
 @dataclass
@@ -49,10 +51,15 @@ class ChatResult:
 
 class LLMClient:
     def __init__(self, profile: Profile, *, client: httpx.Client | None = None,
-                 api_key: str | None = None) -> None:
+                 api_key: str | None = None, max_retries: int = 3,
+                 backoff_base: float = 0.5,
+                 sleep: Callable[[float], None] = time.sleep) -> None:
         self.profile = profile
         self._client = client or httpx.Client(timeout=profile.timeout)
         self._api_key_override = api_key
+        self._max_retries = max_retries
+        self._backoff_base = backoff_base
+        self._sleep = sleep
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -60,6 +67,35 @@ class LLMClient:
         if key:
             headers["Authorization"] = f"Bearer {key}"
         return headers
+
+    def _retry_delay(self, attempt: int, exc: Exception) -> float:
+        if isinstance(exc, httpx.HTTPStatusError):
+            ra = exc.response.headers.get("Retry-After")
+            if ra:
+                try:
+                    return float(int(ra))
+                except ValueError:
+                    pass
+        return self._backoff_base * (2 ** attempt)
+
+    @staticmethod
+    def _is_transient(exc: Exception) -> bool:
+        if isinstance(exc, (httpx.ConnectError, httpx.ReadTimeout)):
+            return True
+        if isinstance(exc, httpx.HTTPStatusError):
+            return exc.response.status_code in _RETRYABLE_STATUS
+        return False
+
+    def _with_retry(self, fn: Callable[[], Any]) -> Any:
+        attempt = 0
+        while True:
+            try:
+                return fn()
+            except Exception as exc:  # noqa: BLE001 - re-raised below unless transient
+                if attempt >= self._max_retries or not self._is_transient(exc):
+                    raise
+                self._sleep(self._retry_delay(attempt, exc))
+                attempt += 1
 
     def chat(
         self,
@@ -73,13 +109,17 @@ class LLMClient:
         }
         if tools:
             payload["tools"] = tools
-        resp = self._client.post(
-            f"{self.profile.base_url}/chat/completions",
-            json=payload,
-            headers=self._headers(),
-        )
-        resp.raise_for_status()
-        body = resp.json()
+
+        def _do() -> dict[str, Any]:
+            resp = self._client.post(
+                f"{self.profile.base_url}/chat/completions",
+                json=payload,
+                headers=self._headers(),
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+        body = self._with_retry(_do)
         message = body["choices"][0]["message"]
         result = _parse_message(message)
         u = body.get("usage")
@@ -105,20 +145,34 @@ class LLMClient:
         content_parts: list[str] = []
         acc: dict[int, dict[str, str]] = {}
         usage_raw = None
-        with self._client.stream(
-            "POST",
-            f"{self.profile.base_url}/chat/completions",
-            json=payload,
-            headers=self._headers(),
-        ) as resp:
-            resp.raise_for_status()
+
+        def _open() -> tuple[Any, Any]:
+            cm = self._client.stream(
+                "POST",
+                f"{self.profile.base_url}/chat/completions",
+                json=payload,
+                headers=self._headers(),
+            )
+            resp = cm.__enter__()
+            try:
+                resp.raise_for_status()
+            except Exception:
+                cm.__exit__(None, None, None)
+                raise
+            return cm, resp
+
+        cm, resp = self._with_retry(_open)
+        try:
             for line in resp.iter_lines():
                 if not line or not line.startswith("data:"):
                     continue
-                data = line[len("data:") :].strip()
+                data = line[len("data:"):].strip()
                 if data == "[DONE]":
                     break
-                chunk = json.loads(data)
+                try:
+                    chunk = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
                 if chunk.get("usage"):
                     usage_raw = chunk["usage"]
                 choices = chunk.get("choices") or []
@@ -131,6 +185,8 @@ class LLMClient:
                     if on_text:
                         on_text(text)
                 _accumulate_tool_calls(acc, delta.get("tool_calls") or [])
+        finally:
+            cm.__exit__(None, None, None)
         content = "".join(content_parts) or None
         tool_calls = [
             ToolCall(id=slot["id"], name=slot["name"], arguments=slot["arguments"])

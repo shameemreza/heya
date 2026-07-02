@@ -1,8 +1,11 @@
-from heya.reproduction import parse_issue_context
 from heya.remediation import (
-    FIX_KINDS, check_fix_safety, gate_fix_verdict, repair_should_stop,
-    fix_grounded, render_solution,
+    check_fix_safety,
+    fix_grounded,
+    gate_fix_verdict,
+    render_solution,
+    repair_should_stop,
 )
+from heya.reproduction import parse_issue_context
 
 
 def test_check_fix_safety_setting_json():

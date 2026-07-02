@@ -116,7 +116,7 @@ def upsert_profile(path: Path, profile_name: str, fields: dict, *, make_default:
     lines = text.splitlines(keepends=True)
 
     # Identify headers to remove: [defaults] and [profiles.<profile_name>]
-    headers_to_remove = {f"[defaults]", f"[profiles.{profile_name}]"}
+    headers_to_remove = {"[defaults]", f"[profiles.{profile_name}]"}
 
     def _is_section_header(line: str) -> bool:
         return bool(re.match(r"^\s*\[", line))
@@ -483,6 +483,26 @@ def load_search_config(config_path: Path | None = None) -> SearchConfig:
         known = ", ".join(sorted(KNOWN_SEARCH_PROVIDERS))
         raise ConfigError(f"Unknown search provider {provider!r}. Known: {known}")
     return SearchConfig(provider=provider, api_key_env=raw.get("api_key_env"))
+
+
+@dataclass(frozen=True)
+class WebConfig:
+    block_metadata: bool = True
+
+
+def load_web_config(config_path: Path | None = None) -> WebConfig:
+    """Outbound web safety settings.
+
+    User file shape:
+        [web]
+        block_metadata = true   # block cloud-metadata / link-local addresses (default true)
+    """
+    path = config_path or default_config_path()
+    if not path.exists():
+        return WebConfig()
+    data = tomllib.loads(path.read_text())
+    section = data.get("web") or {}
+    return WebConfig(block_metadata=bool(section.get("block_metadata", True)))
 
 
 @dataclass(frozen=True)

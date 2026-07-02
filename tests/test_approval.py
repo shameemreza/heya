@@ -27,11 +27,14 @@ def test_auto_approve_bypasses_prompt():
 
 
 def test_always_allows_for_rest_of_session():
+    # For command tools, "always" is scoped per-command (argv), not per-tool-name.
+    # Each distinct command is prompted once; the same command is not prompted again.
     calls = []
     policy = ApprovalPolicy(approver=lambda name, detail: calls.append(name) or "always")
     assert policy.check("run_command", "run_command → ls") is True
     assert policy.check("run_command", "run_command → pwd") is True
-    assert calls == ["run_command"]  # only prompted once
+    # Both calls reach the approver because "ls" and "pwd" are different commands.
+    assert calls == ["run_command", "run_command"]
 
 
 def test_browser_click_and_type_are_gated():

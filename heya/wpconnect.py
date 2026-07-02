@@ -6,8 +6,8 @@ import getpass
 import sys
 from pathlib import Path
 
-from .config import WPSiteConfig, write_wordpress_config, default_config_path
-from .credentials import save_key, default_credentials_path
+from .config import WPSiteConfig, default_config_path, write_wordpress_config
+from .credentials import default_credentials_path, save_key
 from .wpsite import build_wp_connector
 
 

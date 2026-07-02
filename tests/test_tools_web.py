@@ -1,17 +1,17 @@
 import httpx
 import pytest
 
-from heya.tools_web import web_fetch
+from heya.config import SearchConfig
 from heya.tools_files import ToolError
 from heya.tools_web import (
-    SearchResult,
-    DuckDuckGoSearch,
     BraveSearch,
+    DuckDuckGoSearch,
+    SearchResult,
     TavilySearch,
     build_search_provider,
+    web_fetch,
     web_search,
 )
-from heya.config import SearchConfig
 
 HTML = """
 <html><head><title>T</title><style>.x{color:red}</style></head>

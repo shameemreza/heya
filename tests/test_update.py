@@ -147,6 +147,7 @@ def test_run_update_pipx_invokes_runner(tmp_path):
 
 def test_run_update_pip_invokes_runner(tmp_path):
     import sys
+
     from heya.update import run_update
 
     pkg = tmp_path / "site" / "heya"

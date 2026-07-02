@@ -1,7 +1,7 @@
 import httpx
 
 from heya.config import Profile
-from heya.preflight import check_profile, OK, UNREACHABLE, MODEL_MISSING, NO_KEY
+from heya.preflight import MODEL_MISSING, NO_KEY, OK, UNREACHABLE, check_profile
 
 
 def _local(model="m"):

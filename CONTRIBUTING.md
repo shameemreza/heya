@@ -8,8 +8,8 @@ plain Python, no framework, so every part is easy to read and change.
 ```bash
 git clone git@github.com:shameemreza/heya.git
 cd heya
-python3.13 -m venv .venv
-.venv/bin/pip install -e ".[browser]"
+python3 -m venv .venv          # Python 3.11 or newer
+.venv/bin/pip install -e ".[browser,test]"
 .venv/bin/python -m playwright install chromium   # only if you want the browser tools
 ```
 

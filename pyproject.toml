@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "heya-agent"
-version = "0.0.2"
+version = "0.0.3"
 description = "A single, local-first, model-agnostic, tool-using AI agent."
 requires-python = ">=3.11"
 readme = "README.md"
@@ -28,7 +28,8 @@ Repository = "https://github.com/shameemreza/heya"
 
 [project.optional-dependencies]
 browser = ["playwright>=1.40"]
-mcp = ["mcp>=1.0"]
+mcp = ["mcp>=1.0", "keyring>=24"]
+dev = ["ruff>=0.5", "mypy>=1.10"]
 test = ["pytest>=8", "mcp>=1.0", "trustme>=1.0"]
 
 [project.scripts]
@@ -46,3 +47,10 @@ packages = ["heya"]
 
 [tool.setuptools.package-data]
 heya = ["guidance/*.md"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["F", "I"]

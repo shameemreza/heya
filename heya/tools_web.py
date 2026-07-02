@@ -15,6 +15,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from .config import ConfigError, SearchConfig
+from .netsafety import BlockedHostError, guarded_get
 from .tools_files import ToolError
 
 DEFAULT_MAX_CHARS = 20000
@@ -46,20 +47,24 @@ def web_fetch(
     timeout: float,
     client: httpx.Client | None = None,
     max_chars: int = DEFAULT_MAX_CHARS,
+    block_metadata: bool = True,
 ) -> str:
     """Fetch an http/https URL and return readable text (boilerplate stripped)."""
     scheme = urlparse(url).scheme
     if scheme not in ("http", "https"):
         raise ToolError(f"web_fetch only supports http/https URLs, got {scheme or 'no'} scheme")
     owns = client is None
-    client = client or httpx.Client(
-        timeout=timeout, follow_redirects=True, headers={"User-Agent": _USER_AGENT}
-    )
+    client = client or httpx.Client(timeout=timeout, headers={"User-Agent": _USER_AGENT})
     try:
-        resp = client.get(url)
+        if block_metadata:
+            resp = guarded_get(client, url)
+        else:
+            resp = client.get(url, follow_redirects=True)
         resp.raise_for_status()
         content_type = resp.headers.get("content-type", "")
         text = _extract_text(resp.text) if ("html" in content_type or not content_type) else resp.text
+    except BlockedHostError as exc:
+        raise ToolError(str(exc)) from exc
     except httpx.HTTPError as exc:
         raise ToolError(f"Could not fetch {url}: {exc}") from exc
     finally:

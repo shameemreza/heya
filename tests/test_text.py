@@ -1,4 +1,4 @@
-from heya.text import truncate_output, estimate_tokens, estimate_messages_tokens
+from heya.text import estimate_messages_tokens, estimate_tokens, truncate_output
 
 
 def test_estimate_tokens_empty_is_zero():

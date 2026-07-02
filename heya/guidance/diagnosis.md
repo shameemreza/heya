@@ -1,3 +1,8 @@
+---
+name: diagnosis
+description: Methodology for classifying and localizing a bug or support issue. Use after reproduction to decide what class of issue it is and where the root cause lives.
+---
+
 # Diagnosis methodology
 
 Use this after an issue is reproduced (or when a log points at it) to decide what

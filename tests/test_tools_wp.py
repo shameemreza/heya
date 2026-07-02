@@ -4,8 +4,8 @@ import sys
 import pytest
 
 import heya.tools_wp as wp_mod
-from heya.tools_wp import read_log, resolve_wp_root
 from heya.tools_files import ToolError
+from heya.tools_wp import read_log, resolve_wp_root
 
 
 def _make_site(tmp_path, log_lines):
@@ -55,7 +55,8 @@ def test_run_wp_cli_injects_path(tmp_path, monkeypatch):
     monkeypatch.setattr(wp_mod, "run_command", fake_run_command)
     monkeypatch.setattr(wp_mod.shutil, "which", lambda _: "/usr/bin/wp")
     out = wp_mod.run_wp_cli("plugin list", str(tmp_path), allowed_roots=[tmp_path], cwd=tmp_path, timeout=10)
-    assert "--path=" in seen["cmd"] and "plugin list" in seen["cmd"]
+    assert any(tok.startswith("--path=") for tok in seen["cmd"])
+    assert "plugin" in seen["cmd"] and "list" in seen["cmd"]
     assert "ok" in out
 
 
@@ -70,7 +71,7 @@ def test_run_wp_cli_respects_user_path(tmp_path, monkeypatch):
     monkeypatch.setattr(wp_mod, "run_command", fake_run_command)
     monkeypatch.setattr(wp_mod.shutil, "which", lambda _: "/usr/bin/wp")
     wp_mod.run_wp_cli("plugin list --path=/custom", str(tmp_path), allowed_roots=[tmp_path], cwd=tmp_path, timeout=10)
-    assert seen["cmd"].count("--path=") == 1  # did not double-inject
+    assert sum(1 for tok in seen["cmd"] if tok.startswith("--path=")) == 1  # did not double-inject
 
 
 def test_run_wp_cli_missing_binary_hint(tmp_path, monkeypatch):
@@ -183,8 +184,9 @@ def test_wp_cli_info_live(tmp_path):
 
 @pytest.mark.integration
 def test_process_registry_real_background(tmp_path):
-    from heya.process import ProcessRegistry
     import time
+
+    from heya.process import ProcessRegistry
     reg = ProcessRegistry()
     try:
         mp = reg.start(f'{sys.executable} -u -c "import time; print(\'up\'); time.sleep(30)"', cwd=tmp_path)

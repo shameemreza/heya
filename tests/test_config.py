@@ -2,12 +2,22 @@ from pathlib import Path
 
 import pytest
 
-from heya.config import Profile, resolve_profile, ConfigError
-from heya.config import BUILTIN_PROFILES, load_profiles
-from heya.config import MCPServerConfig, load_mcp_servers
-from heya.config import AgentConfig, load_agent_config
-from heya.config import UpdateConfig, load_update_config
-from heya.config import WPSiteConfig, load_wordpress_config, write_wordpress_config
+from heya.config import (
+    BUILTIN_PROFILES,
+    AgentConfig,
+    ConfigError,
+    MCPServerConfig,
+    Profile,
+    UpdateConfig,
+    WPSiteConfig,
+    load_agent_config,
+    load_mcp_servers,
+    load_profiles,
+    load_update_config,
+    load_wordpress_config,
+    resolve_profile,
+    write_wordpress_config,
+)
 
 
 def test_profile_api_key_reads_named_env_var(monkeypatch):
@@ -489,7 +499,7 @@ def test_load_context_config_no_file(tmp_path):
     assert c == ContextConfig(0.85, 2048, 4096, 200000)
 
 
-from heya.config import default_plugin_paths, load_plugin_paths, load_disabled_plugins
+from heya.config import default_plugin_paths, load_disabled_plugins, load_plugin_paths
 
 
 def test_default_plugin_paths_includes_claude_cache():
@@ -565,7 +575,9 @@ def test_load_hooks_config_explicit_sources(tmp_path):
 
 
 from heya.config import (
-    RoutingConfig, load_routing_config, resolve_weak_profile,
+    RoutingConfig,
+    load_routing_config,
+    resolve_weak_profile,
 )
 
 
@@ -608,7 +620,12 @@ def test_resolve_weak_profile_unknown_raises():
     assert "ghost" in str(exc.value)
 
 
-from heya.config import default_command_paths, load_command_paths, default_agent_paths, load_agent_paths
+from heya.config import (
+    default_agent_paths,
+    default_command_paths,
+    load_agent_paths,
+    load_command_paths,
+)
 
 
 def test_default_command_and_agent_paths_include_claude_dirs():
@@ -628,7 +645,7 @@ def test_load_agent_paths_disabled(tmp_path):
     assert load_agent_paths(p) == ()
 
 
-from heya.config import Identity, load_identity, build_identity_block
+from heya.config import Identity, build_identity_block, load_identity
 
 
 def test_load_identity_absent(tmp_path):
@@ -659,8 +676,7 @@ def test_config_example_parses():
 
 
 def test_resolve_api_key_prefers_env_then_file(tmp_path, monkeypatch):
-    from heya.config import resolve_api_key
-    from heya.config import Profile
+    from heya.config import Profile, resolve_api_key
     from heya.credentials import save_key
     creds = tmp_path / "credentials.toml"
     prof = Profile(name="cloud", base_url="u", model="m",
@@ -675,7 +691,7 @@ def test_resolve_api_key_prefers_env_then_file(tmp_path, monkeypatch):
 
 
 def test_resolve_api_key_none_when_nothing(tmp_path, monkeypatch):
-    from heya.config import resolve_api_key, Profile
+    from heya.config import Profile, resolve_api_key
     monkeypatch.delenv("HEYA_TEST_KEY", raising=False)
     prof = Profile(name="cloud", base_url="u", model="m",
                    provider_type="api_key", api_key_env="HEYA_TEST_KEY")
@@ -684,6 +700,7 @@ def test_resolve_api_key_none_when_nothing(tmp_path, monkeypatch):
 
 def test_write_config_roundtrips(tmp_path):
     import tomllib
+
     from heya.config import write_config
     p = tmp_path / "config.toml"
     data = {"defaults": {"profile": "cloud"},
@@ -693,7 +710,7 @@ def test_write_config_roundtrips(tmp_path):
 
 
 def test_load_default_profile(tmp_path):
-    from heya.config import write_config, load_default_profile
+    from heya.config import load_default_profile, write_config
     p = tmp_path / "config.toml"
     write_config({"defaults": {"profile": "cloud"}}, p)
     assert load_default_profile(p) == "cloud"
@@ -701,7 +718,7 @@ def test_load_default_profile(tmp_path):
 
 
 def test_resolve_profile_uses_default_then_builtin(monkeypatch):
-    from heya.config import resolve_profile, BUILTIN_PROFILES
+    from heya.config import BUILTIN_PROFILES, resolve_profile
     monkeypatch.delenv("HEYA_PROFILE", raising=False)
     profiles = dict(BUILTIN_PROFILES)
     assert resolve_profile(None, profiles=profiles, default="cloud-openrouter").name == "cloud-openrouter"
@@ -709,8 +726,9 @@ def test_resolve_profile_uses_default_then_builtin(monkeypatch):
     assert resolve_profile("local", profiles=profiles, default="cloud-openrouter").name == "local"
 
 
-from heya.config import upsert_profile
 import tomllib as _tomllib
+
+from heya.config import upsert_profile
 
 
 def test_upsert_profile_creates_fresh_file(tmp_path):

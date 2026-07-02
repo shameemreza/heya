@@ -12,16 +12,25 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .memory import MEMORY_TYPES
+from .netsafety import BlockedHostError, check_host
 from .remediation import FIX_KINDS
 from .reproduction import VERDICTS
-from .triage import PRIORITIES
 from .subagents import ROLES as _ROLES
 from .text import truncate_output
-from .tools_files import ToolError, read_file, resolve_in_allowlist, run_command, search_files, list_files, write_file
+from .tools_files import (
+    ToolError,
+    list_files,
+    read_file,
+    resolve_in_allowlist,
+    run_command,
+    search_files,
+    write_file,
+)
 from .tools_guidance import read_guidance as _read_guidance
-from .tools_mcp import MCP_PREFIX, build_reverse_map, mcp_tool_name, parse_mcp_name, _MAX_DESC
+from .tools_mcp import _MAX_DESC, MCP_PREFIX, build_reverse_map, mcp_tool_name, parse_mcp_name
 from .tools_web import web_fetch, web_search
 from .tools_wp import read_log, run_wp_cli
+from .triage import PRIORITIES
 
 _MCP_RESOURCE_SCHEMAS = [
     {"type": "function", "function": {
@@ -662,6 +671,7 @@ def dispatch_tool(
     spawn_background_fn=None,
     background_registry=None,
     wp_connector=None,
+    web_block_metadata: bool = True,
 ) -> str:
     """Run one model tool-call. Returns a string result (errors included)."""
     try:
@@ -745,7 +755,7 @@ def dispatch_tool(
             max_results = max(1, max_results)  # uniform across providers; never zero/negative
             return web_search(args["query"], provider=search_provider, max_results=max_results)
         if name == "web_fetch":
-            return web_fetch(args["url"], timeout=timeout)
+            return web_fetch(args["url"], timeout=timeout, block_metadata=web_block_metadata)
         if name in (
             "browser_navigate", "browser_snapshot", "browser_click",
             "browser_type", "browser_screenshot", "browser_evidence",
@@ -753,6 +763,12 @@ def dispatch_tool(
             if browser_session is None:
                 raise ToolError("the browser is not available in this context")
             if name == "browser_navigate":
+                if web_block_metadata:
+                    from urllib.parse import urlparse as _urlparse
+                    try:
+                        check_host(_urlparse(args["url"]).hostname or "")
+                    except BlockedHostError as exc:
+                        raise ToolError(str(exc)) from exc
                 return browser_session.navigate(args["url"])
             if name == "browser_snapshot":
                 return browser_session.snapshot()
@@ -801,14 +817,14 @@ def dispatch_tool(
                 args.get("write_scope"), args.get("allow_commands", False)))
         if name in ("check_agent", "collect_agent", "cancel_agent"):
             if background_registry is None:
-                return f"Error: background agents are not available here."
+                return "Error: background agents are not available here."
             method = {"check_agent": background_registry.poll,
                       "collect_agent": background_registry.collect,
                       "cancel_agent": background_registry.cancel}[name]
             return truncate_output(method(args["id"]))
         if name in ("check_agents", "list_agents"):
             if background_registry is None:
-                return f"Error: background agents are not available here."
+                return "Error: background agents are not available here."
             rows = background_registry.summaries()
             if not rows:
                 return "No background agents."
@@ -874,6 +890,10 @@ def dispatch_tool(
         return f"Error: {exc}"
     except KeyError as exc:
         return f"Error: missing required argument {exc} for tool {name!r}."
+    except OSError as exc:
+        return f"Error: tool {name!r} failed: {exc}"
+    except Exception as exc:  # noqa: BLE001 - the tool boundary must never raise into the loop
+        return f"Error: tool {name!r} failed: {exc}"
 
 
 def describe_call(name: str, arguments: str) -> str:

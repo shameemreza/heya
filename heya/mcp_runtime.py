@@ -27,8 +27,12 @@ import httpx
 
 from .config import MCPServerConfig
 from .mcp_callbacks import (
-    CallbackDeps, StdinElicitPrompter, stdin_sampling_approver,
-    build_sampling_callback, build_elicitation_callback, build_logging_callback,
+    CallbackDeps,
+    StdinElicitPrompter,
+    build_elicitation_callback,
+    build_logging_callback,
+    build_sampling_callback,
+    stdin_sampling_approver,
 )
 from .tools_files import ToolError
 
@@ -573,11 +577,11 @@ async def _default_open_session(server, env, roots_cb, on_list_changed, *, oauth
     from mcp.client.stdio import stdio_client
     from mcp.types import (
         ListRootsResult,
+        PromptListChangedNotification,
+        ResourceListChangedNotification,
         Root,
         ServerNotification,
         ToolListChangedNotification,
-        ResourceListChangedNotification,
-        PromptListChangedNotification,
     )
 
     # SDK 1.x ListRootsFnT signature: async def __call__(self, context) -> ListRootsResult

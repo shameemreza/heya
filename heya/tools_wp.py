@@ -85,10 +85,10 @@ def run_wp_cli(args, path, *, allowed_roots, cwd, default_root=None, timeout) ->
         return _WPCLI_HINT
     root = resolve_wp_root(path, allowed_roots=allowed_roots, cwd=cwd, default_root=default_root)
     args = (args or "").strip()
-    cmd = f"wp {args}"
+    argv = ["wp", *shlex.split(args)]
     if "--path" not in args:
-        cmd += f" --path={shlex.quote(str(root))}"
-    result = run_command(cmd, cwd=root, allowed_roots=allowed_roots, timeout=timeout)
+        argv.append(f"--path={root}")
+    result = run_command(argv, cwd=root, allowed_roots=allowed_roots, timeout=timeout)
     return truncate_output(
         f"exit_code: {result.exit_code}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )

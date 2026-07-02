@@ -13,9 +13,9 @@ import sys
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
-from mcp.shared.auth import OAuthToken, OAuthClientInformationFull
+from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 
 def _import_keyring():

@@ -1,10 +1,19 @@
-import pytest
 import threading
 import time
+
 from heya.subagents import (
-    Role, ROLES, resolve_role, build_child_system_prompt, SUBAGENT_FRAMING,
-    LabeledStream, PARALLEL_SAFE_TOOLS, parallel_label, format_parallel_report,
-    MAX_REPORT_CHARS, LockedSink, BACKGROUND_TOOLS,
+    BACKGROUND_TOOLS,
+    MAX_REPORT_CHARS,
+    PARALLEL_SAFE_TOOLS,
+    ROLES,
+    SUBAGENT_FRAMING,
+    LabeledStream,
+    LockedSink,
+    Role,
+    build_child_system_prompt,
+    format_parallel_report,
+    parallel_label,
+    resolve_role,
 )
 
 

@@ -88,6 +88,32 @@ headless = true             # set false to watch the browser drive a reproductio
 [memory]
 # path = "~/.config/heya/memory"
 
+# --- Command auto-approve -----------------------------------------------------
+# Commands whose argv starts with a listed prefix auto-approve without prompting.
+# Shell metacharacters (;, &&, |, >, etc.) are never auto-approved regardless.
+# [approval]
+# allow = ["wp plugin list", "wp option get", "git status"]
+
+# --- Web safety ---------------------------------------------------------------
+# web_fetch and browser_navigate block link-local addresses (including
+# 169.254.169.254, cloud instance-metadata) by default. Set to false only if
+# your network genuinely needs link-local access.
+[web]
+block_metadata = true
+
+# --- Update check -------------------------------------------------------------
+# Heya checks PyPI about once a day for a newer version and shows a one-line
+# notice at startup. The check runs in the background, never delays startup, and
+# is silent if you are offline. Set check = false to turn it off.
+[update]
+# check = false
+
+# --- Project instructions -----------------------------------------------------
+# Heya reads the nearest AGENTS.md and CLAUDE.md when you run inside a project.
+# Set read_instructions = false to turn this off.
+[project]
+# read_instructions = false
+
 # Connect your own MCP servers to add tools. See docs/guide/mcp.md.
 # A stdio server runs a local command (here npx, which needs Node.js installed):
 # [mcp.servers.example]

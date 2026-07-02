@@ -1,11 +1,9 @@
 import contextlib
-from pathlib import Path
 
 import pytest
 
 from heya.config import MCPServerConfig
-from heya.mcp_runtime import MCPRuntime
-from heya.mcp_runtime import render_resource, render_prompt
+from heya.mcp_runtime import MCPRuntime, render_prompt, render_resource
 
 
 class FakeTool:
@@ -199,6 +197,7 @@ def test_close_is_idempotent():
 
 
 import json
+
 from heya.mcp_runtime import render_tool_result
 from heya.tools_files import ToolError
 
@@ -549,8 +548,7 @@ def test_trigger_refresh_unknown_server_is_noop():
 
 # --- Task 2: auth headers and TLS client builders ---
 
-import os
-from heya.mcp_runtime import _build_headers, _http_client_kwargs, _build_http_client
+from heya.mcp_runtime import _build_headers, _build_http_client, _http_client_kwargs
 
 
 def _http_cfg(**kw):
