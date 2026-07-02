@@ -102,6 +102,17 @@ SELF_REVIEW_NUDGE = (
 DEFAULT_MAX_ITERS = 12
 DEFAULT_COMMAND_TIMEOUT = 120.0
 
+# Tools that render their own live output or prompt the user during dispatch: the
+# status spinner would own the terminal concurrently and garble their output, so
+# it is skipped for these. MCP tools (elicitation/sampling) can prompt on stdin.
+_SELF_RENDERING_TOOLS = frozenset({
+    "spawn_agent", "spawn_agents", "spawn_background_agent",
+})
+
+
+def _self_rendering(name: str) -> bool:
+    return name in _SELF_RENDERING_TOOLS or name.startswith("mcp__")
+
 
 class Agent:
     def __init__(
@@ -403,7 +414,9 @@ class Agent:
                 self._on_tool(label + detail)
             except Exception:
                 pass  # the trace is best-effort
-        ctx = self._status_cb(detail) if self._status_cb is not None else nullcontext()
+        ctx = (self._status_cb(detail)
+               if self._status_cb is not None and not _self_rendering(call.name)
+               else nullcontext())
         with ctx:
             output = dispatch_tool(
                 call.name,

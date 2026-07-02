@@ -1654,3 +1654,39 @@ def test_status_cb_wraps_tool_dispatch(tmp_path):
     assert events[0][0] == "enter"
     assert events[1][0] == "exit"
     assert events[0][1] == events[1][1]  # same label for enter and exit
+
+
+def test_status_cb_skipped_for_self_rendering_tools(tmp_path):
+    from contextlib import contextmanager
+
+    events = []
+
+    @contextmanager
+    def recording_status(label):
+        events.append(("enter", label))
+        yield
+        events.append(("exit", label))
+
+    # An MCP tool can prompt on stdin during dispatch, so the spinner must not
+    # wrap it; with no mcp_runtime the call returns an error string quickly.
+    scripted = [
+        ChatResult(content=None, tool_calls=[ToolCall(id="1",
+            name="mcp__srv__do", arguments="{}")]),
+        ChatResult(content="done"),
+    ]
+    agent, _ = make_agent(tmp_path, scripted, status_cb=recording_status)
+    agent.run("call the mcp tool")
+
+    assert events == []  # spinner was skipped for the self-rendering tool
+
+
+def test_self_rendering_predicate():
+    from heya.agent import _self_rendering
+
+    assert _self_rendering("spawn_agent")
+    assert _self_rendering("spawn_agents")
+    assert _self_rendering("spawn_background_agent")
+    assert _self_rendering("mcp__server__tool")
+    assert not _self_rendering("read_file")
+    assert not _self_rendering("run_command")
+    assert not _self_rendering("write_file")
